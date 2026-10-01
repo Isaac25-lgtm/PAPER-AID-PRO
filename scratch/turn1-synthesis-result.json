@@ -1,0 +1,290 @@
+{
+  "success": true,
+  "conversationId": "cmunyibra0001vrtsh5jqwxhb",
+  "userMessageId": "cmunyic4u0003vrtszpzwyge3",
+  "assistantMessageId": "cmunyina90005vrtsr4ceucyl",
+  "question": "What does the available evidence in this library show about the performance and clinical value of artificial intelligence or computer-aided systems for classifying breast lesions on ultrasound?",
+  "claims": [
+    {
+      "text": "Deep learning models, particularly convolutional neural networks (CNNs), have shown significant effectiveness in classifying breast lesions from ultrasound images, achieving high accuracy, sensitivity, and specificity.",
+      "supportingPaperIds": [
+        "cmunwm6m2004ivrusrlr89j95"
+      ],
+      "supportingPaperCount": 1,
+      "citations": [
+        {
+          "paperId": "cmunwm6m2004ivrusrlr89j95",
+          "paperTitle": "Classification for Breast Ultrasound Using Convolutional Neural Network with Multiple Time-Domain Feature Maps",
+          "authors": [
+            "Hyungsuk Kim",
+            "Juyoung Park",
+            "Hakjoon Lee",
+            "Geuntae Im",
+            "Jongsoo Lee",
+            "Ki-Baek Lee",
+            "Heung Jae Lee (Department of Electrical Engineering, Kwangwoon University, Seoul 01897, Korea)[cite: 4]"
+          ],
+          "doi": "10.3390/app112110216",
+          "publicationDate": "2021-03-10T00:00:00.000Z",
+          "journal": "Applied Sciences (MDPI)",
+          "chunkId": "cmunwmok5005gvrus8xz5ognc",
+          "chunkIndex": 4,
+          "pageNumber": 1,
+          "section": "Introduction",
+          "snippet": "For the better analysis of US images, computer-aided diagnosis (CAD) systems using machine learning algorithms have been developed and applied to various kinds of features that are calculated and/or estimated from the B-mode images in..."
+        }
+      ]
+    },
+    {
+      "text": "Computer-aided diagnosis (CAD) systems utilizing machine learning algorithms have been developed to classify breast lesions based on various features extracted from ultrasound images, improving diagnostic performance compared to traditional methods.",
+      "supportingPaperIds": [
+        "cmunwm6m2004ivrusrlr89j95",
+        "cmunxw9il00dnvrus7w9mqij9"
+      ],
+      "supportingPaperCount": 2,
+      "citations": [
+        {
+          "paperId": "cmunwm6m2004ivrusrlr89j95",
+          "paperTitle": "Classification for Breast Ultrasound Using Convolutional Neural Network with Multiple Time-Domain Feature Maps",
+          "authors": [
+            "Hyungsuk Kim",
+            "Juyoung Park",
+            "Hakjoon Lee",
+            "Geuntae Im",
+            "Jongsoo Lee",
+            "Ki-Baek Lee",
+            "Heung Jae Lee (Department of Electrical Engineering, Kwangwoon University, Seoul 01897, Korea)[cite: 4]"
+          ],
+          "doi": "10.3390/app112110216",
+          "publicationDate": "2021-03-10T00:00:00.000Z",
+          "journal": "Applied Sciences (MDPI)",
+          "chunkId": "cmunwmok5005gvrus8xz5ognc",
+          "chunkIndex": 4,
+          "pageNumber": 1,
+          "section": "Introduction",
+          "snippet": "For the better analysis of US images, computer-aided diagnosis (CAD) systems using machine learning algorithms have been developed and applied to various kinds of features that are calculated and/or estimated from the B-mode images in..."
+        },
+        {
+          "paperId": "cmunxw9il00dnvrus7w9mqij9",
+          "paperTitle": "The application of multimodal ultrasound examination in the differential diagnosis of benign and malignant breast lesions of BI-RADS category 4",
+          "authors": [
+            "Chunling Li",
+            "Mumin Wu",
+            "Huang Haiqing (Cancer Hospital, College of Medicine, Shantou University, Shantou, China)[cite: 8]"
+          ],
+          "doi": ": https://doi.org/10.3389/fmed.2025.1596100",
+          "publicationDate": "2025-09-06T00:00:00.000Z",
+          "journal": "Frontiers in Medicine",
+          "chunkId": "cmunxwl3100fivrusk73ji9we",
+          "chunkIndex": 53,
+          "pageNumber": 15,
+          "section": "References",
+          "snippet": "Forsberg F, Dicker AP, Thakur ML, Rawool NM, Liu JB, Shi WT, et al. Comparing contrast-enhanced ultrasound to immunohistochemical markers of angiogenesis in a human melanoma xenograft model: preliminary results. Ultrasound Med Biol. (2002)..."
+        }
+      ]
+    },
+    {
+      "text": "The integration of multimodal ultrasound techniques, such as contrast-enhanced ultrasound and elastography, enhances the differentiation between benign and malignant breast lesions, providing additional clinical value.",
+      "supportingPaperIds": [
+        "cmunxw9il00dnvrus7w9mqij9"
+      ],
+      "supportingPaperCount": 1,
+      "citations": [
+        {
+          "paperId": "cmunxw9il00dnvrus7w9mqij9",
+          "paperTitle": "The application of multimodal ultrasound examination in the differential diagnosis of benign and malignant breast lesions of BI-RADS category 4",
+          "authors": [
+            "Chunling Li",
+            "Mumin Wu",
+            "Huang Haiqing (Cancer Hospital, College of Medicine, Shantou University, Shantou, China)[cite: 8]"
+          ],
+          "doi": ": https://doi.org/10.3389/fmed.2025.1596100",
+          "publicationDate": "2025-09-06T00:00:00.000Z",
+          "journal": "Frontiers in Medicine",
+          "chunkId": "cmunxwl3000fcvrusi1ysxg3a",
+          "chunkIndex": 47,
+          "pageNumber": 14,
+          "section": "References",
+          "snippet": "Quantitative multiparametric breast ultrasound: application of contrast-enhanced ultrasound and Elastography leads to an improved differentiation of benign and malignant lesions. Investig Radiol. (2019) 54:257–64. 0000000000000543 10. Yari..."
+        }
+      ]
+    },
+    {
+      "text": "Automated systems for diagnosing skin tumors using ultrasound images have shown promising results, indicating the potential for similar applications in breast lesion classification.",
+      "supportingPaperIds": [
+        "cmunxiwf900blvruskrclq381"
+      ],
+      "supportingPaperCount": 1,
+      "citations": [
+        {
+          "paperId": "cmunxiwf900blvruskrclq381",
+          "paperTitle": "Deep Learning-Based Evaluation of Ultrasound Images for Benign Skin Tumors",
+          "authors": [
+            "Hyunwoo Lee",
+            "Yerin Lee",
+            "Seung-Won Jung",
+            "Solam Lee",
+            "Byungho Oh",
+            "Sejung Yang (Department of Precision Medicine, Yonsei University Wonju College of Medicine, Wonju 26426, Republic of Korea)[cite: 7]"
+          ],
+          "doi": "10.3390/s23177374[cite: 7]",
+          "publicationDate": "2026-09-30T00:00:00.000Z",
+          "journal": "Sensors (MDPI)",
+          "chunkId": "cmunxj7kt00d6vruscjfj9s4r",
+          "chunkIndex": 30,
+          "pageNumber": 9,
+          "section": "Results",
+          "snippet": "radiologists’ Recently, studies on the diagnosis of skin disease by analyzing skin images using artificial intelligence such as CNN have been actively conducted [31–37]. In particular, when applied to dermoscopic images, accuracy increases..."
+        }
+      ]
+    }
+  ],
+  "disagreements": [],
+  "limitations": [
+    {
+      "text": "The performance of deep learning models for classifying certain types of tumors, such as pilomatricoma, was limited due to insufficient data representation compared to other tumor classes.",
+      "supportingPaperIds": [
+        "cmunxiwf900blvruskrclq381"
+      ],
+      "citations": [
+        {
+          "paperId": "cmunxiwf900blvruskrclq381",
+          "paperTitle": "Deep Learning-Based Evaluation of Ultrasound Images for Benign Skin Tumors",
+          "authors": [
+            "Hyunwoo Lee",
+            "Yerin Lee",
+            "Seung-Won Jung",
+            "Solam Lee",
+            "Byungho Oh",
+            "Sejung Yang (Department of Precision Medicine, Yonsei University Wonju College of Medicine, Wonju 26426, Republic of Korea)[cite: 7]"
+          ],
+          "doi": "10.3390/s23177374[cite: 7]",
+          "publicationDate": "2026-09-30T00:00:00.000Z",
+          "journal": "Sensors (MDPI)",
+          "chunkId": "cmunxj7kt00d7vrusq5qiy4pj",
+          "chunkIndex": 31,
+          "pageNumber": 10,
+          "section": "Results",
+          "snippet": "Sensors 2023, 23, 7374 10 of 13 of intervening subjective factors in the inspection, such as changes or artifacts in the image depending on the pressure, direction, and position of the inspector pressing the probe. The findings of this..."
+        }
+      ]
+    },
+    {
+      "text": "There is a need for validation and improvement of deep learning models in real clinical settings with larger datasets to enhance their efficacy for skin tumor diagnosis.",
+      "supportingPaperIds": [
+        "cmunxiwf900blvruskrclq381"
+      ],
+      "citations": [
+        {
+          "paperId": "cmunxiwf900blvruskrclq381",
+          "paperTitle": "Deep Learning-Based Evaluation of Ultrasound Images for Benign Skin Tumors",
+          "authors": [
+            "Hyunwoo Lee",
+            "Yerin Lee",
+            "Seung-Won Jung",
+            "Solam Lee",
+            "Byungho Oh",
+            "Sejung Yang (Department of Precision Medicine, Yonsei University Wonju College of Medicine, Wonju 26426, Republic of Korea)[cite: 7]"
+          ],
+          "doi": "10.3390/s23177374[cite: 7]",
+          "publicationDate": "2026-09-30T00:00:00.000Z",
+          "journal": "Sensors (MDPI)",
+          "chunkId": "cmunxj7ku00dbvrusxut88otb",
+          "chunkIndex": 35,
+          "pageNumber": 10,
+          "section": "Conclusion",
+          "snippet": "Materials). Ultrasound imaging technology is widely utilized in skin tumor examination and sur- gical support. At the same time, CAD systems based on skin images have been extensively developed, but a technology for diagnosing skin tumors..."
+        }
+      ]
+    }
+  ],
+  "selectedPapers": [
+    {
+      "paperId": "cmumgtiix0000vr445cn8ry7o",
+      "paperTitle": "Influence of the Computer-Aided Decision Support System Design on Ultrasound-Based Breast Cancer Classification",
+      "authors": [
+        "Zuzanna Anna Magnuska",
+        "Benjamin Theek",
+        "Milita Darguzyte",
+        "Moritz Palmowski",
+        "Elmar Stickeler (Department of Obstetrics and Gynecology, University Clinic Aachen, RWTH Aachen University, Pauwelsstr. 30, 52074 Aachen, Germany",
+        "Comprehensive Diagnostic Center Aachen, Uniklinik RWTH Aachen, Pauwelsstr. 30, 52074 Aachen, Germany)",
+        "Volkmar Schulz (Institute for Experimental Molecular Imaging, Uniklinik RWTH Aachen and Helmholtz Institute for Biomedical Engineering, Faculty of Medicine, RWTH Aachen University, 52074 Aachen, Germany",
+        "Comprehensive Diagnostic Center Aachen, Uniklinik RWTH Aachen, Pauwelsstr. 30, 52074 Aachen, Germany",
+        "Physics Institute III B, RWTH Aachen University, 52074 Aachen, Germany",
+        "Hyperion Hybrid Imaging Systems GmbH, 52074 Aachen, Germany",
+        "Fraunhofer Institute for Digital Medicine MEVIS, Am Fallturm 1, 28359 Bremen, Germany)",
+        "Fabian Kießling (Institute for Experimental Molecular Imaging, Uniklinik RWTH Aachen and Helmholtz Institute for Biomedical Engineering, Faculty of Medicine, RWTH Aachen University, 52074 Aachen, Germany"
+      ],
+      "doi": "10.3390/cancers14020277",
+      "publicationDate": "2022-06-01T00:00:00.000Z",
+      "journal": "Cancers (MDPI)",
+      "chunksContributed": 4
+    },
+    {
+      "paperId": "cmunxiwf900blvruskrclq381",
+      "paperTitle": "Deep Learning-Based Evaluation of Ultrasound Images for Benign Skin Tumors",
+      "authors": [
+        "Hyunwoo Lee",
+        "Yerin Lee",
+        "Seung-Won Jung",
+        "Solam Lee",
+        "Byungho Oh",
+        "Sejung Yang (Department of Precision Medicine, Yonsei University Wonju College of Medicine, Wonju 26426, Republic of Korea)[cite: 7]"
+      ],
+      "doi": "10.3390/s23177374[cite: 7]",
+      "publicationDate": "2026-09-30T00:00:00.000Z",
+      "journal": "Sensors (MDPI)",
+      "chunksContributed": 4
+    },
+    {
+      "paperId": "cmunxw9il00dnvrus7w9mqij9",
+      "paperTitle": "The application of multimodal ultrasound examination in the differential diagnosis of benign and malignant breast lesions of BI-RADS category 4",
+      "authors": [
+        "Chunling Li",
+        "Mumin Wu",
+        "Huang Haiqing (Cancer Hospital, College of Medicine, Shantou University, Shantou, China)[cite: 8]"
+      ],
+      "doi": ": https://doi.org/10.3389/fmed.2025.1596100",
+      "publicationDate": "2025-09-06T00:00:00.000Z",
+      "journal": "Frontiers in Medicine",
+      "chunksContributed": 4
+    },
+    {
+      "paperId": "cmunwvfkr006uvrus0m3ky4wn",
+      "paperTitle": "A New Deep-Learning-Based Model for Breast Cancer Diagnosis from Medical Images",
+      "authors": [
+        "Salman Zakareya",
+        "Habib Izadkhah (Department of Computer Science, University of Tabriz, Tabriz 5166616471, Iran",
+        "Research Department of Computational Algorithms and Mathematical Models, University of Tabriz, Tabriz 5166616471, Iran)",
+        "Jaber Karimpour (Department of Computer Science, University of Tabriz, Tabriz 5166616471, Iran)[cite: 5]"
+      ],
+      "doi": "10.3390/diagnostics13111944",
+      "publicationDate": "2023-01-06T00:00:00.000Z",
+      "journal": "Diagnostics (MDPI)",
+      "chunksContributed": 4
+    },
+    {
+      "paperId": "cmunwm6m2004ivrusrlr89j95",
+      "paperTitle": "Classification for Breast Ultrasound Using Convolutional Neural Network with Multiple Time-Domain Feature Maps",
+      "authors": [
+        "Hyungsuk Kim",
+        "Juyoung Park",
+        "Hakjoon Lee",
+        "Geuntae Im",
+        "Jongsoo Lee",
+        "Ki-Baek Lee",
+        "Heung Jae Lee (Department of Electrical Engineering, Kwangwoon University, Seoul 01897, Korea)[cite: 4]"
+      ],
+      "doi": "10.3390/app112110216",
+      "publicationDate": "2021-03-10T00:00:00.000Z",
+      "journal": "Applied Sciences (MDPI)",
+      "chunksContributed": 4
+    }
+  ],
+  "totalEvidenceChunks": 20,
+  "insufficientEvidence": false,
+  "libraryScopeNote": "This synthesis is based on relevant papers currently available in your AI Research Hub library.",
+  "rejectedCitationCount": 1,
+  "rejectedClaimsCount": 0
+}

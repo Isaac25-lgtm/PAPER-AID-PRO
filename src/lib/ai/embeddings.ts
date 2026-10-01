@@ -1,0 +1,98 @@
+import "server-only";
+import { createHash } from "crypto";
+import { getOpenAIClient, AI_CONFIG } from "./config";
+
+/**
+ * Prepares the derived embedding text representation for a PaperChunk.
+ * Incorporates paper title and section context to maximize retrieval accuracy
+ * while preserving the original chunk text completely unaltered in storage.
+ */
+export function prepareChunkEmbeddingInput(
+  paperTitle: string,
+  section: string | null | undefined,
+  chunkText: string
+): string {
+  const parts: string[] = [];
+  if (paperTitle?.trim()) {
+    parts.push(`Title: ${paperTitle.trim()}`);
+  }
+  if (section?.trim()) {
+    parts.push(`Section: ${section.trim()}`);
+  }
+  parts.push("Content:");
+  parts.push(chunkText.trim());
+
+  return parts.join("\n");
+}
+
+/**
+ * Computes a deterministic SHA-256 hash of the exact normalized text
+ * sent to the OpenAI embeddings API.
+ */
+export function computeEmbeddingInputHash(normalizedInput: string): string {
+  const textToHash = normalizedInput.replace(/\r\n/g, "\n").trim();
+  return createHash("sha256").update(textToHash, "utf8").digest("hex");
+}
+
+/**
+ * Generates an embedding vector for a single string using OpenAI's embeddings API.
+ * Validates dimensions against AI_CONFIG.embeddingDimensions.
+ */
+export async function generateEmbedding(text: string): Promise<number[]> {
+  const results = await generateEmbeddingsBatch([text]);
+  if (!results || results.length === 0) {
+    throw new Error("Failed to generate embedding: empty response from OpenAI.");
+  }
+  return results[0];
+}
+
+/**
+ * Generates embeddings for a batch of strings using OpenAI's embeddings API.
+ * Validates returned vector count and dimensions.
+ */
+export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
+  if (texts.length === 0) {
+    return [];
+  }
+
+  const client = getOpenAIClient();
+  const normalizedTexts = texts.map((t) => t.replace(/\r\n/g, "\n").trim());
+
+  try {
+    const response = await client.embeddings.create({
+      model: AI_CONFIG.embeddingModel,
+      input: normalizedTexts,
+      encoding_format: "float",
+    });
+
+    if (!response.data || response.data.length !== normalizedTexts.length) {
+      throw new Error(
+        `OpenAI embedding returned ${response.data?.length ?? 0} vectors, expected ${normalizedTexts.length}.`
+      );
+    }
+
+    const vectors: number[][] = [];
+    for (let i = 0; i < response.data.length; i++) {
+      const item = response.data[i];
+      if (!item.embedding || !Array.isArray(item.embedding)) {
+        throw new Error(`Embedding at index ${i} is malformed or missing.`);
+      }
+
+      if (item.embedding.length !== AI_CONFIG.embeddingDimensions) {
+        throw new Error(
+          `Embedding vector dimension mismatch: received ${item.embedding.length}, expected ${AI_CONFIG.embeddingDimensions} (model: ${AI_CONFIG.embeddingModel}).`
+        );
+      }
+
+      vectors.push(item.embedding);
+    }
+
+    return vectors;
+  } catch (error: any) {
+    // Sanitize error message to prevent leaking any sensitive information
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const sanitized = rawMessage.replace(/sk-[a-zA-Z0-9_\-]{20,}/g, "[REDACTED_API_KEY]");
+    console.error("[Embeddings] Error generating embeddings:", sanitized);
+    throw new Error(`Embedding generation failed: ${sanitized}`);
+  }
+}

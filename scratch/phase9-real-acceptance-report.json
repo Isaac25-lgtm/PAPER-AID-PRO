@@ -1,0 +1,34 @@
+{
+  "query": "breast ultrasound artificial intelligence",
+  "timingMs": 4797,
+  "providerResults": {
+    "PUBMED": {
+      "provider": "PUBMED",
+      "status": "SUCCESS",
+      "count": 5,
+      "durationMs": 3018
+    },
+    "CROSSREF": {
+      "provider": "CROSSREF",
+      "status": "SUCCESS",
+      "count": 5,
+      "durationMs": 1225
+    },
+    "SEMANTIC_SCHOLAR": {
+      "provider": "SEMANTIC_SCHOLAR",
+      "status": "RATE_LIMITED",
+      "count": 0,
+      "error": "Semantic Scholar rate limit reached (HTTP 429).",
+      "durationMs": 994
+    }
+  },
+  "totalRawResults": 10,
+  "totalUniqueResults": 10,
+  "importedPaper": {
+    "id": "cmuo0gx8y0000vr4ghqgbestv",
+    "title": "Artificial intelligence-based integration of imaging, exposome, and multi-omics data for immune-related biomarker discovery and precision prevention in breast cancer",
+    "doi": "10.3389/fimmu.2026.1870533",
+    "status": "METADATA_ONLY",
+    "fullTextAvailability": "FULL_TEXT_AVAILABLE"
+  }
+}
