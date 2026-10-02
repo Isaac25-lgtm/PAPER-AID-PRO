@@ -130,7 +130,7 @@ async function runTests() {
     // -------------------------------------------------------------
     console.log("\n--- Test F: Conceptual Semantic Discovery ---");
     const conceptSearch = await searchPapersHybrid({
-      query: "ultrasound imaging deep learning to identify hepatic lesions",
+      query: "abnormal liver findings on ultrasound images at Mengo Hospital",
       limit: 3,
     });
     assert(conceptSearch.papers.length > 0, "Conceptual search returns results");
@@ -176,6 +176,7 @@ async function runTests() {
       "<script>alert(1)</script>",
     ];
 
+    const chunkCountBefore = await prisma.paperChunk.count();
     for (const q of injectionQueries) {
       const safeSearch = await searchPapersHybrid({ query: q, limit: 3 });
       assert(Array.isArray(safeSearch.papers), `SQL injection attack safely handled: ${q.slice(0, 20)}`);
@@ -183,7 +184,7 @@ async function runTests() {
 
     // Verify paper_chunks table still intact
     const chunkCountAfter = await prisma.paperChunk.count();
-    assert(chunkCountAfter === 26, "Database intact after injection tests", `Chunks: ${chunkCountAfter}`);
+    assert(chunkCountAfter === chunkCountBefore && chunkCountAfter > 0, "Database intact after injection tests", `Chunks: ${chunkCountAfter}`);
 
     // -------------------------------------------------------------
     // Test I: Embedding Input Preparation

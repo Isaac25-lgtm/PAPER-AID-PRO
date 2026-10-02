@@ -75,6 +75,11 @@ export async function discoverRelevantPapers(
     JOIN "papers" p ON c."paperId" = p.id
     WHERE c.embedding IS NOT NULL
       AND p.status = 'COMPLETED'
+      AND (c.section IS NULL OR (
+        c.section NOT ILIKE '%reference%' 
+        AND c.section NOT ILIKE '%bibliography%'
+        AND c.section NOT ILIKE '%citation%'
+      ))
     ORDER BY c.embedding <=> ${vectorString}::vector ASC
     LIMIT 250;
   `;
@@ -207,6 +212,19 @@ export async function discoverRelevantPapers(
       score += 0.5;
     } else if (lowerQuery.includes(agg.title.toLowerCase())) {
       score += 0.3;
+    }
+
+    // Specific clinical/anatomical domain alignment
+    // When the query explicitly targets a anatomical/disease domain (e.g. "breast"),
+    // papers with that explicit domain in their title receive an alignment boost
+    const targetDomains = ["breast", "skin", "liver", "thyroid", "lymph", "spine", "cervical", "lung", "brain", "prostate", "retina"];
+    const matchedDomains = targetDomains.filter((d) => lowerQuery.includes(d));
+    if (matchedDomains.length > 0) {
+      const lowerTitle = agg.title.toLowerCase();
+      const titleMatchesTarget = matchedDomains.some((d) => lowerTitle.includes(d));
+      if (titleMatchesTarget) {
+        score += 0.15;
+      }
     }
 
     return {

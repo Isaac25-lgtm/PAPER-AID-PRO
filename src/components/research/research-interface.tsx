@@ -42,6 +42,7 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
     initialThreadId
   );
   const [expandedClaimIndices, setExpandedClaimIndices] = React.useState<Set<number>>(new Set());
+  const [expandedDisagreementIndices, setExpandedDisagreementIndices] = React.useState<Set<number>>(new Set());
   const [threads, setThreads] = React.useState<Array<{ id: string; title: string; updatedAt: string }>>([]);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
@@ -96,6 +97,8 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
     setCurrentResult(null);
     setQuestion("");
     setErrorMessage(null);
+    setExpandedClaimIndices(new Set());
+    setExpandedDisagreementIndices(new Set());
   };
 
   const handleSubmit = async (e?: React.FormEvent, presetQuestion?: string) => {
@@ -131,6 +134,15 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
 
   const toggleClaimExpansion = (index: number) => {
     setExpandedClaimIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const toggleDisagreementExpansion = (index: number) => {
+    setExpandedDisagreementIndices((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
       else next.add(index);
@@ -464,18 +476,99 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                         </h3>
                       </div>
                       <div className="space-y-3">
-                        {currentResult.disagreements.map((d, dIdx) => (
-                          <div key={dIdx} className="bg-white/80 rounded-lg p-3 border border-amber-200 space-y-1.5">
-                            <p className="text-xs text-slate-900 font-medium">{d.description}</p>
-                            <div className="flex flex-wrap gap-2 pt-1">
-                              {d.citations.map((c, ci) => (
-                                <Badge key={ci} variant="outline" className="text-[10px] bg-amber-50/60 border-amber-300 text-amber-800">
-                                  {c.paperTitle.slice(0, 30)}... (Page {c.pageNumber})
-                                </Badge>
-                              ))}
+                        {currentResult.disagreements.map((d, dIdx) => {
+                          const isExpanded = expandedDisagreementIndices.has(dIdx);
+
+                          return (
+                            <div key={dIdx} className="bg-white rounded-lg border border-amber-200 overflow-hidden shadow-2xs">
+                              <div
+                                onClick={() => toggleDisagreementExpansion(dIdx)}
+                                className="p-3.5 flex items-start justify-between gap-4 cursor-pointer hover:bg-amber-50/40 transition-colors"
+                              >
+                                <div className="space-y-1.5 flex-1">
+                                  <p className="text-xs text-slate-900 font-medium leading-relaxed">{d.description}</p>
+                                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                                    <Badge variant="outline" className="text-[10px] bg-amber-50 border-amber-300 text-amber-900 font-semibold">
+                                      Supported by {d.supportingPaperIds.length} conflicting papers
+                                    </Badge>
+                                    <span className="text-[10px] text-amber-700 font-medium hover:underline">
+                                      {isExpanded ? "Hide Conflicting Evidence" : `Inspect Conflicting Evidence (${d.citations.length} excerpts)`}
+                                    </span>
+                                  </div>
+                                </div>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-amber-700">
+                                  {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                </Button>
+                              </div>
+
+                              {/* Expanded Evidence Drawer for Disagreement */}
+                              {isExpanded && (
+                                <div className="bg-amber-50/30 border-t border-amber-200 p-4 space-y-3">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900">
+                                    Conflicting Manuscript Excerpts:
+                                  </span>
+                                  <div className="grid grid-cols-1 gap-3">
+                                    {d.citations.map((cit, cIdx) => (
+                                      <div
+                                        key={cIdx}
+                                        className="bg-white rounded-lg border border-amber-200/80 p-3 space-y-2 shadow-2xs"
+                                      >
+                                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 pb-2">
+                                          <div className="flex items-center gap-2">
+                                            <BookOpen className="h-3.5 w-3.5 text-amber-700" />
+                                            <span className="text-xs font-semibold text-slate-900 line-clamp-1">
+                                              {cit.paperTitle}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            {cit.doi && (
+                                              <a
+                                                href={`https://doi.org/${cit.doi}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-[10px] text-slate-400 hover:text-amber-700 flex items-center gap-0.5"
+                                              >
+                                                DOI <ExternalLink className="h-2.5 w-2.5" />
+                                              </a>
+                                            )}
+                                            <Link href={`/papers/${cit.paperId}`}>
+                                              <Button size="sm" variant="outline" className="text-[10px] h-6 px-2">
+                                                View Paper
+                                              </Button>
+                                            </Link>
+                                            <a
+                                              href={`/api/papers/${cit.paperId}/pdf`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                            >
+                                              <Button size="sm" variant="secondary" className="text-[10px] h-6 px-2 bg-amber-50 text-amber-800 hover:bg-amber-100">
+                                                Original PDF
+                                              </Button>
+                                            </a>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                                          <span className="font-medium text-slate-700">
+                                            {cit.pageNumber ? `Page ${cit.pageNumber}` : "Page unrecorded"}
+                                          </span>
+                                          <span>•</span>
+                                          <span className="italic">{cit.section ? `§${cit.section}` : "§Unspecified"}</span>
+                                          <span>•</span>
+                                          <span>Authors: {cit.authors.slice(0, 2).join(", ")}{cit.authors.length > 2 ? " et al." : ""}</span>
+                                        </div>
+
+                                        <blockquote className="text-xs text-slate-700 bg-amber-50/50 p-2.5 rounded border-l-2 border-amber-500 italic">
+                                          &ldquo;{cit.snippet}&rdquo;
+                                        </blockquote>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </Card>
                   )}

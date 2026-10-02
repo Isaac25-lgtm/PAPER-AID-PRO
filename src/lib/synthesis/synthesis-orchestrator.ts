@@ -318,7 +318,7 @@ export async function synthesizeResearchQuestion(
   }
 
   // 8. Server-Side Validation and Hydration
-  const validation = validateMultiPaperSynthesis(modelOutput, evidenceResult.evidenceSets);
+  const validation = validateMultiPaperSynthesis(modelOutput, evidenceResult.evidenceSets, cleanQuestion);
 
   // Construct selected papers metadata summary
   const selectedPapersMeta = evidenceResult.evidenceSets.map((s) => ({
