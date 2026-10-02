@@ -296,13 +296,59 @@ async function runPhase11_2Tests() {
     // =========================================================================================
     console.log("\n--- Test Group 2: Negative Control — Empirical Results vs Introductory Background ---");
 
-    // Direct unit test of isBackgroundLiteratureReview
+    // Direct unit tests of isBackgroundLiteratureReview and isThirdPartyLiteratureChunk
     const isBackgroundReviewDirect = isBackgroundLiteratureReview(
       "Deep learning models effectively classify breast cancer ultrasound images into benign or malignant categories achieving high accuracy.",
       "Background",
       "In the study presented in [17], various deep-learning models were employed to classify breast cancer ultrasound images based on their benign, malignant, or normal status."
     );
     assert(isBackgroundReviewDirect, "isBackgroundLiteratureReview detects third-party literature citation [17] in Background");
+
+    // Pattern 1: 'The study proposed by [30]'
+    const isStudyProposedByDirect = isThirdPartyLiteratureChunk(
+      "Background",
+      "The study proposed by [30] implemented the multilevel transfer-learning (MSTL) algorithm using three pre-trained models."
+    );
+    assert(isStudyProposedByDirect, "isThirdPartyLiteratureChunk detects 'The study proposed by [30]' pattern");
+
+    // Pattern 2: 'In [30], the authors...'
+    const isInAuthorsDirect = isThirdPartyLiteratureChunk(
+      "Introduction",
+      "In [30], the authors explored transfer learning for ultrasound classification with ResNet50."
+    );
+    assert(isInAuthorsDirect, "isThirdPartyLiteratureChunk detects 'In [30], the authors...' pattern");
+
+    // Pattern 3: Author-year reviews
+    const isAuthorYearDirect1 = isThirdPartyLiteratureChunk(
+      "Background",
+      "Sun et al. (2021) conducted a study utilizing a convolutional neural network (CNN) trained and tested on ultrasound images of 169 patients."
+    );
+    assert(isAuthorYearDirect1, "isThirdPartyLiteratureChunk detects author-year 'Sun et al. (2021)' review in Background");
+
+    const isAuthorYearDirect2 = isThirdPartyLiteratureChunk(
+      "Background",
+      "Lee et al. [27] conducted a study utilizing a deep-learning-based computer-aided prediction system for ultrasound (US) images."
+    );
+    assert(isAuthorYearDirect2, "isThirdPartyLiteratureChunk detects author-citation 'Lee et al. [27]' review in Background");
+
+    // Preservation: Genuine findings in Results / Discussion citing benchmarks are NOT rejected
+    const isResultsBenchmarkPreserved = !isThirdPartyLiteratureChunk(
+      "Results",
+      "The experimental results showed that the FC-CNN architecture using multiple time-domain feature maps achieved an accuracy of 94.2%, outperforming the standard benchmark [15]."
+    );
+    assert(isResultsBenchmarkPreserved, "isThirdPartyLiteratureChunk preserves genuine Results passage citing benchmark [15]");
+
+    const isDiscussionComparisonPreserved = !isThirdPartyLiteratureChunk(
+      "Discussion",
+      "Our proposed model demonstrated superior sensitivity (92.5%) compared to conventional B-mode imaging. Similar trends were observed in previous clinical trials [8], confirming our empirical observations."
+    );
+    assert(isDiscussionComparisonPreserved, "isThirdPartyLiteratureChunk preserves genuine Discussion passage citing prior trial [8]");
+
+    const isMethodsArchitecturePreserved = !isThirdPartyLiteratureChunk(
+      "Methods",
+      "We trained the ResNet-50 architecture as described in [12] on our proprietary dataset of 500 ultrasound scans."
+    );
+    assert(isMethodsArchitecturePreserved, "isThirdPartyLiteratureChunk preserves genuine Methods passage citing architecture [12]");
 
     // Failure 3: Citing introductory background literature survey as current paper's own improvement
     const modelOutputFailure3: MultiPaperSynthesisOutput = {
@@ -465,8 +511,7 @@ async function runPhase11_2Tests() {
       "What does the available literature say about AI-assisted breast ultrasound classification?"
     );
     assert(resultF5A.disagreements.length === 0, "Failure 5A: Single-paper disagreement rejected from disagreements array");
-    assert(resultF5A.limitations.length === 1, "Failure 5A: Single-paper variation downgraded to limitations observation");
-    assert(resultF5A.limitations[0].text.startsWith("Single-study observation:"), "Failure 5A: Limitation tagged as single-study observation");
+    assert(resultF5A.limitations.length === 0, "Failure 5A: Single-paper disagreement without independent limitation support discarded completely");
 
     // Positive Control 5B: Valid cross-study disagreement supported by 2 distinct papers
     const modelOutputValidDisagreement: MultiPaperSynthesisOutput = {
@@ -558,8 +603,7 @@ async function runPhase11_2Tests() {
       "What does the available literature say about AI-assisted breast ultrasound classification?"
     );
     assert(resultCeusCad.disagreements.length === 0, "Negative Control 4B.1: CEUS/SWE vs CAD classification rejected as disagreement");
-    assert(resultCeusCad.limitations.length === 1, "Negative Control 4B.1: Preserved as methodological/modality distinction in limitations");
-    assert(resultCeusCad.limitations[0].text.includes("Methodological & modality distinction"), "Negative Control 4B.1: Tagged with modality distinction prefix");
+    assert(resultCeusCad.limitations.length === 0, "Negative Control 4B.1: Pseudo-disagreement discarded completely rather than leaked into limitations");
 
     // 3. Integration test: Operator dependency vs CAD accuracy submitted as disagreement
     const modelOutputOperatorDisagreement: MultiPaperSynthesisOutput = {
@@ -583,7 +627,102 @@ async function runPhase11_2Tests() {
       "What does the available literature say about AI-assisted breast ultrasound classification?"
     );
     assert(resultOperator.disagreements.length === 0, "Negative Control 4B.2: Operator dependency vs CAD rejected as disagreement");
-    assert(resultOperator.limitations.length === 1, "Negative Control 4B.2: Preserved as study constraint & context in limitations");
+    assert(resultOperator.limitations.length === 0, "Negative Control 4B.2: Pseudo-disagreement discarded completely rather than leaked into limitations");
+
+    // =========================================================================================
+    // TASK 4C REGRESSION TESTS: Prevention of Disagreement-to-Limitation Leakage & Fabricated Deskilling Claims
+    // =========================================================================================
+    console.log("\n--- Test Group 4C: Disagreement-to-Limitation Leakage & Radiologist Deskilling Fabrication ---");
+
+    // 4C.1: Pseudo-disagreement containing fabricated claim about radiologists losing interpretative skills
+    const modelOutputFabricatedSkillLossPseudo: MultiPaperSynthesisOutput = {
+      claims: [],
+      disagreements: [
+        {
+          description: "Zakareya et al. and Li et al. differ on whether CAD models replace or assist radiologists, with Zakareya et al. noting that excessive reliance on AI leads to lack of interpretative skills among radiologists, while Li et al. focuses on multimodal ultrasound.",
+          evidence: [
+            { paperId: breastPaper1.id, chunkIds: ["chunk-breast-results-01"] },
+            { paperId: breastPaper2.id, chunkIds: ["chunk-breast-discussion-02"] },
+          ],
+        },
+      ],
+      limitations: [],
+      insufficientEvidence: false,
+    };
+    const resultFab1 = validateMultiPaperSynthesis(
+      modelOutputFabricatedSkillLossPseudo,
+      allTestEvidenceSets,
+      "What does the available literature say about AI-assisted breast ultrasound classification?"
+    );
+    assert(resultFab1.disagreements.length === 0, "Negative Control 4C.1: Fabricated skill-loss disagreement rejected from disagreements");
+    assert(resultFab1.limitations.length === 0, "Negative Control 4C.1: Fabricated skill-loss disagreement strictly discarded, NOT leaked into limitations");
+
+    // 4C.2: Single-study disagreement containing fabricated claim about radiologists losing interpretative skills
+    const modelOutputFabricatedSkillLossSingle: MultiPaperSynthesisOutput = {
+      claims: [],
+      disagreements: [
+        {
+          description: "Zakareya et al. argues that reliance on AI leads to lack of interpretative skills among radiologists.",
+          evidence: [
+            { paperId: breastPaper1.id, chunkIds: ["chunk-breast-results-01"] },
+          ],
+        },
+      ],
+      limitations: [],
+      insufficientEvidence: false,
+    };
+    const resultFab2 = validateMultiPaperSynthesis(
+      modelOutputFabricatedSkillLossSingle,
+      allTestEvidenceSets,
+      "What does the available literature say about AI-assisted breast ultrasound classification?"
+    );
+    assert(resultFab2.disagreements.length === 0, "Negative Control 4C.2: Single-study deskilling claim rejected from disagreements");
+    assert(resultFab2.limitations.length === 0, "Negative Control 4C.2: Single-study deskilling claim discarded, NOT converted to limitation");
+
+    // 4C.3: Direct limitation asserting radiologist deskilling without chunk support
+    const modelOutputFabricatedSkillLossLimitation: MultiPaperSynthesisOutput = {
+      claims: [],
+      disagreements: [],
+      limitations: [
+        {
+          text: "Excessive reliance on AI causes radiologists to lose interpretative skills in breast ultrasound interpretation.",
+          evidence: [
+            { paperId: breastPaper1.id, chunkIds: ["chunk-breast-results-01"] },
+          ],
+        },
+      ],
+      insufficientEvidence: false,
+    };
+    const resultFab3 = validateMultiPaperSynthesis(
+      modelOutputFabricatedSkillLossLimitation,
+      allTestEvidenceSets,
+      "What does the available literature say about AI-assisted breast ultrasound classification?"
+    );
+    assert(resultFab3.limitations.length === 0, "Negative Control 4C.3: Fabricated skill-loss limitation strictly rejected and withheld");
+    assert(resultFab3.rejectedCitationCount === 1, "Negative Control 4C.3: Rejected citation recorded for ungrounded deskilling limitation");
+
+    // 4C.4: Positive Control: Legitimate limitation that IS retained when independently supported by cited passage
+    const modelOutputLegitimateLimitation: MultiPaperSynthesisOutput = {
+      claims: [],
+      disagreements: [
+        {
+          description: "Combining CEUS and SWE technologies may increase examination costs for patients.",
+          evidence: [
+            { paperId: breastPaper2.id, chunkIds: ["chunk-breast-cost-limitation"] },
+          ],
+        },
+      ],
+      limitations: [],
+      insufficientEvidence: false,
+    };
+    const resultLegit = validateMultiPaperSynthesis(
+      modelOutputLegitimateLimitation,
+      allTestEvidenceSets,
+      "What does the available literature say about AI-assisted breast ultrasound classification?"
+    );
+    assert(resultLegit.disagreements.length === 0, "Positive Control 4C.4: Single-study observation rejected as cross-study disagreement");
+    assert(resultLegit.limitations.length === 1, "Positive Control 4C.4: Grounded single-study limitation retained when independently supported by cited passage");
+    assert(resultLegit.limitations[0].citations[0].paperId === breastPaper2.id, "Positive Control 4C.4: Grounded in breastPaper2");
 
     // =========================================================================================
     // NEGATIVE CONTROL 5: Correct Citation Identifiers Attached to Semantically Irrelevant Passages

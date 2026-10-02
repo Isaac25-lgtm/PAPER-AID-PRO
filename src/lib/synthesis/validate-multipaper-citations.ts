@@ -102,14 +102,43 @@ export function isDomainMismatched(
 
 /**
  * Identifies chunks that merely review or summarize third-party external studies
- * (e.g. "In the study presented in [17]...", "The study [32] proposed...").
+ * (e.g. "The study proposed by [30]...", "In [30], the authors...", "Smith et al. (2020) proposed...").
  * These should not be cited as the current paper's own empirical results.
+ *
+ * Avoids rejecting genuine findings in Results or Discussion merely because they contain
+ * baseline comparisons or literature citations.
  */
 export function isThirdPartyLiteratureChunk(section: string | null, text: string): boolean {
   const trimmed = text.trim();
-  const thirdPartyPattern =
-    /\b(in\s+the\s+study\s+presented\s+in\s+\[\d+\]|the\s+study\s+\[\d+\]\s+proposed|the\s+study\s+conducted\s+by\s+\[\d+\]|in\s+this\s+article,\s+we\s+cite\s+the\s+relevant\s+content\s+from\s+this\s+literature|according\s+to\s+\[\d+\]|studies\s+in\s+\[\d+\]|prior\s+studies\s+in\s+\[\d+\]|in\s+\[\d+\],\s*(various|several|authors|researchers|a\s+transfer|deep-learning|a\s+vector))/i;
-  return thirdPartyPattern.test(trimmed);
+  const lowerSec = (section || "").toLowerCase();
+  const isBackgroundOrIntro = !section || /background|intro|related|literature|review|overview/i.test(lowerSec);
+
+  const explicitThirdParty =
+    /\b((in\s+the\s+study\s+presented\s+in|according\s+to|studies\s+in|prior\s+studies\s+in)\s+\[\d+\]|(the\s+study|studies)\s+(proposed|conducted|presented|performed|reported|described|developed|introduced)\s+by\s+\[\d+\]|(the\s+study|studies)\s+\[\d+\]\s+(proposed|conducted|presented|demonstrated|investigated|developed|reported)|the\s+study\s+conducted\s+by\s+\[\d+\]|in\s+this\s+article,\s+we\s+cite\s+the\s+relevant\s+content\s+from\s+this\s+literature|in\s+\[\d+\],\s*(the\s+)?(authors?|researchers?|study|work|investigators?|various|several|a\s+transfer|deep-learning|a\s+vector)|in\s+(a\s+)?study\s+by\s*(\[[0-9]+\]|[A-Z][a-z]+(\s+et\s+al\.)?))/i;
+
+  if (explicitThirdParty.test(trimmed)) {
+    // If in Results or Discussion, only reject if it is not reporting own findings
+    const isResultsOrDiscussion = /results?|discussion|findings?/i.test(lowerSec);
+    if (isResultsOrDiscussion) {
+      const hasOwnFindings = /\b(our\s+(study|model|method|network|approach|results?)|we\s+(found|achieved|observed|propose|demonstrate|show|trained|evaluated)|in\s+this\s+paper\s+we)\b/i.test(trimmed);
+      if (hasOwnFindings) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // 2. Author-year literature reviews in Background / Introduction / Related Work
+  // e.g., "Lee et al. [27] conducted...", "Sun et al. (2021) proposed...", "In [30], Zhang et al...."
+  if (isBackgroundOrIntro) {
+    const authorYearReview =
+      /\b([A-Z][a-z]+(\s+et\s+al\.)?\s*(\[\d+\]|\([12]\d{3}\))\s*(investigated|proposed|developed|conducted|reported|evaluated|trained|analyzed|used|demonstrated|showed|found|observed|explored|applied))\b/i;
+    if (authorYearReview.test(trimmed)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -125,12 +154,15 @@ export function isBackgroundLiteratureReview(
     return true;
   }
 
-  const isBackground = !chunkSection || /background|intro/i.test(chunkSection);
+  const isBackground = !chunkSection || /background|intro|related|literature|review/i.test(chunkSection);
   if (!isBackground) return false;
 
-  // In background/intro, check if text discusses other studies with bracket citations
-  if (/\[\d+\]/.test(chunkText)) {
-    if (/accuracy|improved|superior|high\s+diagnostic|effectively|demonstrated|screening\s+tool|performance|enhance|classify|classification/i.test(claimText)) {
+  // In background/intro, check if text discusses other studies with bracket citations or author-year citations
+  if (/\[\d+\]|\([12]\d{3}\)|[A-Z][a-z]+\s+et\s+al\./.test(chunkText)) {
+    if (
+      /\b(the\s+study|studies|prior|earlier|previous|other\s+researchers?|authors?\s+in|reviewed|survey|literature|recently)\b/i.test(chunkText) ||
+      /\b(accuracy|improved|superior|high\s+diagnostic|effectively|demonstrated|screening\s+tool|performance|enhance|classify|classification|potential|promise|reduce|transfer\s+learning)\b/i.test(claimText)
+    ) {
       return true;
     }
   }
@@ -283,7 +315,57 @@ export function isClaimSupportedByChunk(claimText: string, chunkText: string): b
     return false;
   }
 
+  // 3. Radiologist skill erosion / deskilling / loss of interpretative skills:
+  if (/\b(interpretative\s+skills?|loss\s+of\s+skills?|losing\s+(interpretative\s+)?skills?|de-?skill\w*|erod\w*\s+skills?|lack\s+of\s+interpretative\s+skills?|diminish\w*\s+(interpretative\s+)?skills?)\b/i.test(lowerClaim)) {
+    if (!/\b(loss\s+of\s+skills?|los(e|ing)\s+skills?|de-?skill\w*|erod\w*\s+skills?|diminish\w*\s+skills?|lack\s+of\s+interpretative)\b/i.test(lowerChunk)) {
+      return false;
+    }
+  }
+
   return true;
+}
+
+/**
+ * Verifies whether a statement introduces unsupported propositions, fabrications,
+ * or comparative disagreement phrasing when evaluating a candidate limitation.
+ */
+export function statementIntroducesUnsupportedPropositions(
+  statement: string,
+  supportingChunkTexts: string[],
+  isLimitation: boolean = false
+): boolean {
+  const lowerStatement = statement.toLowerCase();
+
+  // 1. Re-asserting a disagreement or comparative conflict when evaluating a limitation
+  // Genuine limitations describe study constraints or methodological boundaries, not cross-study arguments.
+  if (isLimitation && /\b(differ\s+on|disagree\w*|diverg\w*|conflict\w*|contradict\w*|inconsistent\s+with\s+each\s+other|opposing\s+findings?|discrepanc\w*)\b/i.test(lowerStatement)) {
+    return true;
+  }
+
+  // 2. Fabricated claims about loss of interpretative skills / deskilling (all categories)
+  if (/\b(interpretative\s+skills?|loss\s+of\s+skills?|losing\s+(interpretative\s+)?skills?|de-?skill\w*|erod\w*\s+skills?|lack\s+of\s+interpretative\s+skills?|diminish\w*\s+(interpretative\s+)?skills?)\b/i.test(lowerStatement)) {
+    const chunkHasSkillLoss = supportingChunkTexts.some((ct) =>
+      /\b(loss\s+of\s+skills?|los(e|ing)\s+skills?|de-?skill\w*|erod\w*\s+skills?|diminish\w*\s+skills?|lack\s+of\s+interpretative)\b/i.test(ct)
+    );
+    if (!chunkHasSkillLoss) {
+      return true; // Unsupported proposition: fabricated claim about radiologist skill loss/erosion
+    }
+  }
+
+  // 3. Falsely attributing physical fatigue or human attentiveness limits to AI models (all categories)
+  if (
+    /\b(ai|cad|deep\s+learning|machine\s+learning|algorithm|cnn|model)\b/i.test(lowerStatement) &&
+    /\b(physical\s+fatigue|lack\s+of\s+attentiveness|fatigue\s+of\s+(the\s+)?model)\b/i.test(lowerStatement)
+  ) {
+    const chunkHasAiFatigue = supportingChunkTexts.some((ct) =>
+      /\b(ai|cad|deep\s+learning|algorithm|model)\s+.*(physical\s+fatigue|fatigue)\b/i.test(ct)
+    );
+    if (!chunkHasAiFatigue) {
+      return true; // Unsupported proposition: attributing radiologist physical fatigue to the AI model
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -299,6 +381,29 @@ export function isLimitationSupportedByChunk(limitationText: string, chunkText: 
   const isEthicsOnly = /\b(institutional\s+review\s+board|ethics\s+committee|declaration\s+of\s+helsinki|informed\s+consent)\b/i.test(lowerChunk) &&
     !/\b(limit\w*|challenge|drawback|shortcoming|disadvantage|scarcity|small(\s+size)?|unbalanced|bias\w*|fail\w*|difficult\w*|overfit\w*|cost|expense)\b/i.test(lowerChunk);
   if (isEthicsOnly) return false;
+
+  // The passage must actually contain some limitation, drawback, constraint, or boundary context
+  const hasLimitationContext = /\b(limit\w*|challenge|drawback|shortcoming|disadvantage|scarcity|small(\s+size)?|unbalanced|bias\w*|fail\w*|difficult\w*|overfit\w*|cost|expense|operator|fatigue|operator-dependent|preliminary|further\s+(investigation|study|research)|not\s+evaluated|not\s+assessed|gap|bottleneck|constraint|future\s+work)\b/i.test(lowerChunk);
+  if (!hasLimitationContext) {
+    return false;
+  }
+
+  // Radiologist skill erosion / deskilling / loss of interpretative skills
+  if (/\b(interpretative\s+skills?|loss\s+of\s+skills?|losing\s+(interpretative\s+)?skills?|de-?skill\w*|erod\w*\s+skills?|lack\s+of\s+interpretative\s+skills?|diminish\w*\s+(interpretative\s+)?skills?)\b/i.test(lowerLim)) {
+    if (!/\b(loss\s+of\s+skills?|los(e|ing)\s+skills?|de-?skill\w*|erod\w*\s+skills?|diminish\w*\s+skills?|lack\s+of\s+interpretative)\b/i.test(lowerChunk)) {
+      return false;
+    }
+  }
+
+  // Falsely attributing physical fatigue or attentiveness limits to AI models
+  if (
+    /\b(ai|cad|deep\s+learning|machine\s+learning|algorithm|cnn|model)\b/i.test(lowerLim) &&
+    /\b(physical\s+fatigue|lack\s+of\s+attentiveness|fatigue\s+of\s+(the\s+)?model)\b/i.test(lowerLim)
+  ) {
+    if (!/\b(ai|cad|deep\s+learning|algorithm|model)\s+.*(physical\s+fatigue|fatigue)\b/i.test(lowerChunk)) {
+      return false;
+    }
+  }
 
   // Key topic alignment checks
   if (/unsupervised/i.test(lowerLim) && !/unsupervised/i.test(lowerChunk)) return false;
@@ -322,14 +427,14 @@ export function isNonComparableOrPseudoDisagreement(
   const lowerDesc = description.toLowerCase();
 
   // 1. Non-comparable modalities: Clinical multimodal ultrasound (CEUS, SWE) vs CAD/AI models
-  const hasClinicalModality = /\b(ceus|swe|elastograph\w*|contrast-enhanced|grayscale|two-dimensional\s+ultrasound)\b/i.test(lowerDesc);
+  const hasClinicalModality = /\b(ceus|swe|elastograph\w*|contrast-enhanced|grayscale|two-dimensional\s+ultrasound|multimodal\s+ultrasound)\b/i.test(lowerDesc);
   const hasCadAi = /\b(ai|cad|computer-aided|deep\s+learning|machine\s+learning|cnn|knn|svm|yolo|viola-jones|algorithm|classification\s+models?|classifiers?)\b/i.test(lowerDesc);
 
   if (hasClinicalModality && hasCadAi) {
     return {
       isPseudo: true,
       limitationText: `Methodological & modality distinction: ${description}`,
-      reason: "Non-comparable interventions: clinical imaging (CEUS/SWE) vs CAD/AI models",
+      reason: "Non-comparable interventions: clinical imaging (CEUS/SWE/multimodal) vs CAD/AI models",
     };
   }
 
@@ -352,6 +457,15 @@ export function isNonComparableOrPseudoDisagreement(
       isPseudo: true,
       limitationText: `Reported perspective: ${description}`,
       reason: "Hedged complementary observation rather than empirical contradiction",
+    };
+  }
+
+  // 4. Fabricated deskilling or ungrounded skill erosion claims
+  if (/\b(interpretative\s+skills?|loss\s+of\s+skills?|losing\s+(interpretative\s+)?skills?|de-?skill\w*|erod\w*\s+skills?|lack\s+of\s+interpretative\s+skills?|diminish\w*\s+(interpretative\s+)?skills?)\b/i.test(lowerDesc)) {
+    return {
+      isPseudo: true,
+      limitationText: `Reported observation: ${description}`,
+      reason: "Ungrounded or fabricated claim regarding radiologist skill loss/deskilling",
     };
   }
 
@@ -416,10 +530,22 @@ export function verifyEvidencePassage(params: EvidenceVerificationParams): Evide
       return { isValid: false, reason: "Hypothetical/speculative potential treated as empirical outcome" };
     }
 
+    if (statementIntroducesUnsupportedPropositions(propositionText, [chunkText], false)) {
+      return { isValid: false, reason: "Claim introduces unsupported propositions (e.g. fabricated deskilling)" };
+    }
+
     if (!isClaimSupportedByChunk(propositionText, chunkText)) {
       return { isValid: false, reason: "Negative or limited effect passage contradicts claim assertion" };
     }
+  } else if (category === "disagreement") {
+    if (statementIntroducesUnsupportedPropositions(propositionText, [chunkText], false)) {
+      return { isValid: false, reason: "Disagreement introduces unsupported propositions (e.g. fabricated deskilling)" };
+    }
   } else if (category === "limitation") {
+    if (statementIntroducesUnsupportedPropositions(propositionText, [chunkText], true)) {
+      return { isValid: false, reason: "Limitation introduces unsupported propositions or comparative disagreement framing" };
+    }
+
     if (isAiAttributionToClinicalStudy(propositionText, paperTitle, chunkText)) {
       return { isValid: false, reason: "AI attribution error: clinical imaging limitation incorrectly attributed to AI/CAD" };
     }
@@ -636,25 +762,69 @@ export function validateMultiPaperSynthesis(
     if (anchors.length === 0) continue;
 
     // Check 1: Must cite at least 2 distinct papers
-    if (paperIdsSet.size < 2) {
-      validatedLimitations.push({
-        text: `Single-study observation: ${desc}`,
-        supportingPaperIds: Array.from(paperIdsSet),
-        citations: anchors,
-      });
-      continue;
-    }
+    const isSinglePaper = paperIdsSet.size < 2;
 
     // Check 2: Must be comparable interventions and genuine empirical contradiction
     const paperTitles = anchors.map((a) => a.paperTitle);
     const pseudoCheck = isNonComparableOrPseudoDisagreement(desc, paperTitles);
 
-    if (pseudoCheck.isPseudo) {
-      validatedLimitations.push({
-        text: pseudoCheck.limitationText || desc,
-        supportingPaperIds: Array.from(paperIdsSet),
-        citations: anchors,
+    if (isSinglePaper || pseudoCheck.isPseudo) {
+      // Disagreement rejected. Do NOT automatically convert to limitation.
+      // Only retain as limitation if:
+      // 1. The statement does NOT introduce unsupported propositions (e.g. fabricated claims, deskilling).
+      // 2. All citations independently pass domain, attribution, and evidence checks for limitations.
+      // 3. The limitation is independently supported by each surviving cited passage.
+      // Otherwise, discard it.
+      const candidateLimitationText = pseudoCheck.isPseudo
+        ? (pseudoCheck.limitationText || desc)
+        : `Single-study observation: ${desc}`;
+
+      // Check for unsupported propositions against the supporting chunks
+      const chunkTextsForCandidate = anchors.map((a) => {
+        const pm = paperLookup.get(a.paperId);
+        return pm?.chunks.get(a.chunkId)?.text || a.snippet;
       });
+
+      if (statementIntroducesUnsupportedPropositions(candidateLimitationText, chunkTextsForCandidate, true)) {
+        // Discard completely - contains unsupported propositions, deskilling claims, or comparative disagreement framing
+        rejectedCitationCount += anchors.length;
+        continue;
+      }
+
+      // Re-verify each anchor strictly as a limitation
+      const validLimitationAnchors: HydratedMultiPaperAnchor[] = [];
+      const validLimitationPaperIds = new Set<string>();
+
+      for (const anchor of anchors) {
+        const pm = paperLookup.get(anchor.paperId);
+        const cm = pm?.chunks.get(anchor.chunkId);
+        if (!pm || !cm) continue;
+
+        const verification = verifyEvidencePassage({
+          propositionText: candidateLimitationText,
+          category: "limitation",
+          paperTitle: pm.paperTitle,
+          chunkSection: cm.section,
+          chunkText: cm.text,
+          question,
+        });
+
+        if (verification.isValid) {
+          validLimitationPaperIds.add(anchor.paperId);
+          validLimitationAnchors.push(anchor);
+        } else {
+          rejectedCitationCount++;
+        }
+      }
+
+      // Only retain if ALL citations independently pass domain, attribution, and evidence checks
+      if (validLimitationAnchors.length > 0 && validLimitationAnchors.length === anchors.length) {
+        validatedLimitations.push({
+          text: candidateLimitationText,
+          supportingPaperIds: Array.from(validLimitationPaperIds),
+          citations: validLimitationAnchors,
+        });
+      }
       continue;
     }
 
