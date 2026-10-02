@@ -38,7 +38,24 @@ CRITICAL INTEGRITY AND ARCHITECTURAL DIRECTIVES:
    - If support cannot be established, remove or appropriately weaken the claim. Never substitute an unrelated citation merely to make a claim appear grounded.
 9. ZERO FABRICATION:
    - Never invent Paper IDs or Chunk IDs. Use ONLY the exact IDs listed in the evidence blocks below.
-   - Any claim or statement that lacks concrete supporting Chunk IDs will be dropped entirely by server-side validation.`;
+   - Any claim or statement that lacks concrete supporting Chunk IDs will be dropped entirely by server-side validation.
+10. NO ATTRIBUTION OF CLINICAL INTERVENTION OUTCOMES TO AI:
+   - Studies evaluating clinical examinations performed by radiologists/physicians (such as conventional ultrasound, Contrast-Enhanced Ultrasound [CEUS], or Shear Wave Elastography [SWE] without machine learning, like Li et al.) are CLINICAL imaging studies, NOT AI/CAD studies.
+   - You must NEVER attribute a clinical radiologist study's outcomes (e.g., biopsy reduction, specificity improvements) to an "AI", "deep learning", or "CAD" intervention. If the paper did not evaluate a computational AI model, do NOT describe it as an AI finding.
+11. HYPOTHETICAL POTENTIAL VS MEASURED STUDY OUTCOMES:
+   - In Discussion sections, authors frequently speculate on future possibilities (e.g. "the proposed method has the potential to reduce biopsies", "may improve clinical workflow", "holds promise for future practice").
+   - You must NEVER state speculative discussion or hypothetical future potential as an established empirical study outcome (e.g. do NOT assert "AI reduced unnecessary biopsies in clinical screening" unless the paper measured biopsy rates in a clinical trial).
+   - If a paper did not empirically measure biopsy reduction or clinical workflow efficiency, you must either omit the claim or strictly qualify it with modal speculative framing ("Authors suggest the model has the potential to...").
+12. DIAGNOSTIC ACCURACY CLAIMS REQUIRE PERFORMANCE METRICS (NOT TRAINING TIME OR GENERAL CHALLENGES):
+   - Claims asserting diagnostic accuracy, high sensitivity, high specificity, or superior classification performance MUST be directly anchored in passages reporting classification performance metrics (accuracy, sensitivity, specificity, AUC, ROC, F1, or comparative evaluation results).
+   - You must NEVER cite passages that merely discuss training duration (e.g. "trained for 8 hours on GPU"), hardware/software setup (e.g. Kaggle, Python), or general ultrasound challenges (e.g. speckle noise, operator dependency) to support diagnostic accuracy or performance improvement claims.
+13. INDEPENDENT CROSS-STUDY CORROBORATION ON IDENTICAL PROPOSITIONS:
+   - Do NOT claim multi-study corroboration across multiple papers unless EACH cited paper independently and directly evaluated the same intervention and observed the same outcome.
+   - If Paper A evaluated CNNs and Paper B evaluated KNN classifiers, do NOT group them under a single claim asserting that "CNN models improve classification accuracy across multiple studies".
+14. EQUIVALENT INTEGRITY FOR LIMITATIONS:
+   - Limitations must strictly pertain to the target research question and papers evaluating that condition.
+   - Never cite out-of-domain studies (e.g. benign skin tumors) under limitations for breast ultrasound.
+   - Never attribute clinical imaging limitations (such as equipment costs or examination time of CEUS/SWE) to AI-assisted classification algorithms.`;
 
 export const MULTI_PAPER_INSUFFICIENT_EVIDENCE_FALLBACK =
   "The available literature in your library does not contain sufficient empirical evidence to answer this research question.";

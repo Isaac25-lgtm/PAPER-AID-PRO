@@ -7,6 +7,12 @@ import {
   isNonComparableOrPseudoDisagreement,
   isClaimSupportedByChunk,
   isThirdPartyLiteratureChunk,
+  isAiAttributionToClinicalStudy,
+  isTechnologySupportedByPaper,
+  isAccuracyPropositionSupported,
+  isHypotheticalBenefitTreatedAsEmpiricalResult,
+  isLimitationSupportedByChunk,
+  verifyEvidencePassage,
 } from "../src/lib/synthesis/validate-multipaper-citations";
 import { isReferenceChunk, retrieveMultiPaperEvidence } from "../src/lib/synthesis/retrieve-multipaper-evidence";
 import { discoverRelevantPapers } from "../src/lib/synthesis/discover-papers";
@@ -104,6 +110,16 @@ async function runPhase11_2Tests() {
           text: "10. Quantitative multiparametric breast ultrasound: application of contrast-enhanced ultrasound and Elastography leads to an improved differentiation of benign and malignant lesions. Investig Radiol. (2019) 54:257–64. doi:10.1097/RLI.0000000000000543",
           similarity: 0.65,
           semanticRank: 2,
+        },
+        {
+          id: "chunk-breast-cost-limitation",
+          paperId: breastPaper2.id,
+          chunkIndex: 7,
+          section: "Discussion",
+          pageNumber: 6,
+          text: "Additionally, combining CEUS and SWE technologies has limited effect on reducing the positive predictive value (PPV), and it will increase the examination costs for patients.",
+          similarity: 0.58,
+          semanticRank: 3,
         },
       ],
     };
@@ -674,6 +690,238 @@ async function runPhase11_2Tests() {
       c.section && /result|discussion|method|conclusion|abstract/i.test(c.section)
     ).length;
     assert(empiricalCount >= Math.floor(evidence.totalChunks * 0.5), `Empirical chunks constitute majority of retrieved evidence (${empiricalCount}/${evidence.totalChunks})`);
+
+    // =========================================================================================
+    // TEST GROUP 7: PRODUCTION AUDIT 5-CASE GROUNDING TEST SUITE
+    // =========================================================================================
+    console.log("\n--- Test Group 7: Production Audit 5-Case Grounding Test Suite ---");
+
+    // Case 1: Diagnostic accuracy claims supported by training time or general challenges
+    console.log("  Testing Case 1: Diagnostic Accuracy Proposition Support...");
+    const accClaim = "The proposed deep learning attention model achieved high diagnostic accuracy in classifying breast lesions.";
+    const trainingChunkText = "The code was written in Python, and the experiments were performed on Kaggle, leveraging the power of their hardware, including GPUs. Batch size was 16 and models were trained for 50 epochs.";
+    const operatorFatigueChunkText = "Breast cancer diagnosis technique is operator-dependent and causes physical fatigue and lack of attentiveness, which may lead to misdetection.";
+    const validAccuracyChunkText = "The experimental results showed that the proposed architecture achieved an overall accuracy of 94.2% across normal, benign, and malignant classes.";
+
+    assert(
+      !isAccuracyPropositionSupported(accClaim, trainingChunkText),
+      "Case 1A Negative: Rejects training hardware/epochs passage for diagnostic accuracy claim"
+    );
+    assert(
+      !isAccuracyPropositionSupported(accClaim, operatorFatigueChunkText),
+      "Case 1B Negative: Rejects operator fatigue passage for diagnostic accuracy claim"
+    );
+    assert(
+      isAccuracyPropositionSupported(accClaim, validAccuracyChunkText),
+      "Case 1C Positive: Accepts genuine classification performance metrics passage for accuracy claim"
+    );
+
+    // Case 2: Claims that AI reduces biopsies supported by clinical multimodal ultrasound (Li et al.)
+    console.log("  Testing Case 2: AI Attribution to Clinical Studies...");
+    const aiBiopsyClaim = "AI-assisted ultrasound systems reduce unnecessary biopsies in BI-RADS category 4 breast lesions.";
+    const clinicalBiopsyClaim = "Multimodal ultrasound combining conventional US with SWE and CEUS improves diagnostic differentiation of BI-RADS 4 lesions.";
+    const liTitle = breastPaper2.title;
+    const liBiopsyChunk = "The use of US + CEUS + SWE is beneficial for further differentiating benign and malignant breast lesions according to the US BI-RADS 4, thereby reducing unnecessary biopsies or surgeries.";
+
+    assert(
+      isAiAttributionToClinicalStudy(aiBiopsyClaim, liTitle, liBiopsyChunk),
+      "Case 2A Negative: Detects AI attribution error when AI claim cites clinical SWE/CEUS study"
+    );
+    assert(
+      !isAiAttributionToClinicalStudy(clinicalBiopsyClaim, liTitle, liBiopsyChunk),
+      "Case 2B Positive: Allows clinical multimodal claim to cite clinical SWE/CEUS study"
+    );
+
+    // Case 3: Cross-study corroboration with proposition-specific validation
+    console.log("  Testing Case 3: Proposition-Specific Corroboration...");
+    const cnnSpecificClaim = "Convolutional neural network architectures demonstrated high diagnostic accuracy in breast cancer classification.";
+    const kimTitle = "Classification for Breast Ultrasound Using Convolutional Neural Network with Multiple Time-Domain Feature Maps";
+    const kimCnnChunk = "The experimental results showed that the FC-CNN architecture using multiple time-domain feature maps outperformed the traditional CNN with B-mode only for most of the CNN models.";
+    const magnuskaTitle = breastPaper1.title;
+    const magnuskaKnnChunk = "In particular, the best model for the Manual Segmentation dataset was trained with the Weighted KNN classifier. This model provided the best sensitivity and specificity.";
+
+    assert(
+      isTechnologySupportedByPaper(cnnSpecificClaim, kimTitle, kimCnnChunk),
+      "Case 3A: Kim et al. CNN paper genuinely supports CNN classification proposition"
+    );
+    assert(
+      !isTechnologySupportedByPaper(cnnSpecificClaim, magnuskaTitle, magnuskaKnnChunk),
+      "Case 3B: Magnuska et al. KNN paper rejected for CNN-specific proposition"
+    );
+
+    // Integration check: Multi-paper synthesis output with Kim + Magnuska for CNN claim
+    const modelOutputCnnCorroboration: MultiPaperSynthesisOutput = {
+      claims: [
+        {
+          text: cnnSpecificClaim,
+          evidence: [
+            { paperId: breastPaper1.id, chunkIds: ["chunk-breast-results-01"] }, // Magnuska (KNN)
+            { paperId: "paper-background-test", chunkIds: ["chunk-results-actual-02"] }, // Deep Learning (CNN)
+          ],
+        },
+      ],
+      disagreements: [],
+      limitations: [],
+      insufficientEvidence: false,
+    };
+
+    const resultCnnCorroboration = validateMultiPaperSynthesis(
+      modelOutputCnnCorroboration,
+      allTestEvidenceSets,
+      "What does the available literature say about AI-assisted breast ultrasound classification?"
+    );
+    assert(
+      resultCnnCorroboration.claims.length === 1,
+      "Case 3C: Claim preserved with valid deep learning citation"
+    );
+    assert(
+      resultCnnCorroboration.claims[0].supportingPaperCount === 1,
+      "Case 3D: Supporting paper count is strictly 1 (Magnuska KNN citation dropped from CNN claim)"
+    );
+    assert(
+      resultCnnCorroboration.claims[0].supportingPaperIds[0] === "paper-background-test",
+      "Case 3E: Only genuine deep learning paper counted as supporting"
+    );
+
+    // Case 4: Symmetrical limitation verification: Breast ultrasound limitations citing benign skin study
+    console.log("  Testing Case 4: Symmetrical Limitation Verification...");
+    const modelOutputSkinLimitation: MultiPaperSynthesisOutput = {
+      claims: [
+        {
+          text: "Computer-aided decision support systems achieve high accuracy in breast lesion classification.",
+          evidence: [{ paperId: breastPaper1.id, chunkIds: ["chunk-breast-results-01"] }],
+        },
+      ],
+      disagreements: [],
+      limitations: [
+        {
+          text: "The study collective consisted exclusively of benign skin lesions such as epidermal cysts and pilomatricoma.",
+          evidence: [{ paperId: skinTumorPaper.id, chunkIds: ["chunk-skin-results-02"] }],
+        },
+      ],
+      insufficientEvidence: false,
+    };
+
+    const resultSkinLimitation = validateMultiPaperSynthesis(
+      modelOutputSkinLimitation,
+      allTestEvidenceSets,
+      "What does the available literature say about AI-assisted breast ultrasound classification?"
+    );
+    assert(
+      resultSkinLimitation.limitations.length === 0,
+      "Case 4A Negative: Skin-tumor limitation strictly rejected and withheld in breast ultrasound synthesis"
+    );
+    assert(
+      resultSkinLimitation.rejectedCitationCount === 1,
+      "Case 4B Negative: Skin-tumor citation recorded as rejected under limitations"
+    );
+
+    // Negative 4C: Limitation asserting unsupervised algorithm improvements cited against IRB ethics chunk
+    const modelOutputEthicsLimitation: MultiPaperSynthesisOutput = {
+      claims: [
+        {
+          text: "Computer-aided decision support systems achieve high accuracy in breast lesion classification.",
+          evidence: [{ paperId: breastPaper1.id, chunkIds: ["chunk-breast-results-01"] }],
+        },
+      ],
+      disagreements: [],
+      limitations: [
+        {
+          text: "Magnuska et al. noted that the performance of their model could be improved by using unsupervised classification algorithms.",
+          evidence: [{ paperId: breastPaper2.id, chunkIds: ["chunk-breast-discussion-02"] }],
+        },
+      ],
+      insufficientEvidence: false,
+    };
+
+    const resultEthicsLimitation = validateMultiPaperSynthesis(
+      modelOutputEthicsLimitation,
+      allTestEvidenceSets,
+      "What does the available literature say about AI-assisted breast ultrasound classification?"
+    );
+    assert(
+      resultEthicsLimitation.limitations.length === 0,
+      "Case 4C Negative: Hallucinated unsupervised algorithm limitation withheld when not supported by chunk"
+    );
+
+    // Positive 4D: Valid limitation supported by chunk
+    const modelOutputValidLimitation: MultiPaperSynthesisOutput = {
+      claims: [
+        {
+          text: "Computer-aided decision support systems achieve high accuracy in breast lesion classification.",
+          evidence: [{ paperId: breastPaper1.id, chunkIds: ["chunk-breast-results-01"] }],
+        },
+      ],
+      disagreements: [],
+      limitations: [
+        {
+          text: "Combining CEUS and SWE technologies may increase examination costs for patients.",
+          evidence: [{ paperId: breastPaper2.id, chunkIds: ["chunk-breast-cost-limitation"] }],
+        },
+      ],
+      insufficientEvidence: false,
+    };
+
+    const resultValidLimitation = validateMultiPaperSynthesis(
+      modelOutputValidLimitation,
+      allTestEvidenceSets,
+      "What does the available literature say about AI-assisted breast ultrasound classification?"
+    );
+    assert(
+      resultValidLimitation.limitations.length === 1,
+      "Case 4D Positive: Valid grounded cost limitation accepted and hydrated"
+    );
+    assert(
+      resultValidLimitation.limitations[0].citations[0].paperId === breastPaper2.id,
+      "Case 4D Positive: Grounded in Li et al. (breastPaper2)"
+    );
+
+    // Negative 4E: Clinical imaging limitation incorrectly attributed to AI-assisted classification
+    const modelOutputClinicalLimitationAttributedToAi: MultiPaperSynthesisOutput = {
+      claims: [
+        {
+          text: "Computer-aided decision support systems achieve high accuracy in breast lesion classification.",
+          evidence: [{ paperId: breastPaper1.id, chunkIds: ["chunk-breast-results-01"] }],
+        },
+      ],
+      disagreements: [],
+      limitations: [
+        {
+          text: "AI-assisted classification systems increase examination costs for patients when combining CEUS and SWE imaging.",
+          evidence: [{ paperId: breastPaper2.id, chunkIds: ["chunk-breast-cost-limitation"] }],
+        },
+      ],
+      insufficientEvidence: false,
+    };
+
+    const resultAiLimitation = validateMultiPaperSynthesis(
+      modelOutputClinicalLimitationAttributedToAi,
+      allTestEvidenceSets,
+      "What does the available literature say about AI-assisted breast ultrasound classification?"
+    );
+    assert(
+      resultAiLimitation.limitations.length === 0,
+      "Case 4E Negative: Clinical imaging cost limitation incorrectly attributed to AI classification is rejected"
+    );
+    assert(
+      resultAiLimitation.rejectedCitationCount === 1,
+      "Case 4E Negative: Rejected citation recorded for AI attribution error in limitations"
+    );
+
+    // Case 5: Hypothetical potential vs measured study outcome
+    console.log("  Testing Case 5: Hypothetical Potential vs Measured Study Outcomes...");
+    const measuredBiopsyOutcomeClaim = "AI models empirically reduced unnecessary biopsies by 30% in clinical practice.";
+    const potentialBiopsyBenefitClaim = "Multimodal ultrasound has the potential to reduce unnecessary biopsies by improving diagnostic differentiation.";
+    const prospectivePassage = "The use of US + CEUS + SWE is beneficial for further differentiating benign and malignant breast lesions according to the US BI-RADS 4, thereby reducing unnecessary biopsies or surgeries.";
+
+    assert(
+      isHypotheticalBenefitTreatedAsEmpiricalResult(measuredBiopsyOutcomeClaim, prospectivePassage),
+      "Case 5A Negative: Rejects claim asserting measured empirical biopsy reduction without trial data"
+    );
+    assert(
+      !isHypotheticalBenefitTreatedAsEmpiricalResult(potentialBiopsyBenefitClaim, prospectivePassage),
+      "Case 5B Positive: Allows properly qualified claim expressing potential clinical benefit"
+    );
 
     console.log("\n================================================================================");
     console.log(`PHASE 11.2 TEST SUMMARY: ${passed} PASSED, ${failed} FAILED`);

@@ -43,23 +43,23 @@ function formatSnippet(text: string, maxLength: number = 240): string {
 }
 
 /**
- * Validates domain alignment: If a claim asserts empirical findings for a specific clinical domain
+ * Validates domain alignment: If a proposition asserts findings for a specific clinical domain
  * (e.g. breast ultrasound), the cited paper and chunk must not be from an unrelated domain
  * (e.g. skin tumors, liver, spine) unless the chunk actually evaluated that target domain.
  */
 export function isDomainMismatched(
-  claimText: string,
+  propositionText: string,
   paperTitle: string,
   chunkSection: string | null,
   chunkText: string,
   question?: string
 ): boolean {
-  const lowerClaim = claimText.toLowerCase();
+  const lowerProp = propositionText.toLowerCase();
   const lowerPaper = paperTitle.toLowerCase();
   const lowerChunk = chunkText.toLowerCase();
   const lowerQuestion = (question || "").toLowerCase();
 
-  const isBreastContext = /\bbreast\b/i.test(lowerClaim) || /\bbreast\b/i.test(lowerQuestion);
+  const isBreastContext = /\bbreast\b/i.test(lowerProp) || /\bbreast\b/i.test(lowerQuestion);
 
   // Target domain: Breast
   if (isBreastContext) {
@@ -90,7 +90,7 @@ export function isDomainMismatched(
   }
 
   // Target domain: Quantum Computing / Surface Codes
-  const isQuantumContext = /\b(quantum|surface\s+code)\b/i.test(lowerClaim) || /\b(quantum|surface\s+code)\b/i.test(lowerQuestion);
+  const isQuantumContext = /\b(quantum|surface\s+code)\b/i.test(lowerProp) || /\b(quantum|surface\s+code)\b/i.test(lowerQuestion);
   if (isQuantumContext) {
     if (/\b(breast|cancer|ultrasound|dermatol|liver)\b/i.test(lowerPaper) && !/\bquantum\b/i.test(lowerPaper)) {
       return true;
@@ -121,7 +121,6 @@ export function isBackgroundLiteratureReview(
   chunkSection: string | null,
   chunkText: string
 ): boolean {
-  // If the chunk text is reviewing a third-party study by citation, reject it
   if (isThirdPartyLiteratureChunk(chunkSection, chunkText)) {
     return true;
   }
@@ -131,12 +130,185 @@ export function isBackgroundLiteratureReview(
 
   // In background/intro, check if text discusses other studies with bracket citations
   if (/\[\d+\]/.test(chunkText)) {
-    // If the claim asserts an empirical performance or improvement outcome
     if (/accuracy|improved|superior|high\s+diagnostic|effectively|demonstrated|screening\s+tool|performance|enhance|classify|classification/i.test(claimText)) {
       return true;
     }
   }
   return false;
+}
+
+/**
+ * Checks whether an AI or CAD outcome/claim is falsely attributed to a clinical imaging study
+ * (e.g., attributing biopsy reduction or diagnostic accuracy to AI when the study evaluated
+ * radiologist-performed CEUS/SWE without AI models).
+ */
+export function isAiAttributionToClinicalStudy(
+  claimText: string,
+  paperTitle: string,
+  chunkText: string
+): boolean {
+  const lowerClaim = claimText.toLowerCase();
+  const lowerPaper = paperTitle.toLowerCase();
+  const lowerChunk = chunkText.toLowerCase();
+
+  const assertsAi = /\b(ai|artificial\s+intelligence|machine\s+learning|deep\s+learning|cad|computer-aided|neural\s+network|cnn|algorithm|classifiers?|classification\s+model)\b/i.test(lowerClaim);
+  if (!assertsAi) return false;
+
+  // Non-AI clinical imaging studies (such as CEUS / SWE studies by physicians)
+  const isClinicalModalityPaper = /\b(multimodal\s+ultrasound|contrast-enhanced|ceus|shear-wave|swe|elastograph\w*)\b/i.test(lowerPaper) &&
+    !/\b(ai|artificial\s+intelligence|cad|computer-aided|deep\s+learning|machine\s+learning|neural|network|model|cnn)\b/i.test(lowerPaper);
+
+  const chunkHasAi = /\b(ai|cad|computer-aided|deep\s+learning|neural\s+network|cnn|machine\s+learning|algorithm|model)\b/i.test(lowerChunk);
+
+  return isClinicalModalityPaper && !chunkHasAi;
+}
+
+/**
+ * Verifies that the cited paper and passage actually evaluate the specific technical
+ * method or classifier asserted in the claim (e.g., CNN vs KNN vs clinical modalities),
+ * preventing false cross-study corroboration across disparate techniques.
+ */
+export function isTechnologySupportedByPaper(
+  claimText: string,
+  paperTitle: string,
+  chunkText: string
+): boolean {
+  const lowerClaim = claimText.toLowerCase();
+  const lowerPaper = paperTitle.toLowerCase();
+  const lowerChunk = chunkText.toLowerCase();
+
+  // CNN / Deep Learning assertion
+  if (/\b(cnn|convolutional[\s-]+neural[\s-]+network|deep[\s-]+neural[\s-]+network|deep[\s-]+learning|fc-cnn|resnet|densenet|vgg)\b/i.test(lowerClaim)) {
+    const hasDeepLearning = /\b(cnn|convolutional|deep[\s-]+learning|deep[\s-]+neural|fc-cnn|resnet|densenet|vgg|attention[\s-]+(network|mechanism|layer|model)|neural[\s-]+network)\b/i.test(lowerPaper) ||
+      /\b(cnn|convolutional|deep[\s-]+learning|deep[\s-]+neural|fc-cnn|resnet|densenet|vgg|attention[\s-]+(layer|mechanism|network)|neural[\s-]+network)\b/i.test(lowerChunk);
+    if (!hasDeepLearning) return false;
+  }
+
+  // Traditional KNN / handcrafted classifier assertion
+  if (/\b(knn|k[\s-]+nearest|weighted[\s-]+knn|ensemble[\s-]+subspace[\s-]+knn|median[\s-]+knn|handcrafted[\s-]+features?)\b/i.test(lowerClaim)) {
+    const hasKnn = /\b(knn|k[\s-]+nearest|texture[\s-]+features?|handcrafted|feature[\s-]+extraction)\b/i.test(lowerPaper) ||
+      /\b(knn|k[\s-]+nearest|texture[\s-]+features?|handcrafted)\b/i.test(lowerChunk);
+    if (!hasKnn) return false;
+  }
+
+  // Clinical SWE / CEUS assertion without AI
+  if (/\b(contrast[\s-]+enhanced[\s-]+ultrasound|ceus|shear[\s-]+wave[\s-]+elastography|swe)\b/i.test(lowerClaim) &&
+      !/\b(ai|cad|machine[\s-]+learning|deep[\s-]+learning)\b/i.test(lowerClaim)) {
+    const hasSweCeus = /\b(ceus|swe|contrast[\s-]+enhanced|elastograph\w*)\b/i.test(lowerPaper) ||
+      /\b(ceus|swe|contrast[\s-]+enhanced|elastograph\w*)\b/i.test(lowerChunk);
+    if (!hasSweCeus) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Checks whether an empirical diagnostic accuracy claim is supported by actual classification
+ * performance evaluation metrics, rather than merely discussing training setup/hardware or general
+ * clinical challenges (operator variability, fatigue, acoustic artifacts).
+ */
+export function isAccuracyPropositionSupported(claimText: string, chunkText: string): boolean {
+  const lowerClaim = claimText.toLowerCase();
+  const lowerChunk = chunkText.toLowerCase();
+
+  const isAccuracyClaim = /\b(diagnostic\s+accuracy|classification\s+accuracy|accuracy|sensitivity|specificity|auroc|auc|precision|recall|f1(-score|\s+score)?|discriminat(ing|ion)|performance)\b/i.test(lowerClaim);
+  if (!isAccuracyClaim) return true;
+
+  const hasPerformanceMetrics = /\b(accuracy|sensitivity|specificity|auroc|auc|precision|recall|f1|f-measure|roc|dice|true\s+positives?|false\s+positives?|outperformed|superior\s+performance|classification\s+skills|precision\s+metrics|best\s+model|highest\s+accuracy|p\s*[<=]\s*\d|\d+(\.\d+)?%)\b/i.test(lowerChunk);
+  const isOnlyTrainingSetupOrHardware = /\b(python|kaggle|hardware|gpus?|batch\s+size|epochs?|learning\s+rate|fine\s+tuning|trained\s+with\s+\d+\s+epochs?)\b/i.test(lowerChunk) && !hasPerformanceMetrics;
+  const isOnlyClinicalChallenges = /\b(operator-dependent|physical\s+fatigue|lack\s+of\s+attentiveness|misdetection|speckle\s+noise|acoustic\s+shadowing)\b/i.test(lowerChunk) && !hasPerformanceMetrics;
+  const isOnlyEthicsOrEnrollment = /\b(institutional\s+review\s+board|ethics\s+committee|declaration\s+of\s+helsinki|informed\s+consent)\b/i.test(lowerChunk) && !hasPerformanceMetrics;
+
+  if (isOnlyTrainingSetupOrHardware || isOnlyClinicalChallenges || isOnlyEthicsOrEnrollment || !hasPerformanceMetrics) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Detects whether a claim asserts an unmeasured speculative or future benefit (e.g. "reduces biopsies")
+ * as an established, measured empirical trial outcome when the passage only discusses potential or hypothesis.
+ */
+export function isHypotheticalBenefitTreatedAsEmpiricalResult(claimText: string, chunkText: string): boolean {
+  const lowerClaim = claimText.toLowerCase();
+  const lowerChunk = chunkText.toLowerCase();
+
+  // If claim asserts that an intervention reduces biopsies or surgeries as an empirical outcome
+  const assertsBiopsyReduction = /\b(reduces?|reduced|eliminat\w*|decreas\w*|lowers?)\s+(unnecessary\s+)?(biops\w*|surger\w*|procedures?)\b/i.test(lowerClaim);
+  if (!assertsBiopsyReduction) return false;
+
+  // If the claim is already properly qualified as a potential/inferred/suggested benefit, it's acceptable
+  const isProperlyQualified = /\b(potential|suggest(ed|s)?|hypothesi[zs]\w*|may\s+help|could\s+reduce|aims\s+to|has\s+the\s+potential)\b/i.test(lowerClaim);
+  if (isProperlyQualified) return false;
+
+  // If chunk only discusses prospective/potential benefit without empirical biopsy trial outcomes
+  const isHypotheticalInChunk = /\b(may\s+help|potential\s+to|could\s+be|beneficial\s+for.*thereby\s+reducing|can\s+benefit.*reducing|thereby\s+reducing\s+the\s+need)\b/i.test(lowerChunk);
+  const hasMeasuredBiopsyTrialData = /\b(biopsy\s+rate\s+(decreased|reduced)\s+by|\d+%\s+reduction\s+in\s+biopsies|avoided\s+in\s+\d+|biopsies\s+were\s+prevented)\b/i.test(lowerChunk);
+
+  if (isHypotheticalInChunk && !hasMeasuredBiopsyTrialData) {
+    return true; // Claim treated a hypothetical/speculative benefit as an established empirical result
+  }
+
+  return false;
+}
+
+/**
+ * Verifies that the cited chunk passage actually contains substantive evidence
+ * supporting the specific claim, rather than describing a limitation, negative finding,
+ * or unrelated detail.
+ */
+export function isClaimSupportedByChunk(claimText: string, chunkText: string): boolean {
+  const lowerClaim = claimText.toLowerCase();
+  const lowerChunk = chunkText.toLowerCase();
+
+  // 1. Negative result / limited effect inversion:
+  if (
+    /\b(improves?|increases?|higher|superior|enhances?)\b/i.test(lowerClaim) &&
+    /\b(diagnostic\s+accuracy|accuracy|sensitivity|specificity|efficacy|positive\s+predictive\s+value|ppv)\b/i.test(lowerClaim)
+  ) {
+    if (
+      /\blimited\s+effects?\b/i.test(lowerChunk) &&
+      !/\b(improves?|higher|enhanced?|better)\s+(the\s+)?(sensitivity|specificity|accuracy|efficacy|diagnostic)\b/i.test(lowerChunk)
+    ) {
+      return false;
+    }
+  }
+
+  // 2. Operator dependency misattribution:
+  if (
+    /\b(improve|achieve|accurate|superior)\b/i.test(lowerClaim) &&
+    /\b(breast\s+cancer\s+diagnosis\s+technique\s+is\s+operator-dependent\s+and\s+demands\s+the\s+skills)\b/i.test(lowerChunk) &&
+    !/\b(we\s+found|results\s+show|achieved|accuracy\s+of)\b/i.test(lowerChunk)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Checks whether an asserted limitation is genuinely grounded in the cited passage,
+ * rejecting citations to unrelated passages (such as dataset ethics/IRB notices,
+ * hospital department descriptions, or purely positive metric summaries).
+ */
+export function isLimitationSupportedByChunk(limitationText: string, chunkText: string): boolean {
+  const lowerLim = limitationText.toLowerCase();
+  const lowerChunk = chunkText.toLowerCase();
+
+  // Pure ethics/IRB chunk without any limitation context
+  const isEthicsOnly = /\b(institutional\s+review\s+board|ethics\s+committee|declaration\s+of\s+helsinki|informed\s+consent)\b/i.test(lowerChunk) &&
+    !/\b(limit\w*|challenge|drawback|shortcoming|disadvantage|scarcity|small(\s+size)?|unbalanced|bias\w*|fail\w*|difficult\w*|overfit\w*|cost|expense)\b/i.test(lowerChunk);
+  if (isEthicsOnly) return false;
+
+  // Key topic alignment checks
+  if (/unsupervised/i.test(lowerLim) && !/unsupervised/i.test(lowerChunk)) return false;
+  if (/\b(cost|price|expensive)\b/i.test(lowerLim) && !/\b(cost|expense|price|expensive|fee)\b/i.test(lowerChunk)) return false;
+  if (/\b(unbalanced|imbalance)\b/i.test(lowerLim) && !/\b(unbalanced|imbalance|skew)\b/i.test(lowerChunk)) return false;
+  if (/\b(operator|fatigue)\b/i.test(lowerLim) && !/\b(operator|fatigue|skill|experience)\b/i.test(lowerChunk)) return false;
+  if (/\b(sample\s+size|small\s+dataset|small\s+size|limited\s+data)\b/i.test(lowerLim) &&
+      !/\b(small|scarcity|lack\s+of\s+data|limited|sample\s+size|few\s+well-annotated)\b/i.test(lowerChunk)) return false;
+
+  return true;
 }
 
 /**
@@ -186,42 +358,78 @@ export function isNonComparableOrPseudoDisagreement(
   return { isPseudo: false };
 }
 
-/**
- * Verifies that the cited chunk passage actually contains substantive evidence
- * supporting the specific claim, rather than describing a limitation, negative finding,
- * or unrelated detail.
- */
-export function isClaimSupportedByChunk(claimText: string, chunkText: string): boolean {
-  const lowerClaim = claimText.toLowerCase();
-  const lowerChunk = chunkText.toLowerCase();
+export interface EvidenceVerificationParams {
+  propositionText: string;
+  category: "claim" | "disagreement" | "limitation";
+  paperTitle: string;
+  chunkSection: string | null;
+  chunkText: string;
+  question?: string;
+}
 
-  // 1. Negative result / limited effect inversion:
-  // If the claim asserts an improvement in diagnostic accuracy or efficacy,
-  // but the passage explicitly states it has limited effect, and does NOT report improvement:
-  if (
-    /\b(improves?|increases?|higher|superior|enhances?)\b/i.test(lowerClaim) &&
-    /\b(diagnostic\s+accuracy|accuracy|sensitivity|specificity|efficacy|positive\s+predictive\s+value|ppv)\b/i.test(lowerClaim)
-  ) {
-    if (
-      /\blimited\s+effects?\b/i.test(lowerChunk) &&
-      !/\b(improves?|higher|enhanced?|better)\s+(the\s+)?(sensitivity|specificity|accuracy|efficacy|diagnostic)\b/i.test(lowerChunk)
-    ) {
-      return false;
+export interface EvidenceVerificationResult {
+  isValid: boolean;
+  reason?: string;
+}
+
+/**
+ * Unified evidence verification engine ensuring symmetric evidence-integrity requirements
+ * across claims, corroboration statements, and limitations.
+ */
+export function verifyEvidencePassage(params: EvidenceVerificationParams): EvidenceVerificationResult {
+  const { propositionText, category, paperTitle, chunkSection, chunkText, question } = params;
+
+  // 1. Bibliographic / reference check (all categories)
+  if (isReferenceChunk(chunkSection, chunkText)) {
+    return { isValid: false, reason: "Reference or bibliography chunk" };
+  }
+
+  // 2. Third-party external literature survey check (all categories)
+  if (isThirdPartyLiteratureChunk(chunkSection, chunkText)) {
+    return { isValid: false, reason: "Third-party literature review passage" };
+  }
+
+  // 3. Domain alignment check (all categories: claims, disagreements, and limitations)
+  if (isDomainMismatched(propositionText, paperTitle, chunkSection, chunkText, question)) {
+    return { isValid: false, reason: "Domain mismatch between proposition and study subject" };
+  }
+
+  // 4. Category-specific checks
+  if (category === "claim") {
+    if (isBackgroundLiteratureReview(propositionText, chunkSection, chunkText)) {
+      return { isValid: false, reason: "Introductory background survey citing external studies" };
+    }
+
+    if (isAiAttributionToClinicalStudy(propositionText, paperTitle, chunkText)) {
+      return { isValid: false, reason: "AI attribution error: clinical study without AI/CAD intervention" };
+    }
+
+    if (!isTechnologySupportedByPaper(propositionText, paperTitle, chunkText)) {
+      return { isValid: false, reason: "Methodological/technology mismatch with cited study" };
+    }
+
+    if (!isAccuracyPropositionSupported(propositionText, chunkText)) {
+      return { isValid: false, reason: "Accuracy claim not supported by performance evaluation evidence" };
+    }
+
+    if (isHypotheticalBenefitTreatedAsEmpiricalResult(propositionText, chunkText)) {
+      return { isValid: false, reason: "Hypothetical/speculative potential treated as empirical outcome" };
+    }
+
+    if (!isClaimSupportedByChunk(propositionText, chunkText)) {
+      return { isValid: false, reason: "Negative or limited effect passage contradicts claim assertion" };
+    }
+  } else if (category === "limitation") {
+    if (isAiAttributionToClinicalStudy(propositionText, paperTitle, chunkText)) {
+      return { isValid: false, reason: "AI attribution error: clinical imaging limitation incorrectly attributed to AI/CAD" };
+    }
+
+    if (!isLimitationSupportedByChunk(propositionText, chunkText)) {
+      return { isValid: false, reason: "Limitation proposition not substantiated by passage discussion" };
     }
   }
 
-  // 2. Operator dependency misattribution:
-  // If the claim asserts that a method automates or improves diagnostic detection,
-  // but the passage solely describes operator fatigue/misdetection as a diagnostic challenge:
-  if (
-    /\b(improve|achieve|accurate|superior)\b/i.test(lowerClaim) &&
-    /\b(breast\s+cancer\s+diagnosis\s+technique\s+is\s+operator-dependent\s+and\s+demands\s+the\s+skills)\b/i.test(lowerChunk) &&
-    !/\b(we\s+found|results\s+show|achieved|accuracy\s+of)\b/i.test(lowerChunk)
-  ) {
-    return false;
-  }
-
-  return true;
+  return { isValid: true };
 }
 
 /**
@@ -234,13 +442,13 @@ export function isClaimSupportedByChunk(claimText: string, chunkText: string): b
  * 4. Unsupported claim dropping: If a claim loses ALL valid citations, it is completely dropped.
  * 5. Hydration: Paper titles, authors, DOIs, page numbers, sections, and snippets are hydrated server-side.
  * 6. Computes exact unique supporting paper count per claim ("Supported by X papers").
+ * 7. Applies symmetric evidence verification across claims, disagreements, and limitations.
  */
 export function validateMultiPaperSynthesis(
   modelOutput: MultiPaperSynthesisOutput,
   suppliedEvidenceSets: PaperEvidenceSet[],
   question?: string
 ): MultiPaperValidationResult {
-  // Build lookup index: paperId -> paperMetadata & chunkMap
   interface PaperLookup {
     paperTitle: string;
     authors: string[];
@@ -314,7 +522,6 @@ export function validateMultiPaperSynthesis(
     for (const ev of rawClaim.evidence || []) {
       const paperMeta = paperLookup.get(ev.paperId);
       if (!paperMeta) {
-        // Claimed paper was not in selected evidence set
         rejectedCitationCount += ev.chunkIds.length;
         invalidCitationIds.push(...ev.chunkIds);
         continue;
@@ -325,39 +532,21 @@ export function validateMultiPaperSynthesis(
         const chunkMeta = paperMeta.chunks.get(trimmedChunkId);
 
         if (!chunkMeta) {
-          // Chunk was not in supplied evidence set for this paper
           rejectedCitationCount++;
           invalidCitationIds.push(trimmedChunkId);
           continue;
         }
 
-        // 1. Reference check: reject citations pointing to bibliography or references
-        if (isReferenceChunk(chunkMeta.section, chunkMeta.text)) {
-          rejectedCitationCount++;
-          invalidCitationIds.push(trimmedChunkId);
-          continue;
-        }
+        const verification = verifyEvidencePassage({
+          propositionText: claimText,
+          category: "claim",
+          paperTitle: paperMeta.paperTitle,
+          chunkSection: chunkMeta.section,
+          chunkText: chunkMeta.text,
+          question,
+        });
 
-        // 2. Cross-domain mismatch check:
-        // A skin-tumor or non-breast study must not be presented as direct evidence of breast ultrasound diagnosis
-        if (isDomainMismatched(claimText, paperMeta.paperTitle, chunkMeta.section, chunkMeta.text, question)) {
-          rejectedCitationCount++;
-          invalidCitationIds.push(trimmedChunkId);
-          continue;
-        }
-
-        // 3. Third-party background literature survey check:
-        // Introductory background citing other works (e.g. "In the study presented in [17]...")
-        // must not automatically substantiate claimed measured improvements of THIS paper
-        if (isBackgroundLiteratureReview(claimText, chunkMeta.section, chunkMeta.text)) {
-          rejectedCitationCount++;
-          invalidCitationIds.push(trimmedChunkId);
-          continue;
-        }
-
-        // 4. Substantive evidence support check:
-        // Excerpt must actually support the positive claim (e.g. not a 'limited effect' passage)
-        if (!isClaimSupportedByChunk(claimText, chunkMeta.text)) {
+        if (!verification.isValid) {
           rejectedCitationCount++;
           invalidCitationIds.push(trimmedChunkId);
           continue;
@@ -394,7 +583,7 @@ export function validateMultiPaperSynthesis(
     });
   }
 
-  // 2. Validate Disagreements & Limitations
+  // 2. Validate Disagreements
   const validatedLimitations: ValidatedMultiPaperLimitation[] = [];
   const validatedDisagreements: ValidatedMultiPaperDisagreement[] = [];
 
@@ -413,8 +602,16 @@ export function validateMultiPaperSynthesis(
         const chunkMeta = paperMeta.chunks.get(chunkId?.trim());
         if (!chunkMeta) continue;
 
-        // Reject reference or bibliography citations
-        if (isReferenceChunk(chunkMeta.section, chunkMeta.text)) {
+        const verification = verifyEvidencePassage({
+          propositionText: desc,
+          category: "disagreement",
+          paperTitle: paperMeta.paperTitle,
+          chunkSection: chunkMeta.section,
+          chunkText: chunkMeta.text,
+          question,
+        });
+
+        if (!verification.isValid) {
           rejectedCitationCount++;
           continue;
         }
@@ -453,7 +650,6 @@ export function validateMultiPaperSynthesis(
     const pseudoCheck = isNonComparableOrPseudoDisagreement(desc, paperTitles);
 
     if (pseudoCheck.isPseudo) {
-      // Move to limitations to preserve scientific context without falsely claiming a disagreement
       validatedLimitations.push({
         text: pseudoCheck.limitationText || desc,
         supportingPaperIds: Array.from(paperIdsSet),
@@ -462,7 +658,6 @@ export function validateMultiPaperSynthesis(
       continue;
     }
 
-    // Genuinely conflicting empirical results across comparable interventions
     validatedDisagreements.push({
       description: desc,
       supportingPaperIds: Array.from(paperIdsSet),
@@ -486,9 +681,18 @@ export function validateMultiPaperSynthesis(
         const chunkMeta = paperMeta.chunks.get(chunkId?.trim());
         if (!chunkMeta) continue;
 
-        // Reject reference or bibliography citations
-        if (isReferenceChunk(chunkMeta.section, chunkMeta.text)) {
+        const verification = verifyEvidencePassage({
+          propositionText: text,
+          category: "limitation",
+          paperTitle: paperMeta.paperTitle,
+          chunkSection: chunkMeta.section,
+          chunkText: chunkMeta.text,
+          question,
+        });
+
+        if (!verification.isValid) {
           rejectedCitationCount++;
+          invalidCitationIds.push(chunkId.trim());
           continue;
         }
 
@@ -509,6 +713,7 @@ export function validateMultiPaperSynthesis(
       }
     }
 
+    // STRICT WITHHOLDING: If all citations were invalid, drop limitation
     if (anchors.length > 0) {
       validatedLimitations.push({
         text,
@@ -518,7 +723,6 @@ export function validateMultiPaperSynthesis(
     }
   }
 
-  // If zero valid claims remain after validation, return insufficient evidence state
   const isInsufficient = validatedClaims.length === 0;
 
   return {

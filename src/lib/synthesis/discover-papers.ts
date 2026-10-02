@@ -215,7 +215,7 @@ export async function discoverRelevantPapers(
     }
 
     // Specific clinical/anatomical domain alignment
-    // When the query explicitly targets a anatomical/disease domain (e.g. "breast"),
+    // When the query explicitly targets an anatomical/disease domain (e.g. "breast"),
     // papers with that explicit domain in their title receive an alignment boost
     const targetDomains = ["breast", "skin", "liver", "thyroid", "lymph", "spine", "cervical", "lung", "brain", "prostate", "retina"];
     const matchedDomains = targetDomains.filter((d) => lowerQuery.includes(d));
@@ -224,6 +224,12 @@ export async function discoverRelevantPapers(
       const titleMatchesTarget = matchedDomains.some((d) => lowerTitle.includes(d));
       if (titleMatchesTarget) {
         score += 0.15;
+      } else {
+        const otherDomains = targetDomains.filter((d) => !matchedDomains.includes(d));
+        const matchesOtherDomain = otherDomains.some((d) => lowerTitle.includes(d));
+        if (matchesOtherDomain) {
+          score -= 0.3; // Out-of-domain penalty so irrelevant organ studies do not crowd out target papers
+        }
       }
     }
 
@@ -249,10 +255,26 @@ export async function discoverRelevantPapers(
 
   const boundedCandidates = rankedCandidates.slice(0, candidateLimit);
 
-  // Filter selected papers meeting the minimum relevance threshold
-  const selectedPapers = boundedCandidates
-    .filter((p) => p.bestChunkSimilarity >= minSimilarity || p.relevanceScore >= minSimilarity)
-    .slice(0, maxSelected);
+  // Filter selected papers meeting the minimum relevance threshold and domain alignment
+  const targetDomains = ["breast", "skin", "liver", "thyroid", "lymph", "spine", "cervical", "lung", "brain", "prostate", "retina", "kidney", "gallbladder"];
+  const matchedDomains = targetDomains.filter((d) => lowerQuery.includes(d));
+
+  let candidatePool = boundedCandidates.filter(
+    (p) => p.bestChunkSimilarity >= minSimilarity || p.relevanceScore >= minSimilarity
+  );
+
+  if (matchedDomains.length > 0) {
+    const domainSpecific = candidatePool.filter((p) => {
+      const lowerTitle = p.title.toLowerCase();
+      return matchedDomains.some((d) => lowerTitle.includes(d));
+    });
+    // If target domain papers exist, restrict selected papers to the target domain
+    if (domainSpecific.length > 0) {
+      candidatePool = domainSpecific;
+    }
+  }
+
+  const selectedPapers = candidatePool.slice(0, maxSelected);
 
   const durationMs = Date.now() - startTime;
 
