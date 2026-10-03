@@ -59,7 +59,7 @@ export function AISummaryView({ paperTitle, summary }: AISummaryProps) {
         <div className="flex items-start gap-2.5 rounded-xl border border-amber-200/80 bg-amber-50/70 p-3.5 text-xs text-amber-900">
           <Info className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
           <p className="leading-relaxed">
-            <span className="font-semibold">Academic Integrity Notice:</span> This synthesis was generated using OpenAI Structured Outputs anchored exclusively to verbatim manuscript chunks. Statements are mapped to verified page and section citation anchors. Always cross-reference critical empirical claims against the original author manuscript.
+            <span className="font-semibold">Academic Integrity Notice:</span> This synthesis was generated using OpenAI Structured Outputs anchored exclusively to verbatim manuscript chunks. Statements are mapped to cited page and section anchors. Always cross-reference critical empirical claims against the original author manuscript.
           </p>
         </div>
 

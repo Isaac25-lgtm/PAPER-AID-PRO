@@ -164,7 +164,7 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
         <div className="space-y-1">
           <p className="font-semibold text-indigo-950">Library Scope Disclosure</p>
           <p className="text-indigo-800 leading-relaxed">
-            This research synthesis is grounded strictly in peer-reviewed manuscripts currently ingested in your AI Research Hub library. Every empirical statement is traceable to verified manuscript chunks.
+            This research synthesis is grounded strictly in peer-reviewed manuscripts currently ingested in your AI Research Hub library. Every empirical statement is traceable to cited manuscript chunks.
           </p>
         </div>
       </div>
@@ -365,7 +365,7 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                                   Supported by {paperCount} {paperCount === 1 ? "paper" : "papers"}
                                 </Badge>
                                 <span className="text-[11px] text-slate-400">
-                                  {claim.citations.length} verified {claim.citations.length === 1 ? "excerpt" : "excerpts"}
+                                  {claim.citations.length} supporting {claim.citations.length === 1 ? "manuscript excerpt" : "manuscript excerpts"}
                                 </span>
                               </div>
                             </div>

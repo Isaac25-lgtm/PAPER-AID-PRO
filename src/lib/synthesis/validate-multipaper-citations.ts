@@ -285,6 +285,120 @@ export function isHypotheticalBenefitTreatedAsEmpiricalResult(claimText: string,
 }
 
 /**
+ * Verifies that comparative superiority claims (e.g. "outperformed existing breast cancer methods",
+ * "superior to state-of-the-art", "surpassed prior models") are actually supported by comparative
+ * baseline evaluation in the cited chunk, rather than merely evaluating internal proposed model variants.
+ */
+export function isComparativeSuperioritySupported(claimText: string, chunkText: string): boolean {
+  const lowerClaim = claimText.toLowerCase();
+  const lowerChunk = chunkText.toLowerCase();
+
+  const assertsExternalComparison =
+    /\b(outperform\w*|surpass\w*|superior\s+to|exceed\w*|better\s+than|highest\s+diagnostic\s+accuracy\s+compared\s+to)\s+(existing|other|prior|benchmark|alternative|state-of-the-art|sota)\b/i.test(lowerClaim) ||
+    /\boutperformed\s+existing\s+breast\s+cancer\s+methods\b/i.test(lowerClaim);
+
+  if (!assertsExternalComparison) return true;
+
+  // The chunk must contain genuine comparative baseline evaluation:
+  // e.g. naming specific benchmark architectures (AlexNet, GoogLeNet, ResNet, VGG, MobileNet, Inception, ZFNet, etc.)
+  // or explicit comparison tables (Table 4).
+  // NOTE: Bare conclusion claims like "Compared to existing breast cancer methods, the proposed model achieves the highest diagnostic accuracy"
+  // without baseline models or comparative tables MUST NOT validate comparative superiority!
+  const hasComparativeBaselines =
+    /\b(alexnet|zfnet|vgg|inception|mobilenet|wideresnet|googlenet|resnet(34|50)?|densenet|efficientnet|vit-patch|table\s+4|benchmark\s+architectures?|baseline\s+architectures?)\b/i.test(lowerChunk) ||
+    /\b(outperformed|surpassed|superior\s+to)\s+(alexnet|googlenet|resnet|vgg|densenet|other\s+models\s+such\s+as)\b/i.test(lowerChunk);
+
+  if (!hasComparativeBaselines) {
+    return false;
+  }
+
+  // Cross-dataset check:
+  // If the claim asserts comparative superiority on ultrasound images, but the chunk only compares against
+  // prior literature on histopathology images (Table 5, BreakHis, whole-mount slides, IDC), reject the mismatch!
+  const isUltrasoundClaim = /\b(ultrasound|cairo\s+university)\b/i.test(lowerClaim);
+  const isOnlyHistopathologyComparison = /\b(histopathology|breakhis|whole-mount|idc-negative|idc-positive|table\s+5)\b/i.test(lowerChunk) &&
+    !/\b(cairo\s+university|ultrasound\s+images?\s+dataset|table\s+4)\b/i.test(lowerChunk);
+
+  if (isUltrasoundClaim && isOnlyHistopathologyComparison) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Ensures that conditional or partial empirical improvements across model backbones
+ * (e.g. Kim et al. finding that FC-CNN outperformed traditional CNN for most, but not all, models)
+ * are not converted into unqualified universal superiority claims.
+ */
+export function hasUnqualifiedUniversalAssertion(claimText: string, chunkText: string): boolean {
+  const lowerClaim = claimText.toLowerCase();
+  const lowerChunk = chunkText.toLowerCase();
+
+  const sourceIsQualifiedMost = /\b(for\s+most\s+(of\s+the\s+)?(cnn\s+)?models?|most\s+simulation\s+results|most\s+performance\s+metrics)\b/i.test(lowerChunk);
+  if (!sourceIsQualifiedMost) return false;
+
+  const assertsUniversal = /\b(outperformed|surpassed|superior\s+to)\s+(traditional|conventional)\s+(?:(?:b-mode|b-mode-only)\s+)?cnn\s+models?\b/i.test(lowerClaim);
+  const hasQualification = /\b(for\s+most|most\s+(evaluated\s+)?(cnn\s+)?models?|most\s+architectures?|majority\s+of|some\s+models?|not\s+all)\b/i.test(lowerClaim);
+
+  if (assertsUniversal && !hasQualification) {
+    return true; // Unqualified universal claim when source text only supports "most models"
+  }
+
+  return false;
+}
+
+/**
+ * Splits or prunes compound claims where a valid empirical metric is attached to an unsupported
+ * comparative clause (e.g. "achieved 93% accuracy on X dataset, outperforming existing methods").
+ * If the comparative clause is unsupported by the chunk, returns the base proposition.
+ */
+export function splitOrPruneCompoundClaim(claimText: string, chunkText: string): string {
+  const trimmed = claimText.trim();
+
+  // Pattern 1: "... on dataset, outperforming existing breast cancer methods."
+  const trailingOutperformMatch = trimmed.match(
+    /^(.*?)(?:,\s*|\s+)(?:and\s+)?(?:outperforming|surpassing|exceeding)\s+(?:existing|other|prior|state-of-the-art)\s+.*?\s*(\.)?$/i
+  );
+  if (trailingOutperformMatch && trailingOutperformMatch[1]) {
+    const baseProposition = trailingOutperformMatch[1].trim();
+    if (!isComparativeSuperioritySupported(trimmed, chunkText)) {
+      return baseProposition.endsWith(".") ? baseProposition : baseProposition + ".";
+    }
+  }
+
+  // Pattern 2: "... on dataset and was superior to existing methods."
+  const andSuperiorMatch = trimmed.match(
+    /^(.*?)(?:,\s*|\s+)and\s+(?:was\s+superior\s+to|outperformed)\s+(?:existing|other|prior|state-of-the-art)\s+.*?\s*(\.)?$/i
+  );
+  if (andSuperiorMatch && andSuperiorMatch[1]) {
+    const baseProposition = andSuperiorMatch[1].trim();
+    if (!isComparativeSuperioritySupported(trimmed, chunkText)) {
+      return baseProposition.endsWith(".") ? baseProposition : baseProposition + ".";
+    }
+  }
+
+  return trimmed;
+}
+
+/**
+ * Qualifies universal claim if the source text states that improvement occurred for most, but not all, models.
+ */
+export function qualifyUniversalClaimIfNeeded(claimText: string, chunkText: string): string {
+  if (hasUnqualifiedUniversalAssertion(claimText, chunkText)) {
+    if (/\b(outperformed|surpassed|superior\s+to)\s+(traditional|conventional)\s+(?:(?:b-mode|b-mode-only)\s+)?cnn\s+models?\s*\.?$/i.test(claimText.trim())) {
+      const trimmed = claimText.trim().replace(/\.$/, "");
+      return `${trimmed} for most evaluated architectures.`;
+    }
+    return claimText.replace(
+      /\b(outperformed|surpassed|superior\s+to)\s+((?:traditional|conventional)\s+(?:(?:b-mode|b-mode-only)\s+)?cnn\s+models?)\b/i,
+      "$1 $2 for most evaluated architectures"
+    );
+  }
+  return claimText;
+}
+
+/**
  * Verifies that the cited chunk passage actually contains substantive evidence
  * supporting the specific claim, rather than describing a limitation, negative finding,
  * or unrelated detail.
@@ -295,8 +409,8 @@ export function isClaimSupportedByChunk(claimText: string, chunkText: string): b
 
   // 1. Negative result / limited effect inversion:
   if (
-    /\b(improves?|increases?|higher|superior|enhances?)\b/i.test(lowerClaim) &&
-    /\b(diagnostic\s+accuracy|accuracy|sensitivity|specificity|efficacy|positive\s+predictive\s+value|ppv)\b/i.test(lowerClaim)
+    /\b(improves?|increases?|higher|superior|enhances?|upgrad\w*|benefit\w*|effective\w*)\b/i.test(lowerClaim) &&
+    /\b(diagnostic\s+accuracy|accuracy|sensitivity|specificity|efficacy|positive\s+predictive\s+value|ppv|likelihood|bi-rads\s+category|malignancy)\b/i.test(lowerClaim)
   ) {
     if (
       /\blimited\s+effects?\b/i.test(lowerChunk) &&
@@ -304,6 +418,11 @@ export function isClaimSupportedByChunk(claimText: string, chunkText: string): b
     ) {
       return false;
     }
+  }
+
+  // 1b. Upgrading/downgrading BI-RADS category proposition check:
+  if (/\b(upgrad\w*|downgrad\w*)\s+(bi-rads|categor\w*)\b/i.test(lowerClaim) && !/\b(upgrad\w*|downgrad\w*)\b/i.test(lowerChunk)) {
+    return false;
   }
 
   // 2. Operator dependency misattribution:
@@ -320,6 +439,20 @@ export function isClaimSupportedByChunk(claimText: string, chunkText: string): b
     if (!/\b(loss\s+of\s+skills?|los(e|ing)\s+skills?|de-?skill\w*|erod\w*\s+skills?|diminish\w*\s+skills?|lack\s+of\s+interpretative)\b/i.test(lowerChunk)) {
       return false;
     }
+  }
+
+  // 4. Methodology & technology alignment in claims:
+  // If the claim specifically asserts data augmentation, the chunk must discuss augmentation.
+  if (/\b(data\s+augmentation|augment\w*)\b/i.test(lowerClaim) && !/\b(data\s+augmentation|augment\w*)\b/i.test(lowerChunk)) {
+    return false;
+  }
+  // If the claim specifically asserts class imbalance, the chunk must discuss imbalance/unbalanced data.
+  if (/\b(class\s+imbalances?|unbalanced\s+(data|dataset|classes?))\b/i.test(lowerClaim) && !/\b(imbalance|unbalanced|skew)\b/i.test(lowerChunk)) {
+    return false;
+  }
+  // If the claim asserts 3D ultrasound, the chunk must discuss 3D.
+  if (/\b(3d\s+ultrasound|3d\s+us|three-dimensional)\b/i.test(lowerClaim) && !/\b(3d|three-dimensional)\b/i.test(lowerChunk)) {
+    return false;
   }
 
   return true;
@@ -379,11 +512,20 @@ export function isLimitationSupportedByChunk(limitationText: string, chunkText: 
 
   // Pure ethics/IRB chunk without any limitation context
   const isEthicsOnly = /\b(institutional\s+review\s+board|ethics\s+committee|declaration\s+of\s+helsinki|informed\s+consent)\b/i.test(lowerChunk) &&
-    !/\b(limit\w*|challenge|drawback|shortcoming|disadvantage|scarcity|small(\s+size)?|unbalanced|bias\w*|fail\w*|difficult\w*|overfit\w*|cost|expense)\b/i.test(lowerChunk);
+    !/\b(limit\w*|challenge|drawback|shortcoming|disadvantage|scarcity|small(\s+size)?|unbalanced|bias\w*|fail\w*|difficult\w*|cost|expense)\b/i.test(lowerChunk);
   if (isEthicsOnly) return false;
 
+  // Discussion of data augmentation preventing or avoiding overfitting is a design mitigation,
+  // NOT evidence that the study suffered from an unresolved limitation of overfitting
+  if (
+    /\b(data\s+augmentation\s+prevents?\s+overfitting|prevent(s|ing)?\s+overfitting|to\s+avoid\s+overfitting|reduces?\s+overfitting)\b/i.test(lowerChunk) &&
+    !/\b(limit\w*|drawback|shortcoming|disadvantage|small\s+(dataset|cohort|sample)|small\s+size|unbalanced|bottleneck|bias\w*|fail\w*)\b/i.test(lowerChunk)
+  ) {
+    return false;
+  }
+
   // The passage must actually contain some limitation, drawback, constraint, or boundary context
-  const hasLimitationContext = /\b(limit\w*|challenge|drawback|shortcoming|disadvantage|scarcity|small(\s+size)?|unbalanced|bias\w*|fail\w*|difficult\w*|overfit\w*|cost|expense|operator|fatigue|operator-dependent|preliminary|further\s+(investigation|study|research)|not\s+evaluated|not\s+assessed|gap|bottleneck|constraint|future\s+work)\b/i.test(lowerChunk);
+  const hasLimitationContext = /\b(limit\w*|challenge|drawback|shortcoming|disadvantage|scarcity|small(\s+size)?|unbalanced|bias\w*|fail\w*|difficult\w*|cost|expense|operator|fatigue|operator-dependent|preliminary|further\s+(investigation|study|research)|not\s+evaluated|not\s+assessed|gap|bottleneck|constraint|future\s+work)\b/i.test(lowerChunk);
   if (!hasLimitationContext) {
     return false;
   }
@@ -403,6 +545,40 @@ export function isLimitationSupportedByChunk(limitationText: string, chunkText: 
     if (!/\b(ai|cad|deep\s+learning|algorithm|model)\s+.*(physical\s+fatigue|fatigue)\b/i.test(lowerChunk)) {
       return false;
     }
+  }
+
+  // Overfitting: chunk must mention overfitting
+  if (/\boverfit\w*\b/i.test(lowerLim)) {
+    if (!/\boverfit\w*\b/i.test(lowerChunk)) {
+      return false;
+    }
+    // If the chunk only discusses data augmentation PREVENTING overfitting, it's a mitigation, NOT an unresolved limitation
+    if (/\b(prevent(s|ing)?|avoid(s|ing)?|reduc(es|ing)?)\s+overfitting\b/i.test(lowerChunk) &&
+        !/\b(suffer(ed|s)?|struggl(ed|es)?|prone\s+to|risk\s+of|challeng\w*|issue|bottleneck|problem)\s+.*overfitting\b/i.test(lowerChunk)) {
+      return false;
+    }
+  }
+
+  // Data augmentation: if limitation asserts data augmentation, chunk must discuss augmentation
+  if (/\b(data\s+augmentation|augment\w*)\b/i.test(lowerLim) && !/\b(augment\w*)\b/i.test(lowerChunk)) {
+    return false;
+  }
+
+  // Dataset quality, variability, or scarcity limitation requires substantive chunk discussion
+  if (
+    /\b(quality\s+and\s+variability|variability\s+of\s+(the\s+)?training\s+dataset|dataset\s+quality|limited\s+in\s+medical\s+ultrasound|scarcity|few\s+well-annotated|limited\s+training\s+dataset)\b/i.test(lowerLim) &&
+    !/\b(quality|variabilit\w*|scarcity|small(\s+size)?|small\s+(dataset|cohort)|lack\s+of\s+data|limited|few\s+well-annotated)\b/i.test(lowerChunk)
+  ) {
+    return false;
+  }
+
+  // Clinical subgroup restriction: Li et al. cost and limited PPV observation was strictly in BI-RADS 3
+  if (
+    /\b(cost|expense|expensive|limited\s+effect.*(predictive|ppv)|without\s+significantly\s+improving)\b/i.test(lowerLim) &&
+    /\b(bi-rads\s*3|category\s*3)\b/i.test(lowerChunk) &&
+    !/\b(bi-rads\s*3|category\s*3|low-risk)\b/i.test(lowerLim)
+  ) {
+    return false; // Clinical finding generalized beyond studied subgroup (BI-RADS 3)
   }
 
   // Key topic alignment checks
@@ -526,6 +702,14 @@ export function verifyEvidencePassage(params: EvidenceVerificationParams): Evide
       return { isValid: false, reason: "Accuracy claim not supported by performance evaluation evidence" };
     }
 
+    if (!isComparativeSuperioritySupported(propositionText, chunkText)) {
+      return { isValid: false, reason: "Comparative superiority claim not supported by baseline evaluation in cited chunk" };
+    }
+
+    if (hasUnqualifiedUniversalAssertion(propositionText, chunkText)) {
+      return { isValid: false, reason: "Unqualified universal superiority claim; source manuscript qualifies improvement to most, not all, models" };
+    }
+
     if (isHypotheticalBenefitTreatedAsEmpiricalResult(propositionText, chunkText)) {
       return { isValid: false, reason: "Hypothetical/speculative potential treated as empirical outcome" };
     }
@@ -548,6 +732,10 @@ export function verifyEvidencePassage(params: EvidenceVerificationParams): Evide
 
     if (isAiAttributionToClinicalStudy(propositionText, paperTitle, chunkText)) {
       return { isValid: false, reason: "AI attribution error: clinical imaging limitation incorrectly attributed to AI/CAD" };
+    }
+
+    if (!isTechnologySupportedByPaper(propositionText, paperTitle, chunkText)) {
+      return { isValid: false, reason: "Methodological/technology mismatch with cited study in limitation" };
     }
 
     if (!isLimitationSupportedByChunk(propositionText, chunkText)) {
@@ -639,7 +827,7 @@ export function validateMultiPaperSynthesis(
   const validatedClaims: ValidatedMultiPaperClaim[] = [];
 
   for (const rawClaim of modelOutput.claims || []) {
-    const claimText = rawClaim.text?.trim();
+    let claimText = rawClaim.text?.trim();
     if (!claimText) continue;
 
     const claimAnchors: HydratedMultiPaperAnchor[] = [];
@@ -663,8 +851,14 @@ export function validateMultiPaperSynthesis(
           continue;
         }
 
+        // Decompose/prune compound claims where comparative superiority is unsupported
+        let effectiveClaimText = splitOrPruneCompoundClaim(claimText, chunkMeta.text);
+
+        // Qualify universal assertion if source manuscript qualifies finding to "most models"
+        effectiveClaimText = qualifyUniversalClaimIfNeeded(effectiveClaimText, chunkMeta.text);
+
         const verification = verifyEvidencePassage({
-          propositionText: claimText,
+          propositionText: effectiveClaimText,
           category: "claim",
           paperTitle: paperMeta.paperTitle,
           chunkSection: chunkMeta.section,
@@ -677,6 +871,9 @@ export function validateMultiPaperSynthesis(
           invalidCitationIds.push(trimmedChunkId);
           continue;
         }
+
+        // Propagate pruned or qualified proposition to the claim text
+        claimText = effectiveClaimText;
 
         supportingPaperIdsSet.add(ev.paperId);
         claimAnchors.push({

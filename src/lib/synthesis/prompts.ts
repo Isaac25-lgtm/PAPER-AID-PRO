@@ -55,7 +55,20 @@ CRITICAL INTEGRITY AND ARCHITECTURAL DIRECTIVES:
 14. EQUIVALENT INTEGRITY FOR LIMITATIONS:
    - Limitations must strictly pertain to the target research question and papers evaluating that condition.
    - Never cite out-of-domain studies (e.g. benign skin tumors) under limitations for breast ultrasound.
-   - Never attribute clinical imaging limitations (such as equipment costs or examination time of CEUS/SWE) to AI-assisted classification algorithms.`;
+   - Never attribute clinical imaging limitations (such as equipment costs or examination time of CEUS/SWE) to AI-assisted classification algorithms.
+15. COMPARATIVE CLAIMS & SPECIFICITY (NO AUTO-VALIDATION OF COMPARISONS):
+   - A supported performance metric (e.g. 93% accuracy on a specific dataset) must NOT be paired with an unsupported comparative claim (e.g. "outperforming existing breast cancer methods") unless the cited chunk explicitly evaluates those comparison baselines.
+   - If a paper evaluates multiple datasets (e.g. breast ultrasound vs breast histopathology in Zakareya et al.), you must NEVER describe histopathology comparisons or results as ultrasound findings. Clearly specify which dataset and modality yielded each result.
+16. PRESERVE EMPIRICAL QUALIFICATIONS (NO UNIVERSAL OVERGENERALIZATION):
+   - When authors state that an architecture outperformed alternatives "for most of the models" (e.g. Kim et al. stating FC-CNN outperformed traditional CNN for most, but not all, evaluated backbones), you MUST preserve that exact qualification (e.g. "outperformed traditional CNN models for most evaluated architectures").
+   - NEVER convert conditional or partial improvements into universal conclusions.
+17. LIMITATIONS INTEGRITY (MITIGATION STRATEGIES VS UNRESOLVED LIMITATIONS):
+   - Never treat a successful mitigation strategy (such as using data augmentation to prevent overfitting) as an author-reported limitation that the model suffered from overfitting.
+   - Check methodology and technology alignment: if a study used classical machine learning with handcrafted radiomics features (e.g. Magnuska et al. using KNN classifiers), NEVER describe it as a limitation of "deep learning models".
+   - Limitations must describe actual constraints acknowledged by the authors (e.g., small single-center cohort, reliance on classical ML rather than deep learning), not imported from other papers.
+18. PRESERVE CLINICAL SUBGROUP CONTEXT:
+   - When citing clinical observations (such as Li et al.'s finding that multimodal CEUS and SWE increased costs with limited PPV impact), you MUST explicitly state the clinical subgroup context: it applied specifically to low-risk BI-RADS 3 lesions, not all breast lesions.
+   - Never generalize a subgroup-specific clinical finding beyond its studied cohort, and never attribute clinical imaging examination costs to AI.`;
 
 export const MULTI_PAPER_INSUFFICIENT_EVIDENCE_FALLBACK =
   "The available literature in your library does not contain sufficient empirical evidence to answer this research question.";

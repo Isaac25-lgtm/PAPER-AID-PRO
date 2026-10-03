@@ -37,7 +37,7 @@ const STEPS: OnboardingStep[] = [
     title: "Understand Evidence",
     description: "Inspect AI-assisted findings anchored to manuscript text.",
     detail:
-      "When a full-text manuscript is attached, examine structured key findings, methodologies, and limitations. Every finding is anchored to verified page and paragraph excerpts.",
+      "When a full-text manuscript is attached, examine structured key findings, methodologies, and limitations. Every finding is anchored to supporting page and paragraph excerpts.",
   icon: FileText,
   },
   {

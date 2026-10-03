@@ -284,7 +284,7 @@ export function EvidenceSandbox() {
                               ? "bg-indigo-600 text-white shadow-xs scale-105"
                               : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
                           )}
-                          title="Click to view verified citation"
+                          title="Click to view supporting citation"
                         >
                           [{num}]
                         </button>
@@ -302,7 +302,7 @@ export function EvidenceSandbox() {
                   </div>
                   <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
                     <span className="font-bold text-slate-800 block">Source Grounded</span>
-                    Validated Excerpts
+                    Supporting Excerpts
                   </div>
                   <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
                     <span className="font-bold text-slate-800 block">Verifiable Citations</span>
@@ -316,7 +316,7 @@ export function EvidenceSandbox() {
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                     <BookOpen className="h-3.5 w-3.5 text-indigo-600" />
-                    Verified Source Inspector [{activeSource.citationNumber}]
+                    Source Evidence Inspector [{activeSource.citationNumber}]
                   </h4>
                   <Badge variant="academic" className="text-[10px]">
                     Scientific Literature
@@ -340,7 +340,7 @@ export function EvidenceSandbox() {
                   <div className="rounded-lg bg-slate-900 text-slate-100 p-3.5 space-y-1.5 text-xs font-mono">
                     <div className="flex items-center justify-between text-[10px] text-indigo-400 font-sans uppercase font-bold tracking-wider">
                       <span>Exact Document Excerpt</span>
-                      <span>Verified Match</span>
+                      <span>Source Match</span>
                     </div>
                     <p className="leading-relaxed text-slate-200">
                       &ldquo;{activeSource.verifiedExcerpt}&rdquo;

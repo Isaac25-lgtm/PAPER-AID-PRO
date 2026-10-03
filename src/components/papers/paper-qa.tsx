@@ -197,7 +197,7 @@ export function PaperQA({
               </Badge>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Answers are grounded strictly in manuscript excerpts with verified chunk citations.
+              Answers are grounded strictly in manuscript excerpts with supporting chunk citations.
             </p>
           </div>
         </div>

@@ -40,7 +40,7 @@ export function CitationAnchorPill({
           <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
             <div className="flex items-center gap-1.5 text-emerald-700 font-semibold text-[11px]">
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-              Verified Chunk Evidence
+              Supporting Manuscript Evidence
             </div>
             <span className="text-[10px] font-mono text-slate-400">
               Chunk #{citation.chunkIndex}

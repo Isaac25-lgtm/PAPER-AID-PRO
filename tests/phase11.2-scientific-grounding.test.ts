@@ -13,6 +13,10 @@ import {
   isHypotheticalBenefitTreatedAsEmpiricalResult,
   isLimitationSupportedByChunk,
   verifyEvidencePassage,
+  isComparativeSuperioritySupported,
+  hasUnqualifiedUniversalAssertion,
+  splitOrPruneCompoundClaim,
+  qualifyUniversalClaimIfNeeded,
 } from "../src/lib/synthesis/validate-multipaper-citations";
 import { isReferenceChunk, retrieveMultiPaperEvidence } from "../src/lib/synthesis/retrieve-multipaper-evidence";
 import { discoverRelevantPapers } from "../src/lib/synthesis/discover-papers";
@@ -1060,6 +1064,121 @@ async function runPhase11_2Tests() {
     assert(
       !isHypotheticalBenefitTreatedAsEmpiricalResult(potentialBiopsyBenefitClaim, prospectivePassage),
       "Case 5B Positive: Allows properly qualified claim expressing potential clinical benefit"
+    );
+
+    // =========================================================================================
+    // TEST GROUP 8: TARGETED EVIDENCE CORRECTIONS ACCEPTANCE SUITE
+    // =========================================================================================
+    console.log("\n--- Test Group 8: Targeted Evidence Corrections Acceptance Suite ---");
+
+    // Acceptance Case 8.1: Correct Accuracy Metric Paired with Unsupported Comparison
+    console.log("  Testing Case 8.1: Comparative Claim Integrity (Metric vs Superiority)...");
+    
+    // Chunk p.16: internal DNN models only (R3_R3_R3 achieved 93% accuracy on Cairo University dataset)
+    const zakareyaInternalChunk = "Table 3 shows the performance of the proposed architecture on Cairo University ultrasound dataset. The proposed deep neural network R3_R3_R3 achieved 93% accuracy, outperforming the R5_R5_R5 (89%) and R3_R5_R35 (91%) configurations.";
+    // Chunk p.18: benchmark CNN architectures (AlexNet, GoogLeNet, ResNet50, VGG16) on Cairo University dataset
+    const zakareyaCnnBenchmarkChunk = "Table 4 compares the proposed model with existing deep architectures on the Cairo University ultrasound dataset. The proposed model (93% accuracy) outperformed AlexNet (86.5%), GoogLeNet (88.2%), and ResNet50 (89.1%).";
+    // Chunk p.19: Table 5 comparison with prior literature on breast histopathology (BreakHis dataset)
+    const zakareyaHistopathologyChunk = "Table 5. Comparison with state-of-the-art methods on breast histopathology images (BreakHis dataset). The proposed method achieved 95% accuracy compared to Spanhol et al. (84%) and Bayramoglu et al. (87%).";
+
+    // 8.1A: Single metric + unsupported comparative superiority in internal chunk (fails comparative superiority check)
+    const unsupportedComparativeClaim = "The proposed deep learning architecture achieved 93% accuracy on the Cairo University ultrasound dataset, outperforming existing breast cancer methods.";
+    assert(
+      !isComparativeSuperioritySupported(unsupportedComparativeClaim, zakareyaInternalChunk),
+      "Case 8.1A Negative: Rejects external comparative superiority claim when passage only compares internal configurations"
+    );
+
+    // 8.1B: Supported comparative claim when passage contains benchmark comparison architectures
+    assert(
+      isComparativeSuperioritySupported("The proposed model outperformed benchmark CNN architectures on the Cairo University dataset.", zakareyaCnnBenchmarkChunk),
+      "Case 8.1B Positive: Accepts comparative claim when benchmark models are explicitly in the passage"
+    );
+
+    // 8.1C: Mismatched modality: ultrasound comparative claim citing histopathology benchmark chunk
+    assert(
+      !isComparativeSuperioritySupported("The proposed model outperformed existing methods on ultrasound images.", zakareyaHistopathologyChunk),
+      "Case 8.1C Negative: Rejects ultrasound comparative claim citing histopathology image benchmark chunk"
+    );
+
+    // 8.1D: splitOrPruneCompoundClaim automatically prunes unsupported trailing comparative clause while preserving base metric
+    const prunedClaim = splitOrPruneCompoundClaim(unsupportedComparativeClaim, zakareyaInternalChunk);
+    assert(
+      prunedClaim === "The proposed deep learning architecture achieved 93% accuracy on the Cairo University ultrasound dataset.",
+      "Case 8.1D Positive: splitOrPruneCompoundClaim prunes unsupported comparative clause, preserving verified empirical metric"
+    );
+
+    // Acceptance Case 8.2: Unsupported Universal Superiority Where Only Some Models Improved
+    console.log("  Testing Case 8.2: Preserve Important Empirical Qualifications (Universal vs Most)...");
+    const kimPassage = "The experimental results showed that the FC-CNN architecture using multiple time-domain feature maps outperformed the traditional CNN with B-mode only for most of the CNN models.";
+    const universalKimClaim = "The FC-CNN architecture using multiple time-domain feature maps outperformed traditional B-mode-only CNN models.";
+    const qualifiedKimClaim = "The FC-CNN architecture using multiple time-domain feature maps outperformed traditional B-mode-only CNN models for most evaluated architectures.";
+
+    assert(
+      hasUnqualifiedUniversalAssertion(universalKimClaim, kimPassage),
+      "Case 8.2A Negative: Detects unqualified universal superiority when empirical passage qualifies 'for most of the CNN models'"
+    );
+    assert(
+      !hasUnqualifiedUniversalAssertion(qualifiedKimClaim, kimPassage),
+      "Case 8.2B Positive: Passes when claim preserves 'for most' qualification"
+    );
+
+    const autoQualified = qualifyUniversalClaimIfNeeded(universalKimClaim, kimPassage);
+    assert(
+      autoQualified.includes("for most evaluated architectures"),
+      "Case 8.2C Positive: qualifyUniversalClaimIfNeeded automatically inserts 'for most evaluated architectures'"
+    );
+
+    // Acceptance Case 8.3: Limitation Incorrectly Inferred from a Mitigation Strategy
+    console.log("  Testing Case 8.3: Limitation vs Mitigation Strategy (Overfitting Augmentation)...");
+    const augmentationMitigationPassage = "Data augmentation prevents overfitting by artificially generating diverse training samples through random rotations, horizontal flips, and scaling.";
+    const overfittingLimitationClaim = "A major limitation of the study is overfitting during neural network training.";
+    const validSampleLimitationPassage = "A key limitation of this study is the relatively small sample size of 150 ultrasound images and the single-center patient cohort.";
+    const validSampleLimitationClaim = "The study is limited by a small sample size and single-center cohort.";
+
+    assert(
+      !isLimitationSupportedByChunk(overfittingLimitationClaim, augmentationMitigationPassage),
+      "Case 8.3A Negative: Rejects data augmentation preventing overfitting from being inferred as an unresolved overfitting limitation"
+    );
+    assert(
+      isLimitationSupportedByChunk(validSampleLimitationClaim, validSampleLimitationPassage),
+      "Case 8.3B Positive: Accepts genuine study limitation on sample size and single-center cohort"
+    );
+
+    // Acceptance Case 8.4: Technology Misattribution in Limitations
+    console.log("  Testing Case 8.4: Technology Misattribution in Limitations (Classical ML vs Deep Learning)...");
+    const magnuskaLimitationPassage = "The use of classical machine learning and handcrafted features, such as weighted KNN classification, represents a limitation compared to end-to-end representation learning.";
+    const deepLearningMisattributedLimitation = "A significant limitation of deep learning models in breast ultrasound is the reliance on handcrafted feature extraction.";
+    const correctClassicalMlLimitation = "The classical machine learning approach was limited by its reliance on handcrafted feature extraction and KNN classification.";
+
+    assert(
+      !isTechnologySupportedByPaper(deepLearningMisattributedLimitation, "Influence of the Computer-Aided Decision Support System Design on Ultrasound-Based Breast Cancer Classification", magnuskaLimitationPassage),
+      "Case 8.4A Negative: Rejects limitation framing classical ML / KNN handcrafted features as a limitation of deep learning"
+    );
+    assert(
+      isTechnologySupportedByPaper(correctClassicalMlLimitation, "Influence of the Computer-Aided Decision Support System Design on Ultrasound-Based Breast Cancer Classification", magnuskaLimitationPassage),
+      "Case 8.4B Positive: Accepts limitation correctly attributing handcrafted features to classical machine learning / KNN"
+    );
+
+    // Acceptance Case 8.5: Clinical Findings Generalized Beyond Their Studied Subgroup
+    console.log("  Testing Case 8.5: Clinical Findings Generalized Beyond Studied Subgroup (BI-RADS 3 Context)...");
+    const liCostPassage = "Additionally, combining CEUS and SWE technologies has limited effect on reducing the positive predictive value (PPV) in BI-RADS 3 lesions where malignancy rate is under 2%, and it will increase the examination costs for patients.";
+    const generalizedCostLimitation = "Combining CEUS and SWE technologies increases costs and has limited effect on positive predictive value in breast lesion evaluation.";
+    const subgroupSpecificCostLimitation = "Combining CEUS and SWE technologies increases examination costs while offering limited PPV improvement specifically for BI-RADS 3 lesions.";
+
+    assert(
+      !isLimitationSupportedByChunk(generalizedCostLimitation, liCostPassage),
+      "Case 8.5A Negative: Rejects cost and PPV limitation generalized across all breast lesions without specifying BI-RADS 3"
+    );
+    assert(
+      isLimitationSupportedByChunk(subgroupSpecificCostLimitation, liCostPassage),
+      "Case 8.5B Positive: Accepts cost and PPV limitation explicitly restricted to BI-RADS 3 subgroup context"
+    );
+
+    // Case 8.5C: Negative result / category upgrade proposition
+    const upgradeClaim = "Li et al. found that combining CEUS and SWE technologies can lead to an upgraded BI-RADS category for breast lesions, indicating a higher likelihood of malignancy.";
+    assert(
+      !isClaimSupportedByChunk(upgradeClaim, liCostPassage),
+      "Case 8.5C Negative: Rejects claim asserting upgraded category when passage states limited effect on PPV"
     );
 
     console.log("\n================================================================================");

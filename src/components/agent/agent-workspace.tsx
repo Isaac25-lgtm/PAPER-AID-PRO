@@ -717,13 +717,13 @@ export function AgentWorkspace({ initialConversationId }: AgentWorkspaceProps) {
 
                                 <div className="pt-2 border-t border-emerald-100/80 flex items-center justify-between text-xs">
                                   <span className="text-[11px] text-slate-500 font-mono">
-                                    {corr.citations.length} Verified Anchors
+                                    {corr.citations.length} Supporting Anchors
                                   </span>
                                   <button
                                     onClick={() => toggleCitation(citationKey)}
                                     className="text-xs font-medium text-emerald-700 hover:text-emerald-800 flex items-center gap-1"
                                   >
-                                    {isExpanded ? "Hide Anchors" : "Inspect Ground-Truth Anchors"}
+                                    {isExpanded ? "Hide Anchors" : "Inspect Supporting Anchors"}
                                     {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                                   </button>
                                 </div>
