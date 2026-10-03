@@ -19,6 +19,7 @@ import {
   PlusCircle,
   MessageSquare,
   CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -27,8 +28,164 @@ import {
   synthesizeResearchAction,
   getResearchThreadsAction,
   getResearchThreadMessagesAction,
+  getChunkPassageAction,
 } from "@/app/research/actions";
-import { MultiPaperSynthesisResult, ValidatedMultiPaperClaim } from "@/lib/synthesis/types";
+import { MultiPaperSynthesisResult, ValidatedMultiPaperClaim, HydratedMultiPaperAnchor } from "@/lib/synthesis/types";
+
+interface SupportingExcerptCardProps {
+  citation: HydratedMultiPaperAnchor;
+  variant?: "indigo" | "amber";
+  conversationId?: string;
+}
+
+function SupportingExcerptCard({ citation, variant = "indigo", conversationId }: SupportingExcerptCardProps) {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const [fullText, setFullText] = React.useState<string | undefined>(citation.fullText);
+  const [isLoadingFull, setIsLoadingFull] = React.useState(false);
+
+  const snippet = citation.snippet || "";
+  const effectiveFull = fullText || citation.fullText;
+  const hasMore = Boolean(
+    (effectiveFull && effectiveFull.trim().length > snippet.trim().length) ||
+    snippet.endsWith("...") ||
+    snippet.length >= 200
+  );
+
+  const handleToggle = async () => {
+    if (!isExpanded && !effectiveFull && citation.chunkId && conversationId) {
+      setIsLoadingFull(true);
+      try {
+        const res = await getChunkPassageAction({
+          conversationId,
+          chunkId: citation.chunkId,
+        });
+        if (res.success && res.text) {
+          setFullText(res.text);
+        }
+      } catch (e) {
+        console.error("Failed to load chunk passage:", e);
+      } finally {
+        setIsLoadingFull(false);
+      }
+    }
+    setIsExpanded((prev) => !prev);
+  };
+
+  const textToDisplay = isExpanded && effectiveFull ? effectiveFull : snippet;
+  const isAmber = variant === "amber";
+
+  return (
+    <div
+      className={`bg-white rounded-lg border ${
+        isAmber ? "border-amber-200/80" : "border-slate-200"
+      } p-3 space-y-2 shadow-2xs`}
+    >
+      <div
+        className={`flex flex-wrap items-center justify-between gap-2 border-b ${
+          isAmber ? "border-amber-100" : "border-slate-100"
+        } pb-2`}
+      >
+        <div className="flex items-center gap-2 max-w-full sm:max-w-[70%]">
+          <BookOpen className={`h-3.5 w-3.5 shrink-0 ${isAmber ? "text-amber-700" : "text-indigo-600"}`} />
+          <span className="text-xs font-semibold text-slate-900 truncate">
+            {citation.paperTitle}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {citation.doi && (
+            <a
+              href={`https://doi.org/${citation.doi}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`text-[10px] text-slate-400 ${
+                isAmber ? "hover:text-amber-700" : "hover:text-indigo-600"
+              } flex items-center gap-0.5`}
+            >
+              DOI <ExternalLink className="h-2.5 w-2.5" />
+            </a>
+          )}
+          <Link href={`/papers/${citation.paperId}`}>
+            <Button size="sm" variant="outline" className="text-[10px] h-6 px-2">
+              View Paper
+            </Button>
+          </Link>
+          <a
+            href={`/api/papers/${citation.paperId}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Button
+              size="sm"
+              variant="secondary"
+              className={`text-[10px] h-6 px-2 ${
+                isAmber
+                  ? "bg-amber-50 text-amber-800 hover:bg-amber-100"
+                  : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+              }`}
+            >
+              Original PDF
+            </Button>
+          </a>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+        <span className="font-medium text-slate-700">
+          {citation.pageNumber ? `Page ${citation.pageNumber}` : "Page unrecorded"}
+        </span>
+        <span>•</span>
+        <span className="italic">{citation.section ? `§${citation.section}` : "§Unspecified"}</span>
+        <span>•</span>
+        <span>
+          Authors: {citation.authors.slice(0, 2).join(", ")}
+          {citation.authors.length > 2 ? " et al." : ""}
+        </span>
+      </div>
+
+      <div className="space-y-1.5">
+        <blockquote
+          className={`text-xs text-slate-700 ${
+            isAmber
+              ? "bg-amber-50/50 border-amber-500"
+              : "bg-slate-50/80 border-indigo-400"
+          } p-2.5 rounded border-l-2 italic leading-relaxed whitespace-pre-wrap break-words`}
+        >
+          &ldquo;{textToDisplay}&rdquo;
+        </blockquote>
+
+        {hasMore && (
+          <div className="flex justify-end pt-0.5">
+            <button
+              type="button"
+              onClick={handleToggle}
+              disabled={isLoadingFull}
+              className={`text-[11px] font-medium ${
+                isAmber
+                  ? "text-amber-700 hover:text-amber-800"
+                  : "text-indigo-600 hover:text-indigo-800"
+              } flex items-center gap-1 hover:underline transition-colors focus:outline-hidden disabled:opacity-50`}
+              aria-expanded={isExpanded}
+            >
+              {isLoadingFull ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" /> Loading excerpt...
+                </>
+              ) : isExpanded ? (
+                <>
+                  Show less <ChevronUp className="h-3 w-3" />
+                </>
+              ) : (
+                <>
+                  Show full excerpt <ChevronDown className="h-3 w-3" />
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface ResearchInterfaceProps {
   initialThreadId?: string;
@@ -382,59 +539,12 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                               </span>
                               <div className="grid grid-cols-1 gap-3">
                                 {claim.citations.map((cit, cIdx) => (
-                                  <div
+                                  <SupportingExcerptCard
                                     key={cIdx}
-                                    className="bg-white rounded-lg border border-slate-200 p-3 space-y-2 shadow-2xs"
-                                  >
-                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                                      <div className="flex items-center gap-2">
-                                        <BookOpen className="h-3.5 w-3.5 text-indigo-600" />
-                                        <span className="text-xs font-semibold text-slate-900 line-clamp-1">
-                                          {cit.paperTitle}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        {cit.doi && (
-                                          <a
-                                            href={`https://doi.org/${cit.doi}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-[10px] text-slate-400 hover:text-indigo-600 flex items-center gap-0.5"
-                                          >
-                                            DOI <ExternalLink className="h-2.5 w-2.5" />
-                                          </a>
-                                        )}
-                                        <Link href={`/papers/${cit.paperId}`}>
-                                          <Button size="sm" variant="outline" className="text-[10px] h-6 px-2">
-                                            View Paper
-                                          </Button>
-                                        </Link>
-                                        <a
-                                          href={`/api/papers/${cit.paperId}/pdf`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                        >
-                                          <Button size="sm" variant="secondary" className="text-[10px] h-6 px-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100">
-                                            Original PDF
-                                          </Button>
-                                        </a>
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-3 text-[11px] text-slate-500">
-                                      <span className="font-medium text-slate-700">
-                                        {cit.pageNumber ? `Page ${cit.pageNumber}` : "Page unrecorded"}
-                                      </span>
-                                      <span>•</span>
-                                      <span className="italic">{cit.section ? `§${cit.section}` : "§Unspecified"}</span>
-                                      <span>•</span>
-                                      <span>Authors: {cit.authors.slice(0, 2).join(", ")}{cit.authors.length > 2 ? " et al." : ""}</span>
-                                    </div>
-
-                                    <blockquote className="text-xs text-slate-700 bg-slate-50/80 p-2.5 rounded border-l-2 border-indigo-400 italic">
-                                      &ldquo;{cit.snippet}&rdquo;
-                                    </blockquote>
-                                  </div>
+                                    citation={cit}
+                                    variant="indigo"
+                                    conversationId={currentResult.conversationId || activeConversationId}
+                                  />
                                 ))}
                               </div>
                             </div>
@@ -509,59 +619,12 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                                   </span>
                                   <div className="grid grid-cols-1 gap-3">
                                     {d.citations.map((cit, cIdx) => (
-                                      <div
+                                      <SupportingExcerptCard
                                         key={cIdx}
-                                        className="bg-white rounded-lg border border-amber-200/80 p-3 space-y-2 shadow-2xs"
-                                      >
-                                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 pb-2">
-                                          <div className="flex items-center gap-2">
-                                            <BookOpen className="h-3.5 w-3.5 text-amber-700" />
-                                            <span className="text-xs font-semibold text-slate-900 line-clamp-1">
-                                              {cit.paperTitle}
-                                            </span>
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            {cit.doi && (
-                                              <a
-                                                href={`https://doi.org/${cit.doi}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-[10px] text-slate-400 hover:text-amber-700 flex items-center gap-0.5"
-                                              >
-                                                DOI <ExternalLink className="h-2.5 w-2.5" />
-                                              </a>
-                                            )}
-                                            <Link href={`/papers/${cit.paperId}`}>
-                                              <Button size="sm" variant="outline" className="text-[10px] h-6 px-2">
-                                                View Paper
-                                              </Button>
-                                            </Link>
-                                            <a
-                                              href={`/api/papers/${cit.paperId}/pdf`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                            >
-                                              <Button size="sm" variant="secondary" className="text-[10px] h-6 px-2 bg-amber-50 text-amber-800 hover:bg-amber-100">
-                                                Original PDF
-                                              </Button>
-                                            </a>
-                                          </div>
-                                        </div>
-
-                                        <div className="flex items-center gap-3 text-[11px] text-slate-500">
-                                          <span className="font-medium text-slate-700">
-                                            {cit.pageNumber ? `Page ${cit.pageNumber}` : "Page unrecorded"}
-                                          </span>
-                                          <span>•</span>
-                                          <span className="italic">{cit.section ? `§${cit.section}` : "§Unspecified"}</span>
-                                          <span>•</span>
-                                          <span>Authors: {cit.authors.slice(0, 2).join(", ")}{cit.authors.length > 2 ? " et al." : ""}</span>
-                                        </div>
-
-                                        <blockquote className="text-xs text-slate-700 bg-amber-50/50 p-2.5 rounded border-l-2 border-amber-500 italic">
-                                          &ldquo;{cit.snippet}&rdquo;
-                                        </blockquote>
-                                      </div>
+                                        citation={cit}
+                                        variant="amber"
+                                        conversationId={currentResult.conversationId || activeConversationId}
+                                      />
                                     ))}
                                   </div>
                                 </div>

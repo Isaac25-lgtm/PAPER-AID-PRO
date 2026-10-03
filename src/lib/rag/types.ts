@@ -4,6 +4,7 @@ export interface GroundedCitationAnchor {
   pageNumber: number | null;
   section: string | null;
   snippet: string; // Verbatim snippet extracted directly from PaperChunk.text
+  fullText?: string; // Complete stored manuscript chunk text
 }
 
 export interface GroundedClaim {

@@ -888,6 +888,7 @@ export function validateMultiPaperSynthesis(
           pageNumber: chunkMeta.pageNumber,
           section: chunkMeta.section,
           snippet: formatSnippet(chunkMeta.text),
+          fullText: chunkMeta.text,
         });
       }
     }
@@ -952,6 +953,7 @@ export function validateMultiPaperSynthesis(
           pageNumber: chunkMeta.pageNumber,
           section: chunkMeta.section,
           snippet: formatSnippet(chunkMeta.text),
+          fullText: chunkMeta.text,
         });
       }
     }
@@ -1076,6 +1078,7 @@ export function validateMultiPaperSynthesis(
           pageNumber: chunkMeta.pageNumber,
           section: chunkMeta.section,
           snippet: formatSnippet(chunkMeta.text),
+          fullText: chunkMeta.text,
         });
       }
     }

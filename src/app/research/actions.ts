@@ -112,15 +112,174 @@ export async function getResearchThreadMessagesAction(conversationId: string) {
     throw new Error("Unauthorized to access this conversation.");
   }
 
+  // Collect chunk IDs that need fullText hydration
+  const chunkIdsToFetch = new Set<string>();
+  for (const m of conversation.messages) {
+    const cit = m.citations as any;
+    if (!cit) continue;
+    for (const c of cit.claims || []) {
+      for (const a of c.citations || []) {
+        if (a.chunkId && !a.fullText) chunkIdsToFetch.add(a.chunkId);
+      }
+    }
+    for (const d of cit.disagreements || []) {
+      for (const a of d.citations || []) {
+        if (a.chunkId && !a.fullText) chunkIdsToFetch.add(a.chunkId);
+      }
+    }
+    for (const l of cit.limitations || []) {
+      for (const a of l.citations || []) {
+        if (a.chunkId && !a.fullText) chunkIdsToFetch.add(a.chunkId);
+      }
+    }
+  }
+
+  const chunkMap = new Map<string, string>();
+  if (chunkIdsToFetch.size > 0) {
+    const chunks = await prisma.paperChunk.findMany({
+      where: { id: { in: Array.from(chunkIdsToFetch) } },
+      select: { id: true, text: true },
+    });
+    for (const ch of chunks) {
+      chunkMap.set(ch.id, ch.text);
+    }
+  }
+
   return {
     conversationId: conversation.id,
     title: conversation.title,
-    messages: conversation.messages.map((m) => ({
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      citations: m.citations as any,
-      createdAt: m.createdAt.toISOString(),
-    })),
+    messages: conversation.messages.map((m) => {
+      const cit = m.citations as any;
+      if (cit && chunkMap.size > 0) {
+        for (const c of cit.claims || []) {
+          for (const a of c.citations || []) {
+            if (a.chunkId && !a.fullText && chunkMap.has(a.chunkId)) {
+              a.fullText = chunkMap.get(a.chunkId);
+            }
+          }
+        }
+        for (const d of cit.disagreements || []) {
+          for (const a of d.citations || []) {
+            if (a.chunkId && !a.fullText && chunkMap.has(a.chunkId)) {
+              a.fullText = chunkMap.get(a.chunkId);
+            }
+          }
+        }
+        for (const l of cit.limitations || []) {
+          for (const a of l.citations || []) {
+            if (a.chunkId && !a.fullText && chunkMap.has(a.chunkId)) {
+              a.fullText = chunkMap.get(a.chunkId);
+            }
+          }
+        }
+      }
+
+      return {
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        citations: cit,
+        createdAt: m.createdAt.toISOString(),
+      };
+    }),
   };
+}
+
+export async function getChunkPassageAction(params: {
+  conversationId: string;
+  chunkId: string;
+}): Promise<{
+  success: boolean;
+  text?: string;
+  error?: string;
+}> {
+  let session = null;
+  try {
+    session = await getServerSession(authOptions);
+  } catch {
+    session = null;
+  }
+  if (!session?.user?.id) {
+    return { success: false, error: "Authentication required." };
+  }
+
+  if (!params?.conversationId || !params?.chunkId) {
+    return { success: false, error: "Missing conversation ID or chunk ID." };
+  }
+
+  try {
+    const conversation = await prisma.aIConversation.findUnique({
+      where: { id: params.conversationId },
+      include: {
+        messages: {
+          select: { citations: true },
+        },
+      },
+    });
+
+    if (!conversation) {
+      return { success: false, error: "Conversation not found." };
+    }
+
+    if (conversation.userId !== session.user.id) {
+      return { success: false, error: "Unauthorized conversation access." };
+    }
+
+    // Verify that the requested chunk is legitimately cited in this conversation
+    let isCitedInConversation = false;
+    for (const m of conversation.messages) {
+      const cit = m.citations as any;
+      if (!cit) continue;
+      for (const c of cit.claims || []) {
+        for (const a of c.citations || []) {
+          if (a.chunkId === params.chunkId) {
+            isCitedInConversation = true;
+            break;
+          }
+        }
+        if (isCitedInConversation) break;
+      }
+      if (isCitedInConversation) break;
+      for (const d of cit.disagreements || []) {
+        for (const a of d.citations || []) {
+          if (a.chunkId === params.chunkId) {
+            isCitedInConversation = true;
+            break;
+          }
+        }
+        if (isCitedInConversation) break;
+      }
+      if (isCitedInConversation) break;
+      for (const l of cit.limitations || []) {
+        for (const a of l.citations || []) {
+          if (a.chunkId === params.chunkId) {
+            isCitedInConversation = true;
+            break;
+          }
+        }
+        if (isCitedInConversation) break;
+      }
+      if (isCitedInConversation) break;
+    }
+
+    if (!isCitedInConversation) {
+      return {
+        success: false,
+        error: "Unauthorized passage access: requested chunk is not cited in this research thread.",
+      };
+    }
+
+    const chunk = await prisma.paperChunk.findUnique({
+      where: { id: params.chunkId },
+      select: { text: true },
+    });
+
+    if (!chunk) {
+      return { success: false, error: "Chunk passage not found." };
+    }
+
+    return { success: true, text: chunk.text };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to fetch chunk passage." };
+  }
 }
