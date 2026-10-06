@@ -43,6 +43,34 @@ export function chunkManuscriptPages(
   const chunks: ChunkPayload[] = [];
   let globalChunkIndex = 0;
   let activeSection: string | null = null;
+  const minMeaningfulChars = 20;
+
+  function pushChunk(text: string, section: string | null, pageNumber: number): boolean {
+    const trimmed = text.trim();
+    if (trimmed.length < minMeaningfulChars) {
+      return false;
+    }
+    const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+    const tokenCount = Math.max(1, Math.round(trimmed.length / 4));
+
+    chunks.push({
+      paperId,
+      chunkIndex: globalChunkIndex,
+      text: trimmed,
+      section,
+      pageNumber,
+      tokenCount,
+      metadata: {
+        pageNumber,
+        section,
+        charLength: trimmed.length,
+        wordCount,
+        chunkIndex: globalChunkIndex,
+      },
+    });
+    globalChunkIndex++;
+    return true;
+  }
 
   for (const page of pages) {
     const lines = page.text.split(/\r?\n/);
@@ -89,15 +117,25 @@ export function chunkManuscriptPages(
 
     // Now chunk the paragraphs on this page
     let pageBuffer = "";
-    let currentSectionInChunk: string | null = activeSection;
+    let currentSectionInChunk: string | null = null;
 
     for (let pIndex = 0; pIndex < currentPageParagraphs.length; pIndex++) {
       const p = currentPageParagraphs[pIndex];
-      const pText = p.text;
+      const pText = p.text.trim();
+      if (!pText) continue;
 
-      // If this paragraph switched section, record section
-      if (p.section) {
-        currentSectionInChunk = p.section;
+      const pSection = p.section;
+
+      // If pageBuffer has content and the incoming paragraph belongs to a different section:
+      // Flush buffered text belonging to the previous section before changing section!
+      if (pageBuffer.trim().length > 0 && currentSectionInChunk !== pSection) {
+        pushChunk(pageBuffer, currentSectionInChunk, page.pageNumber);
+        pageBuffer = "";
+        currentSectionInChunk = null;
+      }
+
+      if (!currentSectionInChunk) {
+        currentSectionInChunk = pSection;
       }
 
       // If adding this paragraph exceeds target size and we already have sufficient text, flush chunk
@@ -107,29 +145,10 @@ export function chunkManuscriptPages(
       ) {
         const trimmedChunk = pageBuffer.trim();
         if (trimmedChunk.length >= options.minChunkChars) {
-          const wordCount = trimmedChunk.split(/\s+/).filter(Boolean).length;
-          const tokenCount = Math.max(1, Math.round(trimmedChunk.length / 4));
+          pushChunk(trimmedChunk, currentSectionInChunk, page.pageNumber);
 
-          chunks.push({
-            paperId,
-            chunkIndex: globalChunkIndex,
-            text: trimmedChunk,
-            section: currentSectionInChunk,
-            pageNumber: page.pageNumber,
-            tokenCount,
-            metadata: {
-              pageNumber: page.pageNumber,
-              section: currentSectionInChunk,
-              charLength: trimmedChunk.length,
-              wordCount,
-              chunkIndex: globalChunkIndex,
-            },
-          });
-          globalChunkIndex++;
-
-          // Compute overlap for sliding window
+          // Compute overlap for sliding window within the SAME section
           const overlap = trimmedChunk.slice(-options.overlapChars);
-          // Find last space in overlap to avoid cut words
           const lastSpaceIdx = overlap.lastIndexOf(" ");
           const cleanOverlap = lastSpaceIdx !== -1 ? overlap.slice(lastSpaceIdx + 1) : overlap;
           pageBuffer = cleanOverlap ? cleanOverlap + " " : "";
@@ -143,25 +162,7 @@ export function chunkManuscriptPages(
           if (pageBuffer.length + sentence.length > options.targetChunkChars) {
             const trimmed = pageBuffer.trim();
             if (trimmed.length >= options.minChunkChars) {
-              const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
-              const tokenCount = Math.max(1, Math.round(trimmed.length / 4));
-
-              chunks.push({
-                paperId,
-                chunkIndex: globalChunkIndex,
-                text: trimmed,
-                section: currentSectionInChunk,
-                pageNumber: page.pageNumber,
-                tokenCount,
-                metadata: {
-                  pageNumber: page.pageNumber,
-                  section: currentSectionInChunk,
-                  charLength: trimmed.length,
-                  wordCount,
-                  chunkIndex: globalChunkIndex,
-                },
-              });
-              globalChunkIndex++;
+              pushChunk(trimmed, currentSectionInChunk, page.pageNumber);
               pageBuffer = "";
             }
           }
@@ -173,55 +174,28 @@ export function chunkManuscriptPages(
     }
 
     // Flush any leftover buffer for this page
-    if (pageBuffer.trim().length >= options.minChunkChars) {
+    if (pageBuffer.trim().length > 0) {
       const trimmed = pageBuffer.trim();
-      const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
-      const tokenCount = Math.max(1, Math.round(trimmed.length / 4));
-
-      chunks.push({
-        paperId,
-        chunkIndex: globalChunkIndex,
-        text: trimmed,
-        section: currentSectionInChunk,
-        pageNumber: page.pageNumber,
-        tokenCount,
-        metadata: {
-          pageNumber: page.pageNumber,
-          section: currentSectionInChunk,
-          charLength: trimmed.length,
-          wordCount,
-          chunkIndex: globalChunkIndex,
-        },
-      });
-      globalChunkIndex++;
-    } else if (pageBuffer.trim().length > 0 && chunks.length > 0) {
-      // If trailing snippet is small, append to previous chunk on the same page
-      const prev = chunks[chunks.length - 1];
-      if (prev.pageNumber === page.pageNumber) {
-        prev.text = `${prev.text}\n\n${pageBuffer.trim()}`;
+      if (trimmed.length >= options.minChunkChars) {
+        pushChunk(trimmed, currentSectionInChunk, page.pageNumber);
+      } else if (
+        chunks.length > 0 &&
+        chunks[chunks.length - 1].pageNumber === page.pageNumber &&
+        chunks[chunks.length - 1].section === currentSectionInChunk
+      ) {
+        // Only append to previous chunk if they are on the SAME page AND have the SAME section
+        const prev = chunks[chunks.length - 1];
+        prev.text = `${prev.text}\n\n${trimmed}`;
         prev.metadata.charLength = prev.text.length;
         prev.metadata.wordCount = prev.text.split(/\s+/).filter(Boolean).length;
         prev.tokenCount = Math.max(1, Math.round(prev.text.length / 4));
-      } else {
-        // Different page, keep as chunk
-        const trimmed = pageBuffer.trim();
-        chunks.push({
-          paperId,
-          chunkIndex: globalChunkIndex,
-          text: trimmed,
-          section: currentSectionInChunk,
-          pageNumber: page.pageNumber,
-          tokenCount: Math.max(1, Math.round(trimmed.length / 4)),
-          metadata: {
-            pageNumber: page.pageNumber,
-            section: currentSectionInChunk,
-            charLength: trimmed.length,
-            wordCount: trimmed.split(/\s+/).filter(Boolean).length,
-            chunkIndex: globalChunkIndex,
-          },
-        });
-        globalChunkIndex++;
+      } else if (trimmed.length >= minMeaningfulChars) {
+        // Standalone short section on this page (e.g., short Results, Limitations, Conclusion):
+        // Flush safely as its own chunk rather than dropping or corrupting provenance
+        pushChunk(trimmed, currentSectionInChunk, page.pageNumber);
       }
+      pageBuffer = "";
+      currentSectionInChunk = null;
     }
   }
 
