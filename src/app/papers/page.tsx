@@ -51,24 +51,43 @@ export default async function PapersPage({
     savedPaperIds = new Set(userBookmarks.map((b) => b.paperId));
   }
 
-  // Query hybrid search and categories in parallel
-  const [searchResult, categories, totalPaperCount] = await Promise.all([
-    searchPapersHybrid({
-      query,
-      categorySlug,
-      sort,
-      limit: 50,
-    }),
-    prisma.category.findMany({
-      include: {
-        _count: {
-          select: { papers: true },
+  // Query hybrid search and categories in parallel with defensive error handling
+  let searchResult: Awaited<ReturnType<typeof searchPapersHybrid>> = {
+    papers: [],
+    total: 0,
+    isFallback: false,
+    query,
+    executionTimeMs: 0,
+  };
+  let categories: Array<{ id: string; name: string; slug: string; _count: { papers: number } }> = [];
+  let totalPaperCount = 0;
+  let loadError: string | null = null;
+
+  try {
+    const [sr, cats, count] = await Promise.all([
+      searchPapersHybrid({
+        query,
+        categorySlug,
+        sort,
+        limit: 50,
+      }),
+      prisma.category.findMany({
+        include: {
+          _count: {
+            select: { papers: true },
+          },
         },
-      },
-      orderBy: { name: "asc" },
-    }),
-    prisma.paper.count(),
-  ]);
+        orderBy: { name: "asc" },
+      }),
+      prisma.paper.count(),
+    ]);
+    searchResult = sr;
+    categories = cats;
+    totalPaperCount = count;
+  } catch (err: any) {
+    console.error("[PapersPage] Database query error:", err?.message || err);
+    loadError = "The database connection was temporarily busy. Showing cached or fallback state.";
+  }
 
   // Apply human status filter
   let rankedItems = searchResult.papers;
@@ -128,6 +147,17 @@ export default async function PapersPage({
           </div>
         }
       />
+
+      {loadError && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between">
+          <span>{loadError}</span>
+          <Link href="/papers">
+            <Button size="sm" variant="outline" className="text-xs h-7 border-amber-300">
+              Retry
+            </Button>
+          </Link>
+        </div>
+      )}
 
       {/* Search & Filter Toolbar */}
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
