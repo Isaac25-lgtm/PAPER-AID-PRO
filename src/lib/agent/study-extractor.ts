@@ -1,3 +1,4 @@
+import { prisma } from "../prisma";
 import { getOpenAIClient, AI_CONFIG } from "../ai/config";
 import { zodTextFormat } from "openai/helpers/zod";
 import {
@@ -7,6 +8,11 @@ import {
 import { StudyExtractionSchema, RawStudyExtraction } from "./schemas";
 import { StudyEvidence } from "./types";
 import { RetrievedEvidenceChunk, HydratedMultiPaperAnchor } from "../synthesis/types";
+import {
+  extractAuditedMetricRecordsForStudy,
+  verifyNarrativeNumericalClaim,
+} from "./metric-verifier";
+import { MetricRecord } from "./metric-types";
 
 function formatSnippet(text: string, maxLength: number = 240): string {
   const cleaned = text.replace(/\s+/g, " ").trim();
@@ -24,6 +30,8 @@ function formatSnippet(text: string, maxLength: number = 240): string {
  * 2. Missing values remain null. Absence is never converted into zero.
  * 3. Cited chunk IDs are strictly verified against the supplied chunks for this paper.
  * 4. Ground-truth evidence anchors are hydrated server-side with exact page, section, and text snippet.
+ * 5. Bounded adjacent-chunk retrieval stitches split tables and table headers from the same paper.
+ * 6. Discloses whether study is AI/ML evaluation or human clinical comparator.
  */
 export async function extractStudyEvidence(
   paper: {
@@ -61,12 +69,69 @@ export async function extractStudyEvidence(
       majorFindings: [],
       limitations: [],
       evidenceAnchors: [],
+      isAiStudy: false,
+      clinicalTask: null,
+      studyCategory: "INELIGIBLE",
     };
   }
 
-  // Create chunk lookup
-  const chunkMap = new Map<string, RetrievedEvidenceChunk>();
+  // PART 2.3: Bounded adjacent-chunk expansion for split tables and headers
+  let augmentedChunks = [...chunks];
+  const existingChunkIndices = new Set(chunks.map((c) => c.chunkIndex));
+  const missingIndicesToFetch = new Set<number>();
+
   for (const c of chunks) {
+    const isTableRelevant = /\b(table\s+\d+|precision metrics|confusion matrix|subsets\b|dataset\s+subsets|classification\s+subsets)\b/i.test(c.text);
+    if (isTableRelevant) {
+      if (c.chunkIndex > 0 && !existingChunkIndices.has(c.chunkIndex - 1)) {
+        missingIndicesToFetch.add(c.chunkIndex - 1);
+      }
+      if (!existingChunkIndices.has(c.chunkIndex + 1)) {
+        missingIndicesToFetch.add(c.chunkIndex + 1);
+      }
+    }
+  }
+
+  if (missingIndicesToFetch.size > 0) {
+    try {
+      const adjacentRows = await prisma.paperChunk.findMany({
+        where: {
+          paperId: paper.id,
+          chunkIndex: { in: Array.from(missingIndicesToFetch).slice(0, 4) },
+        },
+        select: {
+          id: true,
+          paperId: true,
+          chunkIndex: true,
+          pageNumber: true,
+          section: true,
+          text: true,
+        },
+      });
+
+      for (const row of adjacentRows) {
+        if (!existingChunkIndices.has(row.chunkIndex)) {
+          existingChunkIndices.add(row.chunkIndex);
+          augmentedChunks.push({
+            id: row.id,
+            paperId: row.paperId,
+            chunkIndex: row.chunkIndex,
+            pageNumber: row.pageNumber,
+            section: row.section,
+            text: row.text,
+            similarity: 0.8,
+          });
+        }
+      }
+      augmentedChunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
+    } catch (adjErr) {
+      console.warn(`[StudyExtractor] Adjacent chunk retrieval skipped:`, adjErr);
+    }
+  }
+
+  // Create chunk lookup across augmented chunks
+  const chunkMap = new Map<string, RetrievedEvidenceChunk>();
+  for (const c of augmentedChunks) {
     chunkMap.set(c.id, c);
   }
 
@@ -78,7 +143,7 @@ export async function extractStudyEvidence(
       publicationDate: paper.year ? String(paper.year) : null,
       doi: paper.doi,
     },
-    chunks.map((c) => ({
+    augmentedChunks.map((c) => ({
       id: c.id,
       chunkIndex: c.chunkIndex,
       pageNumber: c.pageNumber,
@@ -112,7 +177,6 @@ export async function extractStudyEvidence(
     }
   } catch (err: any) {
     console.error(`[StudyExtractor] Extraction failed for paper ${paper.id}:`, err?.message || err);
-    // Safe graceful fallback: return null fields rather than aborting the entire run
     return {
       paperId: paper.id,
       title: paper.title,
@@ -137,6 +201,9 @@ export async function extractStudyEvidence(
       majorFindings: [],
       limitations: [],
       evidenceAnchors: [],
+      isAiStudy: false,
+      clinicalTask: null,
+      studyCategory: "INELIGIBLE",
     };
   }
 
@@ -211,6 +278,121 @@ export async function extractStudyEvidence(
     return trimmed;
   };
 
+  const lowerTitle = paper.title.toLowerCase();
+  const allText = augmentedChunks.map((c) => c.text.toLowerCase()).join(" ");
+
+  // Deterministic AI vs Clinical Modality verification:
+  // Clinical imaging studies (e.g. Li et al.) evaluate human radiologist SWE/CEUS, not AI models
+  const isClinicalModalityTitle =
+    /\b(multimodal\s+ultrasound|contrast-enhanced|ceus|shear-wave|swe|elastograph\w*)\b/i.test(lowerTitle) &&
+    !/\b(ai|artificial\s+intelligence|cad|computer-aided|deep\s+learning|machine\s+learning|neural|network|model|cnn)\b/i.test(lowerTitle);
+  const textHasAiArchitecture =
+    /\b(convolutional\s+neural|cnn|resnet|densenet|vgg|knn|svm|random\s+forest|deep\s+learning|machine\s+learning\s+model|yolo|unet|u-net)\b/i.test(allText);
+
+  let isAi = Boolean(rawExtraction.isAiStudy);
+  let studyCategory = rawExtraction.studyCategory ?? (isAi ? "AI_MODEL" : "CLINICAL_COMPARATOR");
+
+  if (isClinicalModalityTitle && !textHasAiArchitecture) {
+    isAi = false;
+    studyCategory = "CLINICAL_COMPARATOR";
+  }
+
+  // Check off-target domains (e.g. lung, skin, liver, spine)
+  const isOffDomain =
+    (/\b(skin(\s+tumors?|\s+cancer|\s+disease|\s+lesions?)?|dermatolog\w*|dermoscopic)\b/i.test(lowerTitle) && !/\bbreast\b/i.test(lowerTitle)) ||
+    (/\b(lung|pulmonary)\b/i.test(lowerTitle) && !/\bbreast\b/i.test(lowerTitle)) ||
+    (/\b(liver|hepatic)\b/i.test(lowerTitle) && !/\bbreast\b/i.test(lowerTitle)) ||
+    (/\b(cervical\s+spondylotic|spine)\b/i.test(lowerTitle) && !/\bbreast\b/i.test(lowerTitle));
+
+  if (isOffDomain) {
+    studyCategory = "INELIGIBLE";
+  }
+
+  // Clinical task verification: segmentation vs classification
+  let clinicalTask = rawExtraction.clinicalTask ?? null;
+  const isSegmentationPaper =
+    /\b(segmentation|boundary\s+detection|lesion\s+contour|mask\s+r-cnn|u-net|unet)\b/i.test(lowerTitle) ||
+    (/\b(dice|miou|intersection\s+over\s+union|jaccard)\b/i.test(allText) && !/\b(classification\s+accuracy|diagnostic\s+accuracy|malignan\w*\s+vs\s+benign)\b/i.test(allText));
+
+  if (isSegmentationPaper && clinicalTask === "CLASSIFICATION") {
+    clinicalTask = "SEGMENTATION";
+  }
+
+  // If task is segmentation, do NOT allow dice or segmentation overlap to be reported as classification accuracy
+  let reportedAccuracy = sanitizeMetric(rawExtraction.accuracy);
+  if (clinicalTask === "SEGMENTATION" && reportedAccuracy) {
+    if (/\b(dice|iou|miou|jaccard|overlap)\b/i.test(reportedAccuracy)) {
+      reportedAccuracy = null;
+    }
+  }
+
+  // Deterministic extraction and verification of audited MetricRecords
+  const verifiedMetricRecords = extractAuditedMetricRecordsForStudy(paper.id, augmentedChunks);
+
+  if (verifiedMetricRecords.length > 0) {
+    const verifiedAucs = verifiedMetricRecords.filter((r) => r.metricName === "AUC");
+    const verifiedAccs = verifiedMetricRecords.filter((r) => r.metricName === "ACCURACY");
+    const verifiedSens = verifiedMetricRecords.filter((r) => r.metricName === "SENSITIVITY");
+    const verifiedSpecs = verifiedMetricRecords.filter((r) => r.metricName === "SPECIFICITY");
+
+    if (verifiedAucs.length > 0) {
+      rawExtraction.auc = verifiedAucs
+        .map((r) => `${r.formattedValue}${r.subgroup ? ` (${r.subgroup})` : r.modelOrMethod ? ` (${r.modelOrMethod})` : ""}`)
+        .join(", ");
+    } else {
+      rawExtraction.auc = null;
+    }
+
+    if (verifiedAccs.length > 0) {
+      reportedAccuracy = verifiedAccs
+        .map((r) => `${r.formattedValue}${r.subgroup ? ` (${r.subgroup})` : r.modelOrMethod ? ` (${r.modelOrMethod})` : ""}`)
+        .join(", ");
+    }
+
+    if (verifiedSens.length > 0) {
+      rawExtraction.sensitivity = verifiedSens
+        .map((r) => `${r.formattedValue}${r.subgroup ? ` (${r.subgroup})` : r.modelOrMethod ? ` (${r.modelOrMethod})` : ""}`)
+        .join(", ");
+    }
+
+    if (verifiedSpecs.length > 0) {
+      rawExtraction.specificity = verifiedSpecs
+        .map((r) => `${r.formattedValue}${r.subgroup ? ` (${r.subgroup})` : r.modelOrMethod ? ` (${r.modelOrMethod})` : ""}`)
+        .join(", ");
+    }
+
+    const firstRecord = verifiedMetricRecords[0];
+    if (firstRecord.validationProtocol) {
+      rawExtraction.validationMethod = firstRecord.validationProtocol;
+    }
+    if (firstRecord.referenceStandard) {
+      rawExtraction.referenceStandard = firstRecord.referenceStandard;
+    }
+  }
+
+  // Align and verify metrics in extracted major findings against verified MetricRecords
+  for (let i = 0; i < validatedFindings.length; i++) {
+    const narrativeCheck = verifyNarrativeNumericalClaim(validatedFindings[i], verifiedMetricRecords);
+    if (narrativeCheck.isValid && narrativeCheck.sanitizedClaim) {
+      validatedFindings[i] = narrativeCheck.sanitizedClaim;
+    }
+  }
+
+  // Subgroup metric detection: e.g. "<50 age subgroup", "≥50 age subgroup"
+  const isSubgroup = (val: string | null | undefined): boolean => {
+    if (!val) return false;
+    return /\b(<|>|≤|≥|\d+\s*-\s*\d+|subgroup|age|stratif\w*)\b/i.test(val);
+  };
+  const isSubgroupMetric =
+    isSubgroup(rawExtraction.sensitivity) ||
+    isSubgroup(rawExtraction.specificity) ||
+    isSubgroup(rawExtraction.auc);
+
+  let aiMethod = sanitizeMetric(rawExtraction.aiMethod);
+  if (!isAi) {
+    aiMethod = "None (Human Clinical Modality Evaluation)";
+  }
+
   return {
     paperId: paper.id,
     title: paper.title,
@@ -223,7 +405,7 @@ export async function extractStudyEvidence(
     sampleSize: sanitizeMetric(rawExtraction.sampleSize),
     imagingModality: sanitizeMetric(rawExtraction.imagingModality),
     imagingProtocol: sanitizeMetric(rawExtraction.imagingProtocol),
-    aiMethod: sanitizeMetric(rawExtraction.aiMethod),
+    aiMethod,
     comparator: sanitizeMetric(rawExtraction.comparator),
     referenceStandard: sanitizeMetric(rawExtraction.referenceStandard),
     validationMethod: sanitizeMetric(rawExtraction.validationMethod),
@@ -236,9 +418,14 @@ export async function extractStudyEvidence(
     sensitivity: sanitizeMetric(rawExtraction.sensitivity),
     specificity: sanitizeMetric(rawExtraction.specificity),
     auc: sanitizeMetric(rawExtraction.auc),
-    accuracy: sanitizeMetric(rawExtraction.accuracy),
+    accuracy: reportedAccuracy,
     majorFindings: validatedFindings,
     limitations: validatedLimitations,
     evidenceAnchors: Array.from(anchorMap.values()),
+    isAiStudy: isAi,
+    clinicalTask,
+    studyCategory,
+    isSubgroupMetric,
+    metricRecords: verifiedMetricRecords,
   };
 }

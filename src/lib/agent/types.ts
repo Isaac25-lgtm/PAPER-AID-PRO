@@ -52,6 +52,8 @@ export interface AgentTraceStep {
 }
 
 export type FeatureReportingStatus = "PRESENT" | "ABSENT_IN_RETRIEVED_EVIDENCE" | "UNKNOWN";
+export type ClinicalTaskType = "CLASSIFICATION" | "SEGMENTATION" | "DETECTION" | "OTHER";
+export type StudyCategory = "AI_MODEL" | "CLINICAL_COMPARATOR" | "INELIGIBLE";
 
 export interface CorpusGapEvidence {
   field: string;
@@ -87,11 +89,24 @@ export interface StudyEvidence {
   majorFindings: string[];
   limitations: string[];
   evidenceAnchors: HydratedMultiPaperAnchor[];
+  isAiStudy?: boolean;
+  clinicalTask?: ClinicalTaskType | null;
+  studyCategory?: StudyCategory;
+  isSubgroupMetric?: boolean;
+  metricRecords?: import("./metric-types").MetricRecord[];
 }
+
+export * from "./metric-types";
+
+export type LimitationType =
+  | "AUTHOR_REPORTED"
+  | "METHODOLOGICAL_INFERENCE"
+  | "CROSS_STUDY_GAP";
 
 export interface ValidatedAgentClaim {
   text: string;
   category: "PERFORMANCE" | "METHODOLOGY" | "VALIDATION" | "LIMITATION" | "GENERAL";
+  limitationType?: LimitationType;
   supportingPaperIds: string[];
   supportingPaperCount: number;
   citations: HydratedMultiPaperAnchor[];
@@ -126,10 +141,14 @@ export interface ResearchBrief {
   executiveSummary: string;
   scopeDisclosure: string;
   papersConsideredCount: number;
+  eligibleStudiesCount?: number;
   evidenceReadyPapersCount: number;
+  studiesWithEvidenceCount?: number;
+  studiesContributingFindingsCount?: number;
   metadataOnlyCandidatesCount: number;
   keyFindings: ValidatedAgentClaim[];
   studyComparison: StudyEvidence[];
+  clinicalComparators?: StudyEvidence[];
   corroboratedFindings: ValidatedAgentCorroboration[];
   disagreementsAndHeterogeneity: ValidatedAgentDisagreement[];
   evidenceSupportedLimitations: ValidatedAgentClaim[];

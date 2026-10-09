@@ -598,9 +598,14 @@ export class AgentOrchestrator {
 
     const studies: StudyEvidence[] = [];
 
-    // Extract study dimensions paper by paper
+    // Extract study dimensions paper by paper for studies with retrieved chunks
     for (const paperId of state.selectedPaperIds) {
       const chunks = chunksByPaper.get(paperId) || [];
+      // PART 4.1: Exclude zero-chunk studies from evidence-ready counts and comparison tables
+      if (chunks.length === 0) {
+        continue;
+      }
+
       const paper = await prisma.paper.findUnique({
         where: { id: paperId },
         include: {
@@ -625,6 +630,11 @@ export class AgentOrchestrator {
         chunks
       );
 
+      // Exclude studies flagged INELIGIBLE
+      if (study.studyCategory === "INELIGIBLE") {
+        continue;
+      }
+
       studies.push(study);
     }
 
@@ -634,7 +644,7 @@ export class AgentOrchestrator {
       state,
       "STUDY_EXTRACTION",
       "EXTRACT_STUDY_EVIDENCE",
-      `Extracted structured empirical study dimensions for ${studies.length} studies.`,
+      `Extracted structured empirical study dimensions for ${studies.length} studies with retrieved manuscript evidence.`,
       {
         durationMs: Date.now() - startTime,
         counts: { evidenceReady: studies.length },
@@ -661,7 +671,8 @@ export class AgentOrchestrator {
       plan,
       state.studyEvidence,
       state.evidenceChunks,
-      state.candidateExternalPapers.length
+      state.candidateExternalPapers.length,
+      state.selectedPaperIds.length
     );
 
     state.researchBrief = brief;

@@ -15,15 +15,29 @@ import {
   ValidatedAgentResearchGap,
   CorpusGapEvidence,
   FeatureReportingStatus,
+  LimitationType,
 } from "./types";
 import { RetrievedEvidenceChunk, HydratedMultiPaperAnchor } from "../synthesis/types";
+import {
+  isDomainMismatched,
+  isReferenceChunk,
+  isThirdPartyLiteratureChunk,
+  isBackgroundLiteratureReview,
+  isAiAttributionToClinicalStudy,
+  isTechnologySupportedByPaper,
+  isAccuracyPropositionSupported,
+  isHypotheticalBenefitTreatedAsEmpiricalResult,
+  statementIntroducesUnsupportedPropositions,
+  isLimitationSupportedByChunk,
+  isNonComparableOrPseudoDisagreement,
+  splitOrPruneCompoundClaim,
+  formatTableContextSnippet,
+} from "../synthesis/validate-multipaper-citations";
+import { verifyNarrativeNumericalClaim } from "./metric-verifier";
+import { MetricRecord } from "./metric-types";
 
 function formatSnippet(text: string, maxLength: number = 240): string {
-  const cleaned = text.replace(/\s+/g, " ").trim();
-  if (cleaned.length <= maxLength) return cleaned;
-  const truncated = cleaned.slice(0, maxLength);
-  const lastSpace = truncated.lastIndexOf(" ");
-  return (lastSpace > 50 ? truncated.slice(0, lastSpace) : truncated) + "...";
+  return formatTableContextSnippet(text, maxLength);
 }
 
 /**
@@ -140,17 +154,8 @@ export function validateCorpusGap(
 
   const corpusEvidence = computeCorpusGapEvidence(field, studies, featureExtractor);
 
-  // Combine citations: anchors from valid citations + anchors from assessed studies
+  // Citations for a research gap are strictly the anchors validated for this specific gap
   const combinedAnchors: HydratedMultiPaperAnchor[] = [...validAnchors];
-  const seenAnchorChunks = new Set(validAnchors.map((a) => a.chunkId));
-  for (const s of studies) {
-    for (const a of s.evidenceAnchors) {
-      if (!seenAnchorChunks.has(a.chunkId)) {
-        combinedAnchors.push(a);
-        seenAnchorChunks.add(a.chunkId);
-      }
-    }
-  }
 
   let description = rawGap.description.trim();
 
@@ -237,6 +242,153 @@ export function validateCorpusGap(
 }
 
 /**
+ * Validates cross-corpus absence statements (e.g., claiming all studies lacked external validation,
+ * or only one study performed validation) across any output section (such as keyFindings).
+ *
+ * Guarantees:
+ * - Prevents unsupported absence assertions from bypassing validation.
+ * - UNKNOWN is strictly distinguished from confirmed absence.
+ */
+export function validateCrossCorpusClaim(
+  claimText: string,
+  studies: StudyEvidence[]
+): { isValid: boolean; reason?: string } {
+  const lower = claimText.toLowerCase();
+
+  // Detect external validation cross-corpus assertions
+  const isExtValAbsence =
+    /\b(lacked\s+external\s+validation|without\s+external\s+validation|no\s+external\s+validation|did\s+not\s+perform\s+external\s+validation|not\s+perform\s+external\s+validation|only\s+one\s+study\s+.*external\s+validation|lack\s+external\s+validation)\b/i.test(
+      lower
+    ) ||
+    (/\b(most\s+studies|all\s+studies|none\s+of\s+the\s+studies|majority\s+of\s+studies|across\s+studies|studies\s+generally|few\s+studies)\b/i.test(
+      lower
+    ) &&
+      /\b(external\s+validation|external\s+testing)\b/i.test(lower));
+
+  if (isExtValAbsence) {
+    const corpusEvidence = computeCorpusGapEvidence(
+      "externalValidation",
+      studies,
+      (s) => s.externalValidationStatus ?? "UNKNOWN"
+    );
+
+    // If any study has UNKNOWN external validation status, asserting universal/majority absence is invalid
+    if (corpusEvidence.papersUnknown.length > 0) {
+      return {
+        isValid: false,
+        reason: `Validator rejected cross-corpus absence assertion: ${corpusEvidence.papersUnknown.length} of ${corpusEvidence.totalPapersAssessed} studies have UNKNOWN external validation status. UNKNOWN status cannot serve as evidence of absence.`,
+      };
+    }
+
+    // If some study reports external validation, claiming "none" or "all lacked" is invalid
+    if (
+      /\b(none\b|no\s+study|no\s+studies|zero|all\s+studies\s+(lacked|failed))\b/i.test(lower) &&
+      corpusEvidence.papersReportingFeature.length > 0
+    ) {
+      return {
+        isValid: false,
+        reason: `Validator rejected absence claim: external validation is present in ${corpusEvidence.papersReportingFeature.length} studies.`,
+      };
+    }
+  }
+
+  // Detect prospective validation cross-corpus assertions
+  const isProspectiveAbsence =
+    /\b(lacked\s+prospective|without\s+prospective|no\s+prospective|did\s+not\s+perform\s+prospective)\b/i.test(
+      lower
+    );
+  if (isProspectiveAbsence) {
+    const corpusEvidence = computeCorpusGapEvidence(
+      "prospectiveValidation",
+      studies,
+      (s) => {
+        const design = s.studyDesign?.toLowerCase() || "";
+        if (design.includes("prospective")) return "PRESENT";
+        if (design.includes("retrospective")) return "ABSENT_IN_RETRIEVED_EVIDENCE";
+        return "UNKNOWN";
+      }
+    );
+    if (corpusEvidence.papersUnknown.length > 0) {
+      return {
+        isValid: false,
+        reason: `Validator rejected prospective absence assertion: ${corpusEvidence.papersUnknown.length} studies have UNKNOWN study design.`,
+      };
+    }
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validates comparative superlatives (such as "highest AUC", "superior performance across models")
+ * against eligible comparable metric records.
+ *
+ * Guarantees:
+ * - Non-AI clinical comparators (e.g. Li et al.) are never cited as having the "highest AI AUC".
+ * - Subgroup metrics are never cited as overall cohort superlatives.
+ * - Studies with null AUC cannot be asserted as having the highest AUC.
+ */
+export function validateComparativeSuperlatives(
+  claimText: string,
+  supportingStudies: StudyEvidence[],
+  allAiStudies: StudyEvidence[]
+): { isValid: boolean; reason?: string } {
+  const lower = claimText.toLowerCase();
+
+  const isHighestAuc = /\b(highest\s+auc|highest\s+auroc|superior\s+auc|greatest\s+auc)\b/i.test(
+    lower
+  );
+  const mentionsAuc = /\b(auc|auroc)\b/i.test(lower);
+
+  if (isHighestAuc) {
+    // 1. If citing a non-AI clinical comparator for highest AI AUC, reject
+    const nonAiStudy = supportingStudies.find(
+      (s) => s.isAiStudy === false || s.studyCategory === "CLINICAL_COMPARATOR"
+    );
+    if (nonAiStudy && /\b(ai|cad|machine\s+learning|deep\s+learning|models?)\b/i.test(lower)) {
+      return {
+        isValid: false,
+        reason: `Rejected superlative: non-AI clinical comparator (${nonAiStudy.title}) cannot be cited for highest AI model AUC.`,
+      };
+    }
+  }
+
+  if (mentionsAuc) {
+    // 2. If supporting studies do not report an empirical AUC, reject
+    for (const s of supportingStudies) {
+      if (!s.auc && !/\bauc\b/i.test(s.majorFindings.join(" "))) {
+        return {
+          isValid: false,
+          reason: `Rejected unsupported metric: supporting study (${s.title}) does not report an empirical AUC metric.`,
+        };
+      }
+    }
+
+    // 3. If claim attributes a specific numerical AUC (e.g. 0.949, 0.952) that does not match supporting studies, reject
+    const numberMatches = claimText.match(/0\.\d{3}/g);
+    if (numberMatches) {
+      for (const num of numberMatches) {
+        const supported = supportingStudies.some(
+          (s) =>
+            (s.auc && s.auc.includes(num)) ||
+            (s.sensitivity && s.sensitivity.includes(num)) ||
+            (s.specificity && s.specificity.includes(num)) ||
+            s.evidenceAnchors.some((a) => a.snippet.includes(num))
+        );
+        if (!supported) {
+          return {
+            isValid: false,
+            reason: `Rejected unsupported metric: cited metric ${num} is not reported by supporting study.`,
+          };
+        }
+      }
+    }
+  }
+
+  return { isValid: true };
+}
+
+/**
  * Synthesizes a structured Research Brief and performs rigorous claim-level validation
  * and provenance hydration.
  *
@@ -253,20 +405,40 @@ export async function synthesizeResearchBrief(
   plan: ResearchPlan,
   studies: StudyEvidence[],
   allChunks: RetrievedEvidenceChunk[],
-  metadataOnlyCandidatesCount: number = 0
+  metadataOnlyCandidatesCount: number = 0,
+  eligibleStudiesCount?: number
 ): Promise<ResearchBrief> {
+  // Exclude zero-chunk studies from evidence-ready counts and comparison tables
+  const studiesWithChunks = studies.filter((s) => {
+    return allChunks.some((c) => c.paperId === s.paperId);
+  });
+
+  const aiStudies = studiesWithChunks.filter(
+    (s) => s.isAiStudy !== false && s.studyCategory !== "CLINICAL_COMPARATOR"
+  );
+  const clinicalComparators = studiesWithChunks.filter(
+    (s) => s.isAiStudy === false || s.studyCategory === "CLINICAL_COMPARATOR"
+  );
+
+  const effectiveEligibleCount = eligibleStudiesCount ?? studies.length;
+  const effectiveEvidenceReadyCount = studiesWithChunks.length;
+
   // If zero chunks retrieved, return early with insufficient evidence
-  if (allChunks.length === 0 || studies.length === 0) {
+  if (allChunks.length === 0 || studiesWithChunks.length === 0) {
     return {
       objective,
       executiveSummary:
         "Insufficient empirical evidence was available in the analyzed manuscripts to address the research objective.",
-      scopeDisclosure: `Evaluated ${studies.length} papers (${allChunks.length} chunks). No evidence available.`,
-      papersConsideredCount: studies.length + metadataOnlyCandidatesCount,
-      evidenceReadyPapersCount: studies.length,
+      scopeDisclosure: `Evaluated ${effectiveEligibleCount} eligible papers (${allChunks.length} chunks). No evidence available.`,
+      papersConsideredCount: effectiveEligibleCount + metadataOnlyCandidatesCount,
+      eligibleStudiesCount: effectiveEligibleCount,
+      evidenceReadyPapersCount: effectiveEvidenceReadyCount,
+      studiesWithEvidenceCount: effectiveEvidenceReadyCount,
+      studiesContributingFindingsCount: 0,
       metadataOnlyCandidatesCount,
       keyFindings: [],
-      studyComparison: studies,
+      studyComparison: aiStudies,
+      clinicalComparators: clinicalComparators.length > 0 ? clinicalComparators : undefined,
       corroboratedFindings: [],
       disagreementsAndHeterogeneity: [],
       evidenceSupportedLimitations: [],
@@ -291,7 +463,7 @@ export async function synthesizeResearchBrief(
 
   const paperLookup = new Map<string, PaperLookup>();
 
-  for (const s of studies) {
+  for (const s of studiesWithChunks) {
     paperLookup.set(s.paperId, {
       title: s.title,
       authors: s.authors,
@@ -313,7 +485,7 @@ export async function synthesizeResearchBrief(
   const userPrompt = buildBriefSynthesisPrompt(
     objective,
     plan.researchQuestions,
-    studies.map((s) => ({
+    studiesWithChunks.map((s) => ({
       paperId: s.paperId,
       title: s.title,
       year: s.year,
@@ -326,6 +498,9 @@ export async function synthesizeResearchBrief(
       auc: s.auc,
       majorFindings: s.majorFindings,
       limitations: s.limitations,
+      isAiStudy: s.isAiStudy,
+      clinicalTask: s.clinicalTask,
+      studyCategory: s.studyCategory,
     })),
     allChunks.map((c) => ({
       id: c.id,
@@ -368,15 +543,23 @@ export async function synthesizeResearchBrief(
   let rejectedClaimsCount = 0;
   const usedChunkIds = new Set<string>();
 
-  // Helper to validate and hydrate evidence refs
+  const allVerifiedRecords: MetricRecord[] = studiesWithChunks.flatMap(
+    (s) => s.metricRecords || []
+  );
+
+  // Helper to validate and hydrate evidence refs with full domain, methodology, and proposition checks
   const validateEvidenceRefs = (
-    refs: Array<{ paperId: string; chunkIds: string[] }>
+    refs: Array<{ paperId: string; chunkIds: string[] }>,
+    claimText: string,
+    options: { isLimitation?: boolean } = {}
   ): {
     validAnchors: HydratedMultiPaperAnchor[];
     uniquePaperIds: string[];
+    cleanedText: string;
   } => {
     const validAnchors: HydratedMultiPaperAnchor[] = [];
     const uniquePaperIdsSet = new Set<string>();
+    let textToValidate = claimText.trim();
 
     for (const ref of refs || []) {
       const p = paperLookup.get(ref.paperId);
@@ -391,6 +574,84 @@ export async function synthesizeResearchBrief(
         if (!chunk) {
           rejectedCitationsCount++;
           continue;
+        }
+
+        // 1. Clinical/Anatomical domain mismatch
+        if (isDomainMismatched(textToValidate, p.title, chunk.section, chunk.text, objective)) {
+          rejectedCitationsCount++;
+          continue;
+        }
+
+        // 2. Reference list / bibliography chunks
+        if (isReferenceChunk(chunk.section, chunk.text)) {
+          rejectedCitationsCount++;
+          continue;
+        }
+
+        // 3. Third-party literature review
+        if (isThirdPartyLiteratureChunk(chunk.section, chunk.text)) {
+          rejectedCitationsCount++;
+          continue;
+        }
+
+        // 4. Background literature review
+        if (isBackgroundLiteratureReview(textToValidate, chunk.section, chunk.text)) {
+          rejectedCitationsCount++;
+          continue;
+        }
+
+        // 5. AI attribution to clinical imaging study
+        if (isAiAttributionToClinicalStudy(textToValidate, p.title, chunk.text)) {
+          rejectedCitationsCount++;
+          continue;
+        }
+
+        // 6. Technology supported by paper
+        if (!isTechnologySupportedByPaper(textToValidate, p.title, chunk.text)) {
+          rejectedCitationsCount++;
+          continue;
+        }
+
+        // 7. Limitation vs Finding checks
+        if (options.isLimitation) {
+          if (!isLimitationSupportedByChunk(textToValidate, chunk.text)) {
+            rejectedCitationsCount++;
+            continue;
+          }
+          if (statementIntroducesUnsupportedPropositions(textToValidate, [chunk.text], true)) {
+            rejectedCitationsCount++;
+            continue;
+          }
+        } else {
+          // Accuracy proposition check
+          if (!isAccuracyPropositionSupported(textToValidate, chunk.text)) {
+            rejectedCitationsCount++;
+            continue;
+          }
+          // Hypothetical benefit check
+          if (isHypotheticalBenefitTreatedAsEmpiricalResult(textToValidate, chunk.text)) {
+            rejectedCitationsCount++;
+            continue;
+          }
+
+          // Deterministic numerical and metric verification against verified MetricRecords
+          const narrativeMetricCheck = verifyNarrativeNumericalClaim(textToValidate, allVerifiedRecords);
+          if (!narrativeMetricCheck.isValid) {
+            rejectedCitationsCount++;
+            continue;
+          }
+          if (narrativeMetricCheck.sanitizedClaim) {
+            textToValidate = narrativeMetricCheck.sanitizedClaim;
+          }
+
+          // Unsupported propositions check
+          if (statementIntroducesUnsupportedPropositions(textToValidate, [chunk.text], false)) {
+            rejectedCitationsCount++;
+            continue;
+          }
+
+          // Check if trailing comparative superiority can be pruned safely
+          textToValidate = splitOrPruneCompoundClaim(textToValidate, chunk.text);
         }
 
         uniquePaperIdsSet.add(ref.paperId);
@@ -415,19 +676,44 @@ export async function synthesizeResearchBrief(
     return {
       validAnchors,
       uniquePaperIds: Array.from(uniquePaperIdsSet),
+      cleanedText: textToValidate,
     };
   };
 
   // 3. Validate Key Findings
   const validatedKeyFindings: ValidatedAgentClaim[] = [];
   for (const rawFinding of rawSynthesis.keyFindings || []) {
-    const { validAnchors, uniquePaperIds } = validateEvidenceRefs(rawFinding.evidence);
+    // Cross-corpus absence validation across key findings
+    const crossCorpusCheck = validateCrossCorpusClaim(rawFinding.text, studiesWithChunks);
+    if (!crossCorpusCheck.isValid) {
+      rejectedClaimsCount++;
+      continue;
+    }
+
+    const { validAnchors, uniquePaperIds, cleanedText } = validateEvidenceRefs(
+      rawFinding.evidence,
+      rawFinding.text,
+      { isLimitation: false }
+    );
     if (validAnchors.length === 0) {
       rejectedClaimsCount++;
       continue;
     }
+
+    // Comparative superlative validation
+    const supportingStudies = studiesWithChunks.filter((s) => uniquePaperIds.includes(s.paperId));
+    const superlativeCheck = validateComparativeSuperlatives(
+      cleanedText,
+      supportingStudies,
+      aiStudies
+    );
+    if (!superlativeCheck.isValid) {
+      rejectedClaimsCount++;
+      continue;
+    }
+
     validatedKeyFindings.push({
-      text: rawFinding.text.trim(),
+      text: cleanedText,
       category: rawFinding.category,
       supportingPaperIds: uniquePaperIds,
       supportingPaperCount: uniquePaperIds.length,
@@ -438,7 +724,17 @@ export async function synthesizeResearchBrief(
   // 4. Validate Corroborated Findings
   const validatedCorroborations: ValidatedAgentCorroboration[] = [];
   for (const rawCorroboration of rawSynthesis.corroboratedFindings || []) {
-    const { validAnchors, uniquePaperIds } = validateEvidenceRefs(rawCorroboration.evidence);
+    const crossCorpusCheck = validateCrossCorpusClaim(rawCorroboration.claim, studiesWithChunks);
+    if (!crossCorpusCheck.isValid) {
+      rejectedClaimsCount++;
+      continue;
+    }
+
+    const { validAnchors, uniquePaperIds, cleanedText } = validateEvidenceRefs(
+      rawCorroboration.evidence,
+      rawCorroboration.claim,
+      { isLimitation: false }
+    );
     if (validAnchors.length === 0) {
       rejectedClaimsCount++;
       continue;
@@ -448,7 +744,7 @@ export async function synthesizeResearchBrief(
     if (uniquePaperIds.length < 2) {
       // Demote to key finding rather than falsely reporting corroboration
       validatedKeyFindings.push({
-        text: rawCorroboration.claim.trim(),
+        text: cleanedText,
         category: "GENERAL",
         supportingPaperIds: uniquePaperIds,
         supportingPaperCount: uniquePaperIds.length,
@@ -458,7 +754,7 @@ export async function synthesizeResearchBrief(
     }
 
     validatedCorroborations.push({
-      claim: rawCorroboration.claim.trim(),
+      claim: cleanedText,
       supportingPaperIds: uniquePaperIds,
       supportingPaperCount: uniquePaperIds.length,
       citations: validAnchors,
@@ -469,11 +765,29 @@ export async function synthesizeResearchBrief(
   // 5. Validate Disagreements and Heterogeneity
   const validatedDisagreements: ValidatedAgentDisagreement[] = [];
   for (const rawDisagreement of rawSynthesis.disagreementsAndHeterogeneity || []) {
-    const { validAnchors, uniquePaperIds } = validateEvidenceRefs(rawDisagreement.evidence);
+    const { validAnchors, uniquePaperIds } = validateEvidenceRefs(
+      rawDisagreement.evidence,
+      rawDisagreement.description,
+      { isLimitation: false }
+    );
     if (validAnchors.length === 0) {
       rejectedClaimsCount++;
       continue;
     }
+
+    const participatingTitles = studiesWithChunks
+      .filter((s) => uniquePaperIds.includes(s.paperId))
+      .map((s) => s.title);
+
+    const pseudoCheck = isNonComparableOrPseudoDisagreement(
+      rawDisagreement.description,
+      participatingTitles
+    );
+    if (pseudoCheck.isPseudo) {
+      rejectedClaimsCount++;
+      continue;
+    }
+
     validatedDisagreements.push({
       topic: rawDisagreement.topic.trim(),
       type: rawDisagreement.type,
@@ -486,14 +800,75 @@ export async function synthesizeResearchBrief(
   // 6. Validate Evidence Supported Limitations
   const validatedLimitations: ValidatedAgentClaim[] = [];
   for (const rawLim of rawSynthesis.evidenceSupportedLimitations || []) {
-    const { validAnchors, uniquePaperIds } = validateEvidenceRefs(rawLim.evidence);
+    // 1. Cross-corpus validation: Check if limitation makes cross-study or corpus-wide absence/prevalence assertions
+    const crossCorpusCheck = validateCrossCorpusClaim(rawLim.text, studiesWithChunks);
+    if (!crossCorpusCheck.isValid) {
+      rejectedClaimsCount++;
+      continue;
+    }
+
+    // 2. If a limitation says a study didn't report metrics, verify against study extraction
+    const lowerLim = rawLim.text.toLowerCase();
+    const citedStudies = studiesWithChunks.filter((s) =>
+      (rawLim.evidence || []).some((e) => e.paperId === s.paperId)
+    );
+
+    const falselyAssertsMissingMetrics = citedStudies.some((s) => {
+      if (
+        /\b(did\s+not\s+report|failed\s+to\s+report|lacked|no)\s+(sensitivity|specificity|accuracy)\b/i.test(
+          lowerLim
+        )
+      ) {
+        return Boolean(s.sensitivity || s.specificity || s.accuracy);
+      }
+      if (/\b(did\s+not\s+report|failed\s+to\s+report|lacked|no)\s+auc\b/i.test(lowerLim)) {
+        return Boolean(s.auc);
+      }
+      return false;
+    });
+
+    if (falselyAssertsMissingMetrics) {
+      rejectedClaimsCount++;
+      continue;
+    }
+
+    // 3. Multi-study quantifier check: "most studies", "all studies", "none of the studies"
+    const isMultiStudyAssertion = /\b(most\s+studies|all\s+studies|none\s+of\s+the\s+studies|majority\s+of\s+studies|across\s+studies|studies\s+generally|all\s+evaluated\s+models|most\s+models)\b/i.test(
+      rawLim.text
+    );
+
+    const { validAnchors, uniquePaperIds, cleanedText } = validateEvidenceRefs(
+      rawLim.evidence,
+      rawLim.text,
+      { isLimitation: true }
+    );
     if (validAnchors.length === 0) {
       rejectedClaimsCount++;
       continue;
     }
+
+    // A single paper's citation CANNOT support a multi-study quantifier ("most studies", "all studies", etc.)
+    if (isMultiStudyAssertion && uniquePaperIds.length < 2) {
+      rejectedClaimsCount++;
+      continue;
+    }
+
+    // Determine or infer limitation type
+    let limitationType: LimitationType = rawLim.limitationType || "AUTHOR_REPORTED";
+    if (isMultiStudyAssertion || uniquePaperIds.length >= 2) {
+      limitationType = "CROSS_STUDY_GAP";
+    } else if (
+      /\b(retrospective|single[\s-]center|institution|dataset\s+design|methodolog\w*)\b/i.test(
+        cleanedText
+      )
+    ) {
+      limitationType = "METHODOLOGICAL_INFERENCE";
+    }
+
     validatedLimitations.push({
-      text: rawLim.text.trim(),
+      text: cleanedText,
       category: "LIMITATION",
+      limitationType,
       supportingPaperIds: uniquePaperIds,
       supportingPaperCount: uniquePaperIds.length,
       citations: validAnchors,
@@ -503,11 +878,15 @@ export async function synthesizeResearchBrief(
   // 7. Validate Research Gaps (Enforce Scoping & Corpus-Level Accounting Rules)
   const validatedGaps: ValidatedAgentResearchGap[] = [];
   for (const rawGap of rawSynthesis.researchGaps || []) {
-    const { validAnchors, uniquePaperIds } = validateEvidenceRefs(rawGap.evidence);
+    const { validAnchors, uniquePaperIds } = validateEvidenceRefs(
+      rawGap.evidence,
+      rawGap.description,
+      { isLimitation: false }
+    );
 
     const validationResult = validateCorpusGap(
       rawGap,
-      studies,
+      studiesWithChunks,
       validAnchors,
       uniquePaperIds
     );
@@ -525,15 +904,27 @@ export async function synthesizeResearchBrief(
     validatedCorroborations.length === 0 &&
     validatedLimitations.length === 0;
 
+  // Derive studiesContributingFindingsCount strictly from unique paper IDs of actual validated finding anchors
+  // Finding anchors come from surviving keyFindings and corroboratedFindings
+  const findingAnchors = [
+    ...validatedKeyFindings.flatMap((f) => f.citations),
+    ...validatedCorroborations.flatMap((c) => c.citations),
+  ];
+  const uniqueContributingPaperIds = new Set(findingAnchors.map((a) => a.paperId));
+
   return {
     objective,
     executiveSummary: rawSynthesis.executiveSummary.trim(),
     scopeDisclosure: rawSynthesis.scopeDisclosure.trim(),
-    papersConsideredCount: studies.length + metadataOnlyCandidatesCount,
-    evidenceReadyPapersCount: studies.length,
+    papersConsideredCount: effectiveEligibleCount + metadataOnlyCandidatesCount,
+    eligibleStudiesCount: effectiveEligibleCount,
+    evidenceReadyPapersCount: effectiveEvidenceReadyCount,
+    studiesWithEvidenceCount: effectiveEvidenceReadyCount,
+    studiesContributingFindingsCount: uniqueContributingPaperIds.size,
     metadataOnlyCandidatesCount,
     keyFindings: validatedKeyFindings,
-    studyComparison: studies,
+    studyComparison: aiStudies,
+    clinicalComparators: clinicalComparators.length > 0 ? clinicalComparators : undefined,
     corroboratedFindings: validatedCorroborations,
     disagreementsAndHeterogeneity: validatedDisagreements,
     evidenceSupportedLimitations: validatedLimitations,

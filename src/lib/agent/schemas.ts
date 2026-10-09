@@ -35,7 +35,6 @@ export const ResearchPlanSchema = z.object({
   externalDiscoveryReason: z
     .string()
     .nullable()
-    .optional()
     .describe("Scientific reason why external discovery is required, or null if local library is sufficient"),
 });
 
@@ -52,26 +51,64 @@ export const EvidenceRefSchema = z.object({
 
 // 2. Study-Level Evidence Extraction Schema (per paper)
 export const StudyExtractionSchema = z.object({
+  isAiStudy: z
+    .boolean()
+    .default(true)
+    .describe(
+      "True only if the manuscript develops, evaluates, or tests an AI, machine learning, deep learning, or computer-aided diagnosis (CAD) algorithm. False if this is a clinical, manual, or radiologist-only imaging evaluation without an AI algorithm."
+    ),
+  clinicalTask: z
+    .enum(["CLASSIFICATION", "SEGMENTATION", "DETECTION", "OTHER"])
+    .nullable()
+    .default(null)
+    .describe(
+      "Primary computational/clinical task: CLASSIFICATION (e.g. benign vs malignant differentiation), SEGMENTATION (lesion boundary/mask delineation), DETECTION (lesion localization/bounding box), or OTHER"
+    ),
+  studyCategory: z
+    .enum(["AI_MODEL", "CLINICAL_COMPARATOR", "INELIGIBLE"])
+    .nullable()
+    .default(null)
+    .describe("Category of the study relative to AI research synthesis"),
   studyDesign: z.string().nullable().describe("e.g. Retrospective cohort, prospective reader study, or null if not reported"),
   population: z.string().nullable().describe("Patient or image cohort description, or null if not reported"),
   sampleSize: z.string().nullable().describe("Number of patients, lesions, or images, or null if not reported"),
   imagingModality: z.string().nullable().describe("e.g. B-mode ultrasound, color Doppler, elastography, or null if not reported"),
   imagingProtocol: z.string().nullable().describe("Acquisition details or equipment if reported, or null"),
-  aiMethod: z.string().nullable().describe("AI architecture, algorithm, or deep learning model, or null if not reported"),
+  aiMethod: z.string().nullable().describe("AI architecture, algorithm, or deep learning model, or null if not an AI study or not reported"),
   comparator: z.string().nullable().describe("Radiologists, existing clinical standard (e.g. BI-RADS), or null"),
   referenceStandard: z.string().nullable().describe("Ground truth standard (e.g. histopathology, 2-year follow-up), or null"),
-  validationMethod: z.string().nullable().describe("e.g. 5-fold cross-validation, independent external cohort, or null"),
+  validationMethod: z.string().nullable().describe("e.g. 5-fold cross-validation, independent external cohort, 80/20 split, or null"),
   externalValidationStatus: z
     .enum(["PRESENT", "ABSENT_IN_RETRIEVED_EVIDENCE", "UNKNOWN"])
     .nullable()
-    .optional()
+    .default("UNKNOWN")
     .describe(
       "Whether testing on an independent external or multicenter validation cohort is PRESENT, explicitly ABSENT_IN_RETRIEVED_EVIDENCE (e.g. single-center or internal validation only), or UNKNOWN (retrieved chunks contain insufficient evidence to determine)"
     ),
-  sensitivity: z.string().nullable().describe("Reported sensitivity metric with CI if available, or null"),
-  specificity: z.string().nullable().describe("Reported specificity metric with CI if available, or null"),
-  auc: z.string().nullable().describe("Reported AUC / ROC metric with CI if available, or null"),
-  accuracy: z.string().nullable().describe("Reported diagnostic accuracy metric, or null"),
+  sensitivity: z
+    .string()
+    .nullable()
+    .describe(
+      "Reported sensitivity metric with CI if available, or null. MUST include population/subgroup if stratified (e.g. '94.1% (<50 age subgroup)'). NEVER promote a subgroup metric to an overall cohort result."
+    ),
+  specificity: z
+    .string()
+    .nullable()
+    .describe(
+      "Reported specificity metric with CI if available, or null. MUST include population/subgroup if stratified (e.g. '95.7% (<50 age subgroup)'). NEVER promote a subgroup metric to an overall cohort result."
+    ),
+  auc: z
+    .string()
+    .nullable()
+    .describe(
+      "Reported AUC / ROC metric with CI if available, or null. MUST include population/subgroup if stratified (e.g. '0.949 (<50 age subgroup), 0.952 (>=50 age subgroup)'). NEVER report a subgroup AUC as an overall AUC."
+    ),
+  accuracy: z
+    .string()
+    .nullable()
+    .describe(
+      "Reported diagnostic accuracy metric, or null. For segmentation papers, do NOT report mIoU or Dice coefficient as classification accuracy."
+    ),
   majorFindings: z
     .array(
       z.object({
@@ -139,7 +176,13 @@ export const BriefSynthesisSchema = z.object({
   evidenceSupportedLimitations: z
     .array(
       z.object({
-        text: z.string().describe("Recurrent or notable limitation grounded in manuscript evidence"),
+        text: z.string().describe("Notable limitation grounded in manuscript evidence"),
+        limitationType: z
+          .enum(["AUTHOR_REPORTED", "METHODOLOGICAL_INFERENCE", "CROSS_STUDY_GAP"])
+          .nullable()
+          .describe(
+            "Distinguish: AUTHOR_REPORTED (explicitly acknowledged by authors in discussion/limitations), METHODOLOGICAL_INFERENCE (inferred directly from study methods e.g. single-center or retrospective), or CROSS_STUDY_GAP (systematic pattern across multiple studies supported by corpus accounting)"
+          ),
         evidence: z.array(EvidenceRefSchema).min(1),
       })
     )

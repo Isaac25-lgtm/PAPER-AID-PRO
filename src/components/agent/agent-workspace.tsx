@@ -623,8 +623,18 @@ export function AgentWorkspace({ initialConversationId }: AgentWorkspaceProps) {
                                     <span className="line-clamp-2">{study.title}</span>
                                     <ExternalLink className="w-3 h-3 flex-shrink-0 text-slate-400" />
                                   </Link>
-                                  <div className="text-[10px] text-slate-400 mt-0.5">
-                                    {study.authors[0] || "Author N/A"}{study.authors.length > 1 ? " et al." : ""} ({study.year || "Year N/A"})
+                                  <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                    <span>{study.authors[0] || "Author N/A"}{study.authors.length > 1 ? " et al." : ""} ({study.year || "Year N/A"})</span>
+                                    {study.studyCategory === "CLINICAL_COMPARATOR" && (
+                                      <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[9px] font-medium">
+                                        Clinical Comparator
+                                      </span>
+                                    )}
+                                    {study.clinicalTask && (
+                                      <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px]">
+                                        {study.clinicalTask}
+                                      </span>
+                                    )}
                                   </div>
                                 </td>
                                 <td className="p-2.5">
@@ -638,7 +648,11 @@ export function AgentWorkspace({ initialConversationId }: AgentWorkspaceProps) {
                                   {study.sampleSize || <span className="text-slate-400 italic font-sans">Not reported in retrieved evidence</span>}
                                 </td>
                                 <td className="p-2.5">
-                                  {study.aiMethod || <span className="text-slate-400 italic">Not reported in retrieved evidence</span>}
+                                  {study.isAiStudy === false || study.studyCategory === "CLINICAL_COMPARATOR" ? (
+                                    <span className="text-slate-500 italic text-[11px]">None (Human Clinical Modality Evaluation)</span>
+                                  ) : (
+                                    study.aiMethod || <span className="text-slate-400 italic">Not reported in retrieved evidence</span>
+                                  )}
                                 </td>
                                 <td className="p-2.5">
                                   {study.validationMethod || <span className="text-slate-400 italic">Not reported in retrieved evidence</span>}
@@ -672,7 +686,7 @@ export function AgentWorkspace({ initialConversationId }: AgentWorkspaceProps) {
                           Validated Scientific Research Brief
                         </h2>
                         <span className="text-xs text-slate-500">
-                          {currentRun.researchBrief.evidenceReadyPapersCount} evidence papers • {currentRun.researchBrief.totalEvidenceChunksUsed} chunks anchored
+                          {currentRun.researchBrief.studiesWithEvidenceCount ?? currentRun.researchBrief.evidenceReadyPapersCount} studies with evidence • {currentRun.researchBrief.studiesContributingFindingsCount !== undefined ? `${currentRun.researchBrief.studiesContributingFindingsCount} contributing • ` : ""}{currentRun.researchBrief.totalEvidenceChunksUsed} chunks anchored
                         </span>
                       </div>
 
@@ -840,9 +854,16 @@ export function AgentWorkspace({ initialConversationId }: AgentWorkspaceProps) {
                                   {lim.text}
                                 </div>
                                 <div className="pt-2 border-t border-orange-200/60 flex items-center justify-between text-xs">
-                                  <span className="text-[11px] text-slate-500 font-mono">
-                                    {lim.citations.length} Anchor{lim.citations.length === 1 ? "" : "s"}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    {lim.limitationType && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 font-semibold font-mono">
+                                        {lim.limitationType.replace(/_/g, " ")}
+                                      </span>
+                                    )}
+                                    <span className="text-[11px] text-slate-500 font-mono">
+                                      {lim.citations.length} Anchor{lim.citations.length === 1 ? "" : "s"}
+                                    </span>
+                                  </div>
                                   <button
                                     onClick={() => toggleCitation(citationKey)}
                                     className="text-xs font-medium text-orange-800 hover:text-orange-950 flex items-center gap-1"

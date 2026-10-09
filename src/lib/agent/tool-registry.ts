@@ -98,10 +98,11 @@ export class DefaultAgentToolRegistry implements AgentToolRegistry {
   ): Promise<DiscoveredPaper[]> {
     const limit = options.limit || 8;
     const res = await discoverRelevantPapers(query, {
-      candidateLimit: limit,
+      candidateLimit: limit * 2,
       maxSelected: limit,
     });
-    return res.candidatePapers;
+    // PART 1.1: Return filtered selectedPapers (enforces minSimilarity and anatomical domain alignment)
+    return res.selectedPapers;
   }
 
   async searchExternalLiterature(
@@ -125,12 +126,29 @@ export class DefaultAgentToolRegistry implements AgentToolRegistry {
 
     if (!paper) return null;
 
-    const embeddedResult = await prisma.$queryRaw<[{ count: bigint }]>`
-      SELECT COUNT(*)::bigint as count
-      FROM paper_chunks
-      WHERE "paperId" = ${paperId}
-        AND embedding IS NOT NULL
-    `;
+    let embeddedCount = 0;
+    try {
+      const embeddedResult = await prisma.$queryRaw<[{ count: bigint }]>`
+        SELECT COUNT(*)::bigint as count
+        FROM paper_chunks
+        WHERE "paperId" = ${paperId}
+          AND embedding IS NOT NULL
+      `;
+      embeddedCount = Number(embeddedResult[0]?.count || 0);
+    } catch {
+      try {
+        await prisma.$connect();
+        const embeddedResult = await prisma.$queryRaw<[{ count: bigint }]>`
+          SELECT COUNT(*)::bigint as count
+          FROM paper_chunks
+          WHERE "paperId" = ${paperId}
+            AND embedding IS NOT NULL
+        `;
+        embeddedCount = Number(embeddedResult[0]?.count || 0);
+      } catch {
+        embeddedCount = paper._count.chunks;
+      }
+    }
 
     return {
       id: paper.id,
@@ -139,7 +157,7 @@ export class DefaultAgentToolRegistry implements AgentToolRegistry {
       status: paper.status,
       hasFullText: Boolean(paper.storagePath) && paper.status === "COMPLETED",
       chunkCount: paper._count.chunks,
-      embeddedCount: Number(embeddedResult[0]?.count || 0),
+      embeddedCount,
     };
   }
 

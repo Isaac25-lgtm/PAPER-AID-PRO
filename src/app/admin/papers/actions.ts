@@ -595,7 +595,12 @@ export async function attachPaperPdfAction(
  * Server Action for deleting a paper. Cascades to junction relations and removes stored PDF.
  */
 export async function deletePaper(paperId: string): Promise<ActionResponse> {
-  const session = await getServerSession(authOptions);
+  let session = null;
+  try {
+    session = await getServerSession(authOptions);
+  } catch {
+    session = null;
+  }
 
   if (!session?.user || session.user.role !== "ADMIN") {
     return { success: false, error: "Unauthorized. Admin privileges required." };
@@ -604,7 +609,11 @@ export async function deletePaper(paperId: string): Promise<ActionResponse> {
   try {
     const paper = await prisma.paper.findUnique({ where: { id: paperId } });
 
-    if (paper?.storagePath) {
+    if (!paper) {
+      return { success: false, error: "Manuscript not found or has already been deleted." };
+    }
+
+    if (paper.storagePath) {
       try {
         await deletePaperPdf(paper.storagePath);
       } catch (storageErr) {
@@ -612,21 +621,31 @@ export async function deletePaper(paperId: string): Promise<ActionResponse> {
       }
     }
 
-    await prisma.paper.delete({
-      where: { id: paperId },
-    });
+    // Execute deletion inside transaction with explicit timeouts for connection pool resilience
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.paper.delete({
+          where: { id: paperId },
+        });
+      },
+      {
+        maxWait: 15000,
+        timeout: 30000,
+      }
+    );
 
     revalidatePath("/papers");
     revalidatePath("/admin/papers");
     revalidatePath("/admin/processing");
-    revalidatePath("/categories");
-    revalidatePath("/authors");
     revalidatePath("/");
 
     return { success: true, message: "Paper deleted successfully." };
   } catch (err: any) {
     console.error("Failed to delete paper:", err);
-    return { success: false, error: err.message || "Failed to delete paper." };
+    return {
+      success: false,
+      error: sanitizeActionError(err, "paper deletion"),
+    };
   }
 }
 

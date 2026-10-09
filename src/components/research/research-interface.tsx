@@ -693,6 +693,7 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                         {currentResult.limitations.map((lim, lIdx) => {
                           const isExpanded = expandedLimitationIndices.has(lIdx);
                           const limText = typeof lim === "string" ? lim : lim.text;
+                          const limType = typeof lim === "object" ? (lim as any).limitationType : undefined;
                           const limCitations = typeof lim === "object" && Array.isArray(lim.citations) ? lim.citations : [];
                           const limPaperIds = typeof lim === "object" && Array.isArray(lim.supportingPaperIds) ? lim.supportingPaperIds : [];
                           const hasCitations = limCitations.length > 0;
@@ -721,6 +722,25 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                                   </span>
 
                                   <span className="flex flex-wrap items-center gap-2 pt-1 block">
+                                    {limType && (
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-[10px] font-semibold ${
+                                          limType === "AUTHOR_REPORTED"
+                                            ? "bg-slate-100 border-slate-300 text-slate-800"
+                                            : limType === "METHODOLOGICAL_INFERENCE"
+                                            ? "bg-blue-50 border-blue-200 text-blue-800"
+                                            : "bg-amber-50 border-amber-200 text-amber-800"
+                                        }`}
+                                      >
+                                        {limType === "AUTHOR_REPORTED"
+                                          ? "Author-Reported"
+                                          : limType === "METHODOLOGICAL_INFERENCE"
+                                          ? "Methodological Inference"
+                                          : "Cross-Study Gap"}
+                                      </Badge>
+                                    )}
+
                                     {paperCount > 0 && (
                                       <Badge
                                         variant="outline"
