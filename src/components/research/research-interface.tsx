@@ -34,7 +34,7 @@ import { MultiPaperSynthesisResult, ValidatedMultiPaperClaim, HydratedMultiPaper
 
 interface SupportingExcerptCardProps {
   citation: HydratedMultiPaperAnchor;
-  variant?: "indigo" | "amber";
+  variant?: "indigo" | "amber" | "slate";
   conversationId?: string;
 }
 
@@ -45,10 +45,12 @@ function SupportingExcerptCard({ citation, variant = "indigo", conversationId }:
 
   const snippet = citation.snippet || "";
   const effectiveFull = fullText || citation.fullText;
+  const hasText = Boolean(snippet.trim() || (effectiveFull && effectiveFull.trim()));
   const hasMore = Boolean(
-    (effectiveFull && effectiveFull.trim().length > snippet.trim().length) ||
+    hasText &&
+    ((effectiveFull && effectiveFull.trim().length > snippet.trim().length) ||
     snippet.endsWith("...") ||
-    snippet.length >= 200
+    snippet.length >= 200)
   );
 
   const handleToggle = async () => {
@@ -73,20 +75,23 @@ function SupportingExcerptCard({ citation, variant = "indigo", conversationId }:
 
   const textToDisplay = isExpanded && effectiveFull ? effectiveFull : snippet;
   const isAmber = variant === "amber";
+  const isSlate = variant === "slate";
 
   return (
     <div
       className={`bg-white rounded-lg border ${
-        isAmber ? "border-amber-200/80" : "border-slate-200"
+        isAmber ? "border-amber-200/80" : isSlate ? "border-slate-200/90" : "border-slate-200"
       } p-3 space-y-2 shadow-2xs`}
     >
       <div
         className={`flex flex-wrap items-center justify-between gap-2 border-b ${
-          isAmber ? "border-amber-100" : "border-slate-100"
+          isAmber ? "border-amber-100" : isSlate ? "border-slate-100" : "border-slate-100"
         } pb-2`}
       >
         <div className="flex items-center gap-2 max-w-full sm:max-w-[70%]">
-          <BookOpen className={`h-3.5 w-3.5 shrink-0 ${isAmber ? "text-amber-700" : "text-indigo-600"}`} />
+          <BookOpen className={`h-3.5 w-3.5 shrink-0 ${
+            isAmber ? "text-amber-700" : isSlate ? "text-slate-600" : "text-indigo-600"
+          }`} />
           <span className="text-xs font-semibold text-slate-900 truncate">
             {citation.paperTitle}
           </span>
@@ -98,7 +103,11 @@ function SupportingExcerptCard({ citation, variant = "indigo", conversationId }:
               target="_blank"
               rel="noopener noreferrer"
               className={`text-[10px] text-slate-400 ${
-                isAmber ? "hover:text-amber-700" : "hover:text-indigo-600"
+                isAmber
+                  ? "hover:text-amber-700"
+                  : isSlate
+                  ? "hover:text-slate-700"
+                  : "hover:text-indigo-600"
               } flex items-center gap-0.5`}
             >
               DOI <ExternalLink className="h-2.5 w-2.5" />
@@ -120,6 +129,8 @@ function SupportingExcerptCard({ citation, variant = "indigo", conversationId }:
               className={`text-[10px] h-6 px-2 ${
                 isAmber
                   ? "bg-amber-50 text-amber-800 hover:bg-amber-100"
+                  : isSlate
+                  ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
                   : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
               }`}
             >
@@ -143,15 +154,24 @@ function SupportingExcerptCard({ citation, variant = "indigo", conversationId }:
       </div>
 
       <div className="space-y-1.5">
-        <blockquote
-          className={`text-xs text-slate-700 ${
-            isAmber
-              ? "bg-amber-50/50 border-amber-500"
-              : "bg-slate-50/80 border-indigo-400"
-          } p-2.5 rounded border-l-2 italic leading-relaxed whitespace-pre-wrap break-words`}
-        >
-          &ldquo;{textToDisplay}&rdquo;
-        </blockquote>
+        {hasText ? (
+          <blockquote
+            className={`text-xs text-slate-700 ${
+              isAmber
+                ? "bg-amber-50/50 border-amber-500"
+                : isSlate
+                ? "bg-slate-50 border-slate-400"
+                : "bg-slate-50/80 border-indigo-400"
+            } p-2.5 rounded border-l-2 italic leading-relaxed whitespace-pre-wrap break-words`}
+          >
+            &ldquo;{textToDisplay}&rdquo;
+          </blockquote>
+        ) : (
+          <div className="text-xs text-slate-500 italic bg-slate-50 p-2.5 rounded border border-dashed border-slate-200 flex items-center gap-2">
+            <AlertCircle className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            <span>Exact manuscript excerpt passage is unavailable in the database record.</span>
+          </div>
+        )}
 
         {hasMore && (
           <div className="flex justify-end pt-0.5">
@@ -162,6 +182,8 @@ function SupportingExcerptCard({ citation, variant = "indigo", conversationId }:
               className={`text-[11px] font-medium ${
                 isAmber
                   ? "text-amber-700 hover:text-amber-800"
+                  : isSlate
+                  ? "text-slate-600 hover:text-slate-800"
                   : "text-indigo-600 hover:text-indigo-800"
               } flex items-center gap-1 hover:underline transition-colors focus:outline-hidden disabled:opacity-50`}
               aria-expanded={isExpanded}
@@ -200,6 +222,7 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
   );
   const [expandedClaimIndices, setExpandedClaimIndices] = React.useState<Set<number>>(new Set());
   const [expandedDisagreementIndices, setExpandedDisagreementIndices] = React.useState<Set<number>>(new Set());
+  const [expandedLimitationIndices, setExpandedLimitationIndices] = React.useState<Set<number>>(new Set());
   const [threads, setThreads] = React.useState<Array<{ id: string; title: string; updatedAt: string }>>([]);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
@@ -220,6 +243,9 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
   const handleSelectThread = async (threadId: string) => {
     setActiveConversationId(threadId);
     setErrorMessage(null);
+    setExpandedClaimIndices(new Set([0]));
+    setExpandedDisagreementIndices(new Set());
+    setExpandedLimitationIndices(new Set());
     try {
       const res = await getResearchThreadMessagesAction(threadId);
       // Find latest assistant message with citations
@@ -256,6 +282,7 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
     setErrorMessage(null);
     setExpandedClaimIndices(new Set());
     setExpandedDisagreementIndices(new Set());
+    setExpandedLimitationIndices(new Set());
   };
 
   const handleSubmit = async (e?: React.FormEvent, presetQuestion?: string) => {
@@ -281,6 +308,8 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
         loadThreads();
         // Expand first claim by default
         setExpandedClaimIndices(new Set([0]));
+        setExpandedDisagreementIndices(new Set());
+        setExpandedLimitationIndices(new Set());
       }
     } catch (err: any) {
       setErrorMessage(err?.message || "An unexpected error occurred.");
@@ -300,6 +329,15 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
 
   const toggleDisagreementExpansion = (index: number) => {
     setExpandedDisagreementIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const toggleLimitationExpansion = (index: number) => {
+    setExpandedLimitationIndices((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
       else next.add(index);
@@ -484,7 +522,7 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                       Grounded Empirical Claims ({currentResult.claims.length})
                     </h2>
                     <span className="text-[11px] text-slate-500">
-                      Click claim to inspect supporting evidence
+                      Expand a claim to view its supporting manuscript evidence
                     </span>
                   </div>
 
@@ -496,17 +534,20 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                       return (
                         <Card
                           key={idx}
-                          className="bg-white border-slate-200 overflow-hidden shadow-xs hover:border-indigo-200 transition-all"
+                          className="bg-white border-slate-200 overflow-hidden shadow-xs hover:border-indigo-300 transition-all group"
                         >
-                          <div
+                          <button
+                            type="button"
+                            aria-expanded={isExpanded}
+                            aria-label={`${isExpanded ? "Hide" : "View"} supporting evidence for claim: ${claim.text.slice(0, 80)}`}
                             onClick={() => toggleClaimExpansion(idx)}
-                            className="p-4 cursor-pointer flex items-start justify-between gap-4 hover:bg-slate-50/50 transition-colors"
+                            className="w-full text-left p-4 cursor-pointer flex items-start justify-between gap-4 hover:bg-slate-50/70 transition-colors focus:outline-hidden focus:ring-2 focus:ring-indigo-500/30 focus:ring-inset"
                           >
-                            <div className="space-y-2 flex-1">
-                              <p className="text-sm text-slate-900 font-medium leading-relaxed">
+                            <span className="space-y-2 flex-1 block">
+                              <span className="text-sm text-slate-900 font-medium leading-relaxed block">
                                 {claim.text}
-                              </p>
-                              <div className="flex items-center gap-2">
+                              </span>
+                              <span className="flex flex-wrap items-center gap-2 block">
                                 <Badge
                                   className={`text-[10px] font-semibold ${
                                     paperCount > 1
@@ -524,12 +565,15 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                                 <span className="text-[11px] text-slate-400">
                                   {claim.citations.length} supporting {claim.citations.length === 1 ? "manuscript excerpt" : "manuscript excerpts"}
                                 </span>
-                              </div>
-                            </div>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400">
-                              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                            </Button>
-                          </div>
+                              </span>
+                            </span>
+                            <span className="flex items-center gap-1.5 shrink-0 pt-0.5 text-xs font-semibold text-indigo-600 group-hover:text-indigo-800 transition-colors select-none">
+                              <span>{isExpanded ? "Hide supporting evidence" : "View supporting evidence"}</span>
+                              <span className="h-7 w-7 flex items-center justify-center text-indigo-600 rounded-md group-hover:bg-indigo-50 transition-colors">
+                                {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                              </span>
+                            </span>
+                          </button>
 
                           {/* Expanded Evidence Drawer */}
                           {isExpanded && (
@@ -638,27 +682,111 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
 
                   {/* Explicit Limitations Section */}
                   {currentResult.limitations.length > 0 && (
-                    <Card className="bg-slate-50 border-slate-200 p-5 rounded-xl space-y-3">
+                    <Card className="bg-slate-50/80 border-slate-200 p-5 rounded-xl space-y-3">
                       <div className="flex items-center gap-2">
                         <ShieldAlert className="h-4 w-4 text-slate-600" />
                         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
                           Reported Limitations in Available Evidence ({currentResult.limitations.length})
                         </h3>
                       </div>
-                      <div className="space-y-2">
-                        {currentResult.limitations.map((lim, lIdx) => (
-                          <div key={lIdx} className="bg-white rounded-lg p-3 border border-slate-200 text-xs text-slate-700 space-y-1">
-                            <p>{lim.text}</p>
-                            <div className="flex flex-wrap gap-1 text-[10px] text-slate-400">
-                              <span>Source:</span>
-                              {lim.citations.map((c, ci) => (
-                                <span key={ci} className="italic text-slate-600">
-                                  {c.paperTitle.slice(0, 35)}... (§{c.section})
+                      <div className="space-y-3">
+                        {currentResult.limitations.map((lim, lIdx) => {
+                          const isExpanded = expandedLimitationIndices.has(lIdx);
+                          const limText = typeof lim === "string" ? lim : lim.text;
+                          const limCitations = typeof lim === "object" && Array.isArray(lim.citations) ? lim.citations : [];
+                          const limPaperIds = typeof lim === "object" && Array.isArray(lim.supportingPaperIds) ? lim.supportingPaperIds : [];
+                          const hasCitations = limCitations.length > 0;
+                          const paperCount =
+                            limPaperIds.length ||
+                            (hasCitations ? new Set(limCitations.map((c) => c.paperId)).size : 0);
+
+                          return (
+                            <div
+                              key={lIdx}
+                              className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-2xs transition-colors hover:border-slate-300 group"
+                            >
+                              <button
+                                type="button"
+                                disabled={!hasCitations}
+                                onClick={() => hasCitations && toggleLimitationExpansion(lIdx)}
+                                aria-expanded={hasCitations ? isExpanded : undefined}
+                                aria-label={hasCitations ? `${isExpanded ? "Hide" : "Show"} supporting excerpt for limitation: ${limText.slice(0, 80)}` : undefined}
+                                className={`w-full text-left p-3.5 flex items-start justify-between gap-4 ${
+                                  hasCitations ? "cursor-pointer hover:bg-slate-50/60" : "cursor-default"
+                                } transition-colors focus:outline-hidden focus:ring-2 focus:ring-slate-400/30 focus:ring-inset`}
+                              >
+                                <span className="space-y-1.5 flex-1 block">
+                                  <span className="text-xs text-slate-900 font-medium leading-relaxed block">
+                                    {limText}
+                                  </span>
+
+                                  <span className="flex flex-wrap items-center gap-2 pt-1 block">
+                                    {paperCount > 0 && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[10px] bg-slate-50 border-slate-300 text-slate-700 font-semibold"
+                                      >
+                                        Reported in {paperCount} {paperCount === 1 ? "paper" : "papers"}
+                                      </Badge>
+                                    )}
+
+                                    {hasCitations ? (
+                                      <span className="text-[10px] text-slate-600 font-medium group-hover:text-slate-900 flex items-center gap-1">
+                                        {isExpanded ? (
+                                          <>
+                                            Show less <ChevronUp className="h-3 w-3" />
+                                          </>
+                                        ) : (
+                                          <>
+                                            {limCitations.length === 1
+                                              ? "Show supporting excerpt"
+                                              : `Show supporting excerpts (${limCitations.length})`}
+                                            <ChevronDown className="h-3 w-3" />
+                                          </>
+                                        )}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-amber-700 italic flex items-center gap-1">
+                                        <AlertCircle className="h-3 w-3" />
+                                        Evidence excerpt unavailable
+                                      </span>
+                                    )}
+                                  </span>
                                 </span>
-                              ))}
+
+                                {hasCitations && (
+                                  <span className="h-8 w-8 flex items-center justify-center text-slate-400 group-hover:text-slate-600 shrink-0">
+                                    {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                  </span>
+                                )}
+                              </button>
+
+                              {/* Expanded Evidence Drawer for Limitation */}
+                              {isExpanded && hasCitations && (
+                                <div className="bg-slate-50/70 border-t border-slate-200 p-4 space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                      Supporting Manuscript {limCitations.length === 1 ? "Excerpt" : "Excerpts"}:
+                                    </span>
+                                    <span className="text-[10px] text-slate-400">
+                                      Exact verbatim manuscript passage
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-3">
+                                    {limCitations.map((cit, cIdx) => (
+                                      <SupportingExcerptCard
+                                        key={cIdx}
+                                        citation={cit}
+                                        variant="slate"
+                                        conversationId={currentResult.conversationId || activeConversationId}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </Card>
                   )}
