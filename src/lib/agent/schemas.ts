@@ -79,23 +79,31 @@ export const StudyExtractionSchema = z.object({
   referenceStandard: z.string().nullable().describe("Ground truth standard (e.g. histopathology, 2-year follow-up), or null"),
   validationMethod: z.string().nullable().describe("e.g. 5-fold cross-validation, independent external cohort, 80/20 split, or null"),
   externalValidationStatus: z
-    .enum(["PRESENT", "ABSENT_IN_RETRIEVED_EVIDENCE", "UNKNOWN"])
+    .enum([
+      "PRESENT",
+      "PRESENT_INSUFFICIENTLY_DESCRIBED",
+      "NOT_PERFORMED",
+      "NOT_REPORTED",
+      "NOT_IDENTIFIED_IN_RETRIEVED_EVIDENCE",
+      "ABSENT_IN_RETRIEVED_EVIDENCE",
+      "UNKNOWN",
+    ])
     .nullable()
     .default("UNKNOWN")
     .describe(
-      "Whether testing on an independent external or multicenter validation cohort is PRESENT, explicitly ABSENT_IN_RETRIEVED_EVIDENCE (e.g. single-center or internal validation only), or UNKNOWN (retrieved chunks contain insufficient evidence to determine)"
+      "Whether external/multicenter validation is: 'PRESENT' (explicit external/multicenter test set), 'PRESENT_INSUFFICIENTLY_DESCRIBED' (claimed but lacking dataset details), 'NOT_PERFORMED' (authors state not performed / limitation), 'NOT_REPORTED' (study describes only internal split without mentioning external testing), 'NOT_IDENTIFIED_IN_RETRIEVED_EVIDENCE' (retrieved chunks lack validation cohort text), or 'UNKNOWN'"
     ),
   sensitivity: z
     .string()
     .nullable()
     .describe(
-      "Reported sensitivity metric with CI if available, or null. MUST include population/subgroup if stratified (e.g. '94.1% (<50 age subgroup)'). NEVER promote a subgroup metric to an overall cohort result."
+      "Reported diagnostic sensitivity metric with CI if available, or null. MUST include population/subgroup if stratified (e.g. '94.1% (<50 age subgroup)'). NEVER promote a subgroup metric to an overall cohort result."
     ),
   specificity: z
     .string()
     .nullable()
     .describe(
-      "Reported specificity metric with CI if available, or null. MUST include population/subgroup if stratified (e.g. '95.7% (<50 age subgroup)'). NEVER promote a subgroup metric to an overall cohort result."
+      "Reported diagnostic specificity metric with CI if available, or null. MUST include population/subgroup if stratified (e.g. '95.7% (<50 age subgroup)'). NEVER promote a subgroup metric to an overall cohort result."
     ),
   auc: z
     .string()
@@ -107,7 +115,14 @@ export const StudyExtractionSchema = z.object({
     .string()
     .nullable()
     .describe(
-      "Reported diagnostic accuracy metric, or null. For segmentation papers, do NOT report mIoU or Dice coefficient as classification accuracy."
+      "Reported diagnostic classification accuracy metric, or null. For segmentation papers, keep distinct from pixel accuracy/mIoU."
+    ),
+  segmentationMetrics: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe(
+      "Reported semantic segmentation metrics (e.g. mIoU, IoU, Dice coefficient, F1-score, pixel accuracy, Precision, Recall) with dataset or cohort specified (e.g. 'mIoU 72.94%, F1 81.86%, Pixel Accuracy 96.74% (BUSI)'). Null if not a segmentation study."
     ),
   majorFindings: z
     .array(

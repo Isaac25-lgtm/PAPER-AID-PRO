@@ -627,7 +627,11 @@ export class AgentOrchestrator {
           journal: paper.journal,
           doi: paper.doi,
         },
-        chunks
+        chunks,
+        {
+          researchObjective: state.objective,
+          researchPlan: state.plan,
+        }
       );
 
       // Exclude studies flagged INELIGIBLE

@@ -9,6 +9,7 @@
  */
 
 import { RetrievedEvidenceChunk, HydratedMultiPaperAnchor } from "../synthesis/types";
+export type { RetrievedEvidenceChunk, HydratedMultiPaperAnchor };
 import { NormalizedExternalPaper, SourceProvider, FullTextAvailabilityStatus } from "../discovery/types";
 
 export type AgentState =
@@ -51,7 +52,14 @@ export interface AgentTraceStep {
   durationMs?: number;
 }
 
-export type FeatureReportingStatus = "PRESENT" | "ABSENT_IN_RETRIEVED_EVIDENCE" | "UNKNOWN";
+export type FeatureReportingStatus =
+  | "PRESENT"
+  | "PRESENT_INSUFFICIENTLY_DESCRIBED"
+  | "NOT_PERFORMED"
+  | "NOT_REPORTED"
+  | "NOT_IDENTIFIED_IN_RETRIEVED_EVIDENCE"
+  | "UNKNOWN"
+  | "ABSENT_IN_RETRIEVED_EVIDENCE";
 export type ClinicalTaskType =
   | "CLASSIFICATION"
   | "SEGMENTATION"
@@ -93,6 +101,7 @@ export interface StudyEvidence {
   specificity?: string | null;
   auc?: string | null;
   accuracy?: string | null;
+  segmentationMetrics?: string | null;
   majorFindings: string[];
   limitations: string[];
   evidenceAnchors: HydratedMultiPaperAnchor[];

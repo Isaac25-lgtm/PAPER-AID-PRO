@@ -609,6 +609,7 @@ export function AgentWorkspace({ initialConversationId }: AgentWorkspaceProps) {
                               <th className="p-2.5">Sensitivity</th>
                               <th className="p-2.5">Specificity</th>
                               <th className="p-2.5">AUC</th>
+                              <th className="p-2.5">Segmentation Metrics</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -665,6 +666,9 @@ export function AgentWorkspace({ initialConversationId }: AgentWorkspaceProps) {
                                 </td>
                                 <td className="p-2.5 font-mono text-[11px] font-semibold text-indigo-700">
                                   {study.auc || <span className="text-slate-400 italic font-sans font-normal">Not reported in retrieved evidence</span>}
+                                </td>
+                                <td className="p-2.5 font-mono text-[11px] text-purple-700">
+                                  {study.segmentationMetrics || <span className="text-slate-400 italic font-sans font-normal">—</span>}
                                 </td>
                               </tr>
                             ))}

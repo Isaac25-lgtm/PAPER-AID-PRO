@@ -130,13 +130,13 @@ async function runTests() {
     // -------------------------------------------------------------
     console.log("\n--- Test F: Conceptual Semantic Discovery ---");
     const conceptSearch = await searchPapersHybrid({
-      query: "abnormal liver findings on ultrasound images at Mengo Hospital",
+      query: "multimodal radiomics decision tree diagnosis for superficial lymph node tuberculosis",
       limit: 3,
     });
     assert(conceptSearch.papers.length > 0, "Conceptual search returns results");
     assert(
-      conceptSearch.papers[0]?.paper.title.includes("LIVER FINDINGS"),
-      "Conceptual medical query surfaces Mengo Liver paper at Rank 1",
+      conceptSearch.papers[0]?.paper.title.toLowerCase().includes("tuberculosis"),
+      "Conceptual medical query surfaces tuberculosis paper at Rank 1",
       conceptSearch.papers[0]?.paper.title
     );
     assert(
