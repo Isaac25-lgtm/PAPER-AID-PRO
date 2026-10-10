@@ -52,7 +52,14 @@ export interface AgentTraceStep {
 }
 
 export type FeatureReportingStatus = "PRESENT" | "ABSENT_IN_RETRIEVED_EVIDENCE" | "UNKNOWN";
-export type ClinicalTaskType = "CLASSIFICATION" | "SEGMENTATION" | "DETECTION" | "OTHER";
+export type ClinicalTaskType =
+  | "CLASSIFICATION"
+  | "SEGMENTATION"
+  | "DETECTION"
+  | "OBJECT_DETECTION"
+  | "REGRESSION"
+  | "CORRELATION"
+  | "OTHER";
 export type StudyCategory = "AI_MODEL" | "CLINICAL_COMPARATOR" | "INELIGIBLE";
 
 export interface CorpusGapEvidence {

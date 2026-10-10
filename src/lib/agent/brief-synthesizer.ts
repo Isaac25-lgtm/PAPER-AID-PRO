@@ -612,6 +612,16 @@ export async function synthesizeResearchBrief(
           continue;
         }
 
+        // Deterministic numerical and metric verification against verified MetricRecords
+        const narrativeMetricCheck = verifyNarrativeNumericalClaim(textToValidate, allVerifiedRecords);
+        if (!narrativeMetricCheck.isValid) {
+          rejectedCitationsCount++;
+          continue;
+        }
+        if (narrativeMetricCheck.sanitizedClaim) {
+          textToValidate = narrativeMetricCheck.sanitizedClaim;
+        }
+
         // 7. Limitation vs Finding checks
         if (options.isLimitation) {
           if (!isLimitationSupportedByChunk(textToValidate, chunk.text)) {
@@ -632,16 +642,6 @@ export async function synthesizeResearchBrief(
           if (isHypotheticalBenefitTreatedAsEmpiricalResult(textToValidate, chunk.text)) {
             rejectedCitationsCount++;
             continue;
-          }
-
-          // Deterministic numerical and metric verification against verified MetricRecords
-          const narrativeMetricCheck = verifyNarrativeNumericalClaim(textToValidate, allVerifiedRecords);
-          if (!narrativeMetricCheck.isValid) {
-            rejectedCitationsCount++;
-            continue;
-          }
-          if (narrativeMetricCheck.sanitizedClaim) {
-            textToValidate = narrativeMetricCheck.sanitizedClaim;
           }
 
           // Unsupported propositions check

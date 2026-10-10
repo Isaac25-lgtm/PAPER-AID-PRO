@@ -10,6 +10,7 @@ import { StudyEvidence } from "./types";
 import { RetrievedEvidenceChunk, HydratedMultiPaperAnchor } from "../synthesis/types";
 import {
   extractAuditedMetricRecordsForStudy,
+  extractMetricRecordsForStudy,
   verifyNarrativeNumericalClaim,
 } from "./metric-verifier";
 import { MetricRecord } from "./metric-types";
@@ -326,18 +327,27 @@ export async function extractStudyEvidence(
     }
   }
 
-  // Deterministic extraction and verification of audited MetricRecords
-  const verifiedMetricRecords = extractAuditedMetricRecordsForStudy(paper.id, augmentedChunks);
+  // Unified extraction and verification of MetricRecords
+  const verifiedMetricRecords = extractMetricRecordsForStudy(
+    { id: paper.id, title: paper.title },
+    augmentedChunks
+  );
 
   if (verifiedMetricRecords.length > 0) {
     const verifiedAucs = verifiedMetricRecords.filter((r) => r.metricName === "AUC");
+    const verifiedPrAucs = verifiedMetricRecords.filter((r) => r.metricName === "PR_AUC");
     const verifiedAccs = verifiedMetricRecords.filter((r) => r.metricName === "ACCURACY");
+    const verifiedMaps = verifiedMetricRecords.filter((r) => r.metricName === "MAP");
     const verifiedSens = verifiedMetricRecords.filter((r) => r.metricName === "SENSITIVITY");
     const verifiedSpecs = verifiedMetricRecords.filter((r) => r.metricName === "SPECIFICITY");
 
     if (verifiedAucs.length > 0) {
       rawExtraction.auc = verifiedAucs
         .map((r) => `${r.formattedValue}${r.subgroup ? ` (${r.subgroup})` : r.modelOrMethod ? ` (${r.modelOrMethod})` : ""}`)
+        .join(", ");
+    } else if (verifiedPrAucs.length > 0) {
+      rawExtraction.auc = verifiedPrAucs
+        .map((r) => `${r.formattedValue}${r.benchmarkCondition ? ` (${r.benchmarkCondition})` : ""}`)
         .join(", ");
     } else {
       rawExtraction.auc = null;
@@ -346,6 +356,10 @@ export async function extractStudyEvidence(
     if (verifiedAccs.length > 0) {
       reportedAccuracy = verifiedAccs
         .map((r) => `${r.formattedValue}${r.subgroup ? ` (${r.subgroup})` : r.modelOrMethod ? ` (${r.modelOrMethod})` : ""}`)
+        .join(", ");
+    } else if (verifiedMaps.length > 0) {
+      reportedAccuracy = verifiedMaps
+        .map((r) => `${r.formattedValue}${r.benchmarkCondition ? ` (${r.benchmarkCondition})` : ""}`)
         .join(", ");
     }
 
