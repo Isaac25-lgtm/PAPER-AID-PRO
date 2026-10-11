@@ -155,6 +155,18 @@ export async function processPaperDocument(
       return { success: false, jobId: job.id, paperId, error: errorMsg };
     }
 
+    // -------------------------------------------------------------------------
+    // STAGE 4 (DORMANT PREPARATION): TABLE_EXTRACTION
+    // Controlled Phase 3C preparation: strictly default-OFF via ENABLE_TABLE_EXTRACTION="true".
+    // When disabled (default), table extraction is completely bypassed:
+    // zero external API calls, zero database writes, zero chunk/embedding alterations.
+    // -------------------------------------------------------------------------
+    const enableTableExtraction = process.env.ENABLE_TABLE_EXTRACTION === "true";
+    if (enableTableExtraction) {
+      // Dormant hook: When Stage 2 is migrated and activated, isolated TablePersistenceService
+      // will be invoked here to persist candidate tables and verify cells.
+    }
+
     // Atomically replace previous chunks and persist new chunks
     await prisma.$transaction(async (tx) => {
       // Clean up previous chunks for this paper (ensures zero duplicates on reprocess)
