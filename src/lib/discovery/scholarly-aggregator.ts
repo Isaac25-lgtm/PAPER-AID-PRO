@@ -21,6 +21,7 @@ import {
 import { PubMedProvider } from "./providers/pubmed";
 import { CrossrefProvider } from "./providers/crossref";
 import { SemanticScholarProvider } from "./providers/semantic-scholar";
+import { CitedEvidenceProvider } from "./providers/cited-evidence";
 import { deduplicateExternalPapers } from "./deduplicate";
 import { matchPapersAgainstLocalLibrary } from "./library-matcher";
 
@@ -40,6 +41,7 @@ export class ScholarlyAggregator {
       new PubMedProvider(),
       new CrossrefProvider(),
       new SemanticScholarProvider(),
+      new CitedEvidenceProvider(),
     ];
   }
 
@@ -58,6 +60,7 @@ export class ScholarlyAggregator {
           PUBMED: { provider: "PUBMED", status: "SUCCESS", count: 0, durationMs: 0 },
           CROSSREF: { provider: "CROSSREF", status: "SUCCESS", count: 0, durationMs: 0 },
           SEMANTIC_SCHOLAR: { provider: "SEMANTIC_SCHOLAR", status: "SUCCESS", count: 0, durationMs: 0 },
+          CITED_EVIDENCE: { provider: "CITED_EVIDENCE", status: "SUCCESS", count: 0, durationMs: 0 },
         },
         timingMs: 0,
       };
@@ -124,6 +127,7 @@ export class ScholarlyAggregator {
       PUBMED: { provider: "PUBMED", status: "ERROR", count: 0, durationMs: 0 },
       CROSSREF: { provider: "CROSSREF", status: "ERROR", count: 0, durationMs: 0 },
       SEMANTIC_SCHOLAR: { provider: "SEMANTIC_SCHOLAR", status: "ERROR", count: 0, durationMs: 0 },
+      CITED_EVIDENCE: { provider: "CITED_EVIDENCE", status: "ERROR", count: 0, durationMs: 0 },
     };
 
     for (const res of settled) {

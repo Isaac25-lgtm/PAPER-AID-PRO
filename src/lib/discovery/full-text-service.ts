@@ -2,17 +2,22 @@
  * Lawful Full-Text Acquisition Service & SSRF Protection
  *
  * Implements strict, lawful acquisition of open-access manuscripts from
- * trusted repositories (primarily PubMed Central / NCBI PMC).
+ * trusted repositories (NCBI PMC, ArXiv, Europe PMC, CitedEvidence CEDOA).
  *
- * Strict Security Boundaries:
- * - Anti-SSRF: Only HTTPS to explicitly allowlisted trusted repository domains
- * - Private, local, and link-local IP resolution strictly rejected
+ * Strict Security Boundaries & Hardening:
+ * - Anti-SSRF: Only secure HTTPS to allowlisted repositories and verified storage CDNs
+ * - Manual redirect handling (max 3 hops) with destination re-validation on every hop
+ * - DNS resolution & rebinding protection: resolves and rejects private, loopback,
+ *   link-local, and cloud metadata IPs (169.254.169.254, AWS/GCP/Azure)
+ * - Secret hygiene: API authorization headers are strictly isolated to CitedEvidence
+ *   and NEVER forwarded to redirected CDNs or external hosts
  * - Content-Type validation and %PDF- magic bytes check
- * - 30 MB size ceiling
- * - Paywalls, shadow libraries, and publisher scraping are strictly forbidden
+ * - 30 MB size ceiling with pre-download Content-Length fast rejection
+ * - 20-second per-hop request timeout
  * - Non-OA manuscripts transition to USER_UPLOAD_REQUIRED
  */
 
+import * as dns from "dns";
 import { NormalizedExternalPaper, FullTextAvailabilityStatus } from "./types";
 import { uploadPaperPdf } from "@/lib/storage";
 import { processPaperDocument } from "@/lib/pdf/pipeline";
@@ -20,14 +25,28 @@ import { embedPaperChunks } from "@/lib/ai/embedding-pipeline";
 import { prisma } from "@/lib/prisma";
 
 const MAX_PDF_SIZE = 30 * 1024 * 1024; // 30 MB
+const MAX_REDIRECTS = 3;
 
-// Strictly allowlisted trusted scholarly PDF hosts for automated server-side acquisition
-const TRUSTED_PDF_DOMAINS = [
+// Strictly allowlisted trusted scholarly repositories for primary acquisition
+export const TRUSTED_PDF_DOMAINS = [
   "ncbi.nlm.nih.gov",
   "pmc.ncbi.nlm.nih.gov",
   "europepmc.org",
   "arxiv.org",
   "export.arxiv.org",
+  "scholar.citedevidence.com",
+  "citedevidence.com",
+  "biorxiv.org",
+  "medrxiv.org",
+  "zenodo.org",
+];
+
+// Permitted CDN/object storage domains ONLY when redirected from an allowlisted repository
+export const TRUSTED_REDIRECT_CDN_DOMAINS = [
+  "cloudfront.net",
+  "s3.amazonaws.com",
+  "storage.googleapis.com",
+  "osf.io",
 ];
 
 // Disallowed private/loopback/internal host patterns
@@ -53,10 +72,47 @@ export interface AcquisitionResult {
 }
 
 /**
- * Validates whether an external PDF URL is safe to fetch server-side.
- * Mitigates SSRF attacks by enforcing HTTPS, domain allowlist, and IP checks.
+ * Checks whether an IP address belongs to private, loopback, link-local,
+ * or cloud metadata service ranges.
  */
-export function validateSafePdfUrl(urlString: string): { safe: boolean; error?: string; parsedUrl?: URL } {
+export function isPrivateOrReservedIp(ip: string): boolean {
+  const cleanIp = ip.trim().toLowerCase();
+
+  // IPv4 Checks
+  if (cleanIp.includes(".")) {
+    // Handle IPv4-mapped IPv6 (::ffff:127.0.0.1)
+    const v4 = cleanIp.startsWith("::ffff:") ? cleanIp.replace("::ffff:", "") : cleanIp;
+    const parts = v4.split(".").map(Number);
+    if (parts.length !== 4 || parts.some(isNaN)) return true;
+
+    const [a, b] = parts;
+    if (a === 127) return true; // Loopback
+    if (a === 10) return true; // RFC 1918 Private
+    if (a === 172 && b >= 16 && b <= 31) return true; // RFC 1918 Private
+    if (a === 192 && b === 168) return true; // RFC 1918 Private
+    if (a === 169 && b === 254) return true; // Link-local / Cloud Metadata (169.254.169.254)
+    if (a === 0) return true; // Current network
+    if (a === 100 && b >= 64 && b <= 127) return true; // Carrier Grade NAT
+    if (a >= 224) return true; // Multicast / Reserved
+  }
+
+  // IPv6 Checks
+  if (cleanIp.includes(":")) {
+    if (cleanIp === "::1" || cleanIp === "::") return true; // Loopback / Unspecified
+    if (cleanIp.startsWith("fc") || cleanIp.startsWith("fd")) return true; // Unique local (fc00::/7)
+    if (cleanIp.startsWith("fe80")) return true; // Link-local (fe80::/10)
+  }
+
+  return false;
+}
+
+/**
+ * Synchronous URL format check (for initial filtering).
+ */
+export function validateSafePdfUrl(
+  urlString: string,
+  isRedirectHop: boolean = false
+): { safe: boolean; error?: string; parsedUrl?: URL } {
   try {
     const parsed = new URL(urlString);
 
@@ -72,11 +128,17 @@ export function validateSafePdfUrl(urlString: string): { safe: boolean; error?: 
       }
     }
 
-    const isTrusted = TRUSTED_PDF_DOMAINS.some(
+    const isTrustedRepo = TRUSTED_PDF_DOMAINS.some(
       (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
     );
 
-    if (!isTrusted) {
+    const isTrustedCdn =
+      isRedirectHop &&
+      TRUSTED_REDIRECT_CDN_DOMAINS.some(
+        (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+      );
+
+    if (!isTrustedRepo && !isTrustedCdn) {
       return {
         safe: false,
         error: `Host "${hostname}" is not in the trusted scholarly repository allowlist. User upload is required for publisher websites.`,
@@ -87,6 +149,41 @@ export function validateSafePdfUrl(urlString: string): { safe: boolean; error?: 
   } catch (err: any) {
     return { safe: false, error: `Invalid URL format: ${err?.message || "Malformed URI"}` };
   }
+}
+
+/**
+ * Asynchronous validation with DNS resolution and DNS rebinding protection.
+ */
+export async function validateSafePdfUrlAsync(
+  urlString: string,
+  isRedirectHop: boolean = false
+): Promise<{ safe: boolean; error?: string; parsedUrl?: URL }> {
+  const syncCheck = validateSafePdfUrl(urlString, isRedirectHop);
+  if (!syncCheck.safe || !syncCheck.parsedUrl) {
+    return syncCheck;
+  }
+
+  const hostname = syncCheck.parsedUrl.hostname;
+
+  // Resolve DNS to verify destination IP addresses
+  try {
+    const addresses = await dns.promises.lookup(hostname, { all: true });
+    for (const addr of addresses) {
+      if (isPrivateOrReservedIp(addr.address)) {
+        return {
+          safe: false,
+          error: `DNS resolution for "${hostname}" resolved to forbidden private IP address (${addr.address}).`,
+        };
+      }
+    }
+  } catch (dnsErr: any) {
+    return {
+      safe: false,
+      error: `DNS resolution failed for host "${hostname}": ${dnsErr?.message || "Lookup error"}`,
+    };
+  }
+
+  return syncCheck;
 }
 
 /**
@@ -135,7 +232,7 @@ export function resolveFullTextAvailability(
 
 /**
  * Downloads, validates, and ingests an authentic open-access PDF into the local library.
- * Chains into the existing Phase 4 pipeline (processPaperDocument) and Phase 6 embeddings (embedPaperChunks).
+ * Implements manual redirect handling, per-hop DNS validation, and secret header hygiene.
  */
 export async function acquireAndIngestLawfulFullText(
   paperId: string,
@@ -162,67 +259,173 @@ export async function acquireAndIngestLawfulFullText(
     };
   }
 
-  // 1. Validate Safe URL
-  const { safe, error: urlError } = validateSafePdfUrl(targetPdfUrl);
-  if (!safe) {
-    return {
-      success: false,
-      status: "USER_UPLOAD_REQUIRED",
-      error: urlError,
-    };
-  }
-
-  // 2. Fetch PDF with bounded timeout and size limit
+  // 1. Fetch PDF with manual redirect handling and per-hop DNS validation
+  let currentUrl = targetPdfUrl;
   let pdfBuffer: Buffer;
+
   try {
-    const res = await fetch(targetPdfUrl, {
-      signal: AbortSignal.timeout(20000),
-      headers: {
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      // Validate current URL (allow CDNs only on redirect hops)
+      const urlCheck = await validateSafePdfUrlAsync(currentUrl, hop > 0);
+      if (!urlCheck.safe || !urlCheck.parsedUrl) {
+        return {
+          success: false,
+          status: "USER_UPLOAD_REQUIRED",
+          error: urlCheck.error || "URL failed security validation",
+        };
+      }
+
+      const reqHeaders: Record<string, string> = {
         "User-Agent": "AIResearchHub/1.0 (academic-intelligence-platform; mailto:scholar@airesearchhub.org)",
         Accept: "application/pdf,*/*",
-      },
-    });
-
-    if (!res.ok) {
-      return {
-        success: false,
-        status: "FAILED",
-        error: `Remote repository returned HTTP ${res.status}: ${res.statusText}`,
       };
-    }
 
-    const contentType = res.headers.get("content-type") || "";
-    // Note: Some repositories return binary/octet-stream or application/x-pdf
-    if (
-      !contentType.includes("pdf") &&
-      !contentType.includes("octet-stream")
-    ) {
-      return {
-        success: false,
-        status: "FAILED",
-        error: `Expected application/pdf but received content-type "${contentType}". This may be an HTML landing page.`,
-      };
-    }
+      // Secret Header Hygiene: ONLY send API key to CitedEvidence endpoints
+      const host = urlCheck.parsedUrl.hostname.toLowerCase();
+      if (host === "scholar.citedevidence.com" || host.endsWith(".citedevidence.com")) {
+        const ceKey = process.env.CITEDEVIDENCE_API_KEY || process.env.CE_API_KEY;
+        if (ceKey) {
+          reqHeaders["Authorization"] = `Bearer ${ceKey.trim()}`;
+        }
+      }
 
-    const arrayBuf = await res.arrayBuffer();
-    pdfBuffer = Buffer.from(arrayBuf);
+      const res = await fetch(currentUrl, {
+        method: "GET",
+        redirect: "manual", // Enforce manual redirect handling to intercept 3xx hops
+        signal: AbortSignal.timeout(20000),
+        headers: reqHeaders,
+      });
 
-    if (pdfBuffer.length > MAX_PDF_SIZE) {
-      return {
-        success: false,
-        status: "FAILED",
-        error: `Downloaded file size exceeds 30 MB ceiling (${(pdfBuffer.length / (1024 * 1024)).toFixed(1)} MB).`,
-      };
-    }
+      // Handle Redirects
+      if ([301, 302, 303, 307, 308].includes(res.status)) {
+        if (hop === MAX_REDIRECTS) {
+          return {
+            success: false,
+            status: "FAILED",
+            error: `Exceeded maximum redirect limit of ${MAX_REDIRECTS} hops.`,
+          };
+        }
 
-    // Magic bytes check
-    const magic = pdfBuffer.slice(0, 5).toString("utf-8");
-    if (!magic.startsWith("%PDF-")) {
-      return {
-        success: false,
-        status: "FAILED",
-        error: "Downloaded file is not a valid PDF document (missing %PDF- header).",
-      };
+        const location = res.headers.get("location");
+        if (!location) {
+          return {
+            success: false,
+            status: "FAILED",
+            error: `Redirect response (HTTP ${res.status}) missing Location header.`,
+          };
+        }
+
+        currentUrl = new URL(location, currentUrl).toString();
+        continue;
+      }
+
+      if (!res.ok) {
+        return {
+          success: false,
+          status: "FAILED",
+          error: `Remote repository returned HTTP ${res.status}: ${res.statusText}`,
+        };
+      }
+
+      // Fast check for oversized Content-Length before downloading
+      const contentLengthStr = res.headers.get("content-length");
+      if (contentLengthStr) {
+        const contentLength = parseInt(contentLengthStr, 10);
+        if (contentLength > MAX_PDF_SIZE) {
+          return {
+            success: false,
+            status: "FAILED",
+            error: `File size exceeds 30 MB ceiling (${(contentLength / (1024 * 1024)).toFixed(1)} MB).`,
+          };
+        }
+      }
+
+      const contentType = res.headers.get("content-type") || "";
+      if (
+        !contentType.includes("pdf") &&
+        !contentType.includes("octet-stream")
+      ) {
+        return {
+          success: false,
+          status: "FAILED",
+          error: `Expected application/pdf but received content-type "${contentType}". This may be an HTML landing page.`,
+        };
+      }
+
+      // Streaming download with real-time byte counter and early magic byte validation
+      if (!res.body) {
+        return {
+          success: false,
+          status: "FAILED",
+          error: "Remote repository returned an empty response body.",
+        };
+      }
+
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let receivedBytes = 0;
+      let magicChecked = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        if (value && value.length > 0) {
+          receivedBytes += value.length;
+
+          // Streaming size ceiling enforcement (aborts TCP stream immediately)
+          if (receivedBytes > MAX_PDF_SIZE) {
+            await reader.cancel("Download size exceeded maximum limit of 30 MB");
+            return {
+              success: false,
+              status: "FAILED",
+              error: `Downloaded file stream exceeded 30 MB ceiling (${(receivedBytes / (1024 * 1024)).toFixed(1)} MB).`,
+            };
+          }
+
+          chunks.push(value);
+
+          // Early magic bytes inspection on the very first received chunk
+          if (!magicChecked && receivedBytes >= 5) {
+            const firstChunk = Buffer.from(chunks[0]);
+            const magic = firstChunk.slice(0, 5).toString("utf-8");
+            if (!magic.startsWith("%PDF-")) {
+              await reader.cancel("Invalid PDF signature");
+              return {
+                success: false,
+                status: "FAILED",
+                error: `Downloaded file is not a valid PDF document (missing %PDF- header, received "${magic}").`,
+              };
+            }
+            magicChecked = true;
+          }
+        }
+      }
+
+      pdfBuffer = Buffer.concat(chunks);
+
+      if (pdfBuffer.length === 0) {
+        return {
+          success: false,
+          status: "FAILED",
+          error: "Downloaded file is empty (0 bytes).",
+        };
+      }
+
+      // Final magic verification if total buffer was under 5 bytes initially
+      if (!magicChecked) {
+        const magic = pdfBuffer.slice(0, 5).toString("utf-8");
+        if (!magic.startsWith("%PDF-")) {
+          return {
+            success: false,
+            status: "FAILED",
+            error: "Downloaded file is not a valid PDF document (missing %PDF- header).",
+          };
+        }
+      }
+
+      // PDF downloaded and validated successfully
+      break;
     }
   } catch (downloadErr: any) {
     return {
@@ -232,10 +435,10 @@ export async function acquireAndIngestLawfulFullText(
     };
   }
 
-  // 3. Upload to Supabase Storage using existing storage helper
+  // 2. Upload to Supabase Storage using existing storage helper
   let storagePath: string;
   try {
-    const uploadRes = await uploadPaperPdf(paperId, pdfBuffer);
+    const uploadRes = await uploadPaperPdf(paperId, pdfBuffer!);
     storagePath = uploadRes.storagePath;
 
     // Update paper with storage path
@@ -255,7 +458,7 @@ export async function acquireAndIngestLawfulFullText(
     };
   }
 
-  // 4. Invoke existing Phase 4 ingestion pipeline
+  // 3. Invoke existing Phase 4 ingestion pipeline
   const pipelineRes = await processPaperDocument(paperId);
   if (!pipelineRes.success) {
     return {
@@ -266,7 +469,7 @@ export async function acquireAndIngestLawfulFullText(
     };
   }
 
-  // 5. Invoke existing Phase 6 embeddings
+  // 4. Invoke existing Phase 6 embeddings
   try {
     await embedPaperChunks(paperId);
   } catch (embedErr: any) {

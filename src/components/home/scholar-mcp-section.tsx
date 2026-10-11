@@ -11,11 +11,10 @@ export function ScholarMcpSection() {
 
   const mcpConfigJson = `{
   "mcpServers": {
-    "research-hub": {
-      "command": "npx",
-      "args": ["-y", "@research-hub/mcp-server"],
-      "env": {
-        "RESEARCH_HUB_API_KEY": "rh_live_your_secret_key"
+    "citedevidence-research": {
+      "url": "https://scholar.citedevidence.com/api/v1/research/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_CITEDEVIDENCE_API_KEY"
       }
     }
   }

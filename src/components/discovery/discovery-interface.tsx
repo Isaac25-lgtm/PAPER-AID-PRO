@@ -45,6 +45,7 @@ export function DiscoveryInterface() {
 
   // Filters
   const [selectedProviders, setSelectedProviders] = React.useState<SourceProvider[]>([
+    "CITED_EVIDENCE",
     "PUBMED",
     "CROSSREF",
     "SEMANTIC_SCHOLAR",
@@ -165,7 +166,7 @@ export function DiscoveryInterface() {
           Search Global Research Literature
         </h1>
         <p className="mt-2 text-base text-slate-600 max-w-3xl">
-          Search across PubMed, Crossref, and Semantic Scholar with automated deduplication and
+          Search across CitedEvidence Scholar, PubMed, Crossref, and Semantic Scholar with automated deduplication and
           identity resolution. Import metadata and lawfully retrieve open-access manuscripts into your
           evidence library.
         </p>
@@ -246,7 +247,7 @@ export function DiscoveryInterface() {
                 <Filter className="h-3.5 w-3.5 text-slate-500" />
                 Connected Sources:
               </span>
-              {(["PUBMED", "CROSSREF", "SEMANTIC_SCHOLAR"] as SourceProvider[]).map((prov) => {
+              {(["CITED_EVIDENCE", "PUBMED", "CROSSREF", "SEMANTIC_SCHOLAR"] as SourceProvider[]).map((prov) => {
                 const active = selectedProviders.includes(prov);
                 return (
                   <button
@@ -260,6 +261,7 @@ export function DiscoveryInterface() {
                         : "bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-700"
                     )}
                   >
+                    {prov === "CITED_EVIDENCE" && "CitedEvidence"}
                     {prov === "PUBMED" && "PubMed"}
                     {prov === "CROSSREF" && "Crossref"}
                     {prov === "SEMANTIC_SCHOLAR" && "Semantic Scholar"}
@@ -393,6 +395,7 @@ export function DiscoveryInterface() {
                         variant="secondary"
                         className="text-[10px] font-semibold bg-slate-100 text-slate-700"
                       >
+                        {prov === "CITED_EVIDENCE" && "CitedEvidence"}
                         {prov === "PUBMED" && "PubMed"}
                         {prov === "CROSSREF" && "Crossref"}
                         {prov === "SEMANTIC_SCHOLAR" && "Semantic Scholar"}

@@ -6,7 +6,7 @@
  * full-text availability.
  */
 
-export type SourceProvider = "PUBMED" | "CROSSREF" | "SEMANTIC_SCHOLAR";
+export type SourceProvider = "PUBMED" | "CROSSREF" | "SEMANTIC_SCHOLAR" | "CITED_EVIDENCE";
 
 export type FullTextAvailabilityStatus =
   | "FULL_TEXT_AVAILABLE"
@@ -46,6 +46,8 @@ export interface NormalizedExternalPaper {
   sourceProviders: SourceProvider[];
   citationCount?: number | null;
   isOpenAccess: boolean;
+  license?: string | null;
+  accessStatus?: string | null;
   openAccessPdfUrl?: string | null;
   fullTextAvailability: FullTextAvailabilityStatus;
   fullTextSource?: string | null;
