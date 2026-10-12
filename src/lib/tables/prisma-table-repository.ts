@@ -15,6 +15,7 @@
 import { PrismaClient } from "@prisma/client";
 import { VerificationStatus, TableCellEvidence } from "./types";
 import { verifyCellEvidence, TableGeometryLayout, NativeTextItem } from "./cell-verifier";
+import { authorizePaperAccess, UserContext } from "../auth/paper-authorization";
 
 export interface PrismaTableExtractionRun {
   id: string;
@@ -459,12 +460,41 @@ export class PrismaTableRepository {
 
   /**
    * Queries verified evidence strictly from active completed runs.
+   * Enforces paper-level authorization if user context is provided.
    */
   public async getActiveVerifiedEvidence(params: {
     paperId: string;
     modelOrMethod?: string;
     datasetOrCohort?: string;
+    user?: UserContext | null;
+    isInternalSystemOperation?: boolean;
   }): Promise<PrismaTableCell[]> {
+    if (!params.isInternalSystemOperation) {
+      const paper = await this.prismaClient.paper.findUnique({
+        where: { id: params.paperId },
+        select: {
+          id: true,
+          title: true,
+          storagePath: true,
+          pdfUrl: true,
+          sourceProvenance: true,
+          doi: true,
+          arxivId: true,
+          pmid: true,
+          pmcid: true,
+          semanticScholarId: true,
+        },
+      });
+      if (!paper) {
+        throw new Error(`Paper with ID "${params.paperId}" not found in database.`);
+      }
+      // Fail closed: Evaluates authorization against user (or null if absent)
+      const auth = await authorizePaperAccess(paper, params.user || null, "VIEW_EVIDENCE");
+      if (!auth.allowed) {
+        throw new Error(`Unauthorized: Access to scientific table evidence for paper "${paper.title}" is restricted.`);
+      }
+    }
+
     const delegate = (this.prismaClient as any).tableCell;
     if (!delegate) return [];
 
@@ -499,6 +529,8 @@ export class PrismaTableRepository {
     paperId: string;
     modelOrMethod?: string;
     datasetOrCohort?: string;
+    user?: UserContext | null;
+    isInternalSystemOperation?: boolean;
   }): Promise<PrismaTableCell[]> {
     const allVerified = await this.getActiveVerifiedEvidence(params);
     const { isScientificNumericalMeasurement } = require("./types");

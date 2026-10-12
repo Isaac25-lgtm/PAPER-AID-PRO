@@ -30,8 +30,10 @@ import { AISummaryView } from "@/components/papers/ai-summary-view";
 import { SavePaperButton } from "@/components/papers/save-paper-button";
 import { PaperQA } from "@/components/papers/paper-qa";
 import { getPaperStatusBadge } from "@/lib/ui/status-mapper";
+import { authorizePaperAccess } from "@/lib/auth/paper-authorization";
 
 export async function generateMetadata({ params }: { params: { id: string } }) {
+  const session = await getServerSession(authOptions);
   const paper = await prisma.paper.findFirst({
     where: {
       OR: [{ id: params.id }, { doi: params.id }],
@@ -39,6 +41,11 @@ export async function generateMetadata({ params }: { params: { id: string } }) {
   });
 
   if (!paper) {
+    return { title: "Paper Not Found | AI Research Hub" };
+  }
+
+  const auth = await authorizePaperAccess(paper, session?.user, "VIEW_METADATA");
+  if (!auth.allowed) {
     return { title: "Paper Not Found | AI Research Hub" };
   }
 
@@ -76,6 +83,16 @@ export default async function PaperDetailPage({
   if (!paper) {
     notFound();
   }
+
+  // Security Access Control Check
+  const authResult = await authorizePaperAccess(paper, session?.user, "VIEW_METADATA");
+  if (!authResult.allowed) {
+    notFound();
+  }
+
+  const canDownloadPdf = (await authorizePaperAccess(paper, session?.user, "DOWNLOAD_PDF")).allowed;
+  const canViewSummary = (await authorizePaperAccess(paper, session?.user, "VIEW_SUMMARY")).allowed;
+  const canInteractAI = (await authorizePaperAccess(paper, session?.user, "INTERACT_AI")).allowed;
 
   let isBookmarked = false;
   if (session?.user?.id) {
@@ -223,19 +240,14 @@ export default async function PaperDetailPage({
         {/* Action Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100">
           <div className="flex flex-wrap items-center gap-2">
-            {(paper.storagePath || paper.pdfUrl) ? (
+            {(paper.storagePath || paper.pdfUrl) && canDownloadPdf ? (
               <a href={`/api/papers/${paper.id}/pdf`} target="_blank" rel="noopener noreferrer">
                 <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 gap-1.5 shadow-xs text-xs font-semibold">
                   <FileText className="h-3.5 w-3.5" />
                   View Original PDF
                 </Button>
               </a>
-            ) : (
-              <span className="text-xs text-slate-500 italic bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                <FileText className="h-3.5 w-3.5 text-slate-400" />
-                <span>Full text PDF not yet attached</span>
-              </span>
-            )}
+            ) : null}
             <SavePaperButton paperId={paper.id} initialSaved={isBookmarked} />
             <Link href="/tools/citation-generator">
               <Button size="sm" variant="outline" className="gap-1.5 text-xs text-slate-700">
@@ -317,7 +329,7 @@ export default async function PaperDetailPage({
       </Card>
 
       {/* AI-Generated Scientific Summary (Phase 5: Grounded Evidence) */}
-      {paper.aiSummary && (
+      {paper.aiSummary && canViewSummary && (
         <AISummaryView
           paperTitle={paper.title}
           summary={paper.aiSummary}
@@ -417,16 +429,18 @@ export default async function PaperDetailPage({
       )}
 
       {/* Ask This Paper (Phase 7: Single-Paper Grounded Research Q&A / RAG) */}
-      <section id="ask-paper" className="scroll-mt-8 pt-4">
-        <PaperQA
-          paperId={paper.id}
-          paperTitle={paper.title}
-          chunkCount={chunkCount}
-          isEmbedded={isEmbedded}
-          isAuthenticated={!!session?.user?.id}
-          initialConversationId={searchParams?.conversationId}
-        />
-      </section>
+      {canInteractAI && (
+        <section id="ask-paper" className="scroll-mt-8 pt-4">
+          <PaperQA
+            paperId={paper.id}
+            paperTitle={paper.title}
+            chunkCount={chunkCount}
+            isEmbedded={isEmbedded}
+            isAuthenticated={!!session?.user?.id}
+            initialConversationId={searchParams?.conversationId}
+          />
+        </section>
+      )}
     </div>
   );
 }

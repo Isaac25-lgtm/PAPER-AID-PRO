@@ -2,9 +2,11 @@ import "server-only";
 import { prisma } from "../prisma";
 import { generateEmbedding } from "../ai/embeddings";
 import { RetrievedEvidenceChunk } from "./types";
+import { authorizePaperAccess, UserContext } from "../auth/paper-authorization";
 
 export interface RetrievePaperEvidenceOptions {
   limit?: number; // Final fused evidence count (default: 8, max: 12)
+  user?: UserContext | null; // User context for authorization
 }
 
 const RRF_K = 60;
@@ -18,6 +20,7 @@ const RRF_K = 60;
  * 3. In-paper lexical keyword search (ILIKE on chunk text and section).
  * 4. Deterministic Reciprocal Rank Fusion (RRF) combining semantic + lexical ranks.
  * 5. Returns only verified PaperChunk records belonging to the requested paperId.
+ * 6. Access Control: Verifies caller authorization prior to chunk retrieval.
  */
 export async function retrievePaperEvidence(
   paperId: string,
@@ -31,12 +34,20 @@ export async function retrievePaperEvidence(
   const finalLimit = Math.min(Math.max(options.limit || 8, 1), 12);
   const cleanQuestion = question.trim().slice(0, 500);
 
-  // 1. Verify Paper exists and check chunk readiness
+  // 1. Verify Paper exists, check authorization, and verify chunk readiness
   const paper = await prisma.paper.findUnique({
     where: { id: paperId },
     select: {
       id: true,
       title: true,
+      storagePath: true,
+      pdfUrl: true,
+      sourceProvenance: true,
+      doi: true,
+      arxivId: true,
+      pmid: true,
+      pmcid: true,
+      semanticScholarId: true,
       _count: {
         select: { chunks: true },
       },
@@ -45,6 +56,12 @@ export async function retrievePaperEvidence(
 
   if (!paper) {
     throw new Error(`Paper with ID "${paperId}" not found in database.`);
+  }
+
+  // Security Access Control Check
+  const auth = await authorizePaperAccess(paper, options.user, "VIEW_EVIDENCE");
+  if (!auth.allowed) {
+    throw new Error(`Unauthorized: Access to document evidence for paper "${paper.title}" is restricted.`);
   }
 
   if (paper._count.chunks === 0) {

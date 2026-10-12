@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { downloadPaperPdf } from "@/lib/storage";
+import { authorizeCurrentSession } from "@/lib/auth/paper-authorization";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,12 @@ export async function GET(
         title: true,
         storagePath: true,
         pdfUrl: true,
+        sourceProvenance: true,
+        doi: true,
+        arxivId: true,
+        pmid: true,
+        pmcid: true,
+        semanticScholarId: true,
       },
     });
 
@@ -25,7 +32,36 @@ export async function GET(
       return NextResponse.json({ error: "Paper not found." }, { status: 404 });
     }
 
-    // 1. If storagePath exists, stream directly from Supabase Storage
+    // Access Control: Authorize downloading/streaming PDF for current session
+    const authResult = await authorizeCurrentSession(paper, "DOWNLOAD_PDF");
+
+    if (!authResult.allowed) {
+      if (authResult.statusCode === 401) {
+        return NextResponse.json(
+          { error: "Authentication required to access this manuscript." },
+          {
+            status: 401,
+            headers: {
+              "Cache-Control": "private, no-cache, no-store, must-revalidate",
+              Pragma: "no-cache",
+            },
+          }
+        );
+      }
+      // Return 404 for forbidden documents to prevent resource enumeration
+      return NextResponse.json(
+        { error: "Paper not found." },
+        {
+          status: 404,
+          headers: {
+            "Cache-Control": "private, no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+          },
+        }
+      );
+    }
+
+    // 1. If storagePath exists, stream directly from Supabase Storage with strict private headers
     if (paper.storagePath) {
       try {
         const buffer = await downloadPaperPdf(paper.storagePath);
@@ -36,7 +72,10 @@ export async function GET(
           headers: {
             "Content-Type": "application/pdf",
             "Content-Disposition": `inline; filename="${safeTitle || "manuscript"}.pdf"`,
-            "Cache-Control": "public, max-age=3600, s-maxage=3600",
+            "Cache-Control": "private, no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Content-Type-Options": "nosniff",
           },
         });
       } catch (storageErr: any) {
@@ -44,10 +83,6 @@ export async function GET(
           `Could not stream PDF from storagePath (${paper.storagePath}):`,
           storageErr.message
         );
-        // Fall back to external pdfUrl if available
-        if (paper.pdfUrl && paper.pdfUrl.startsWith("http")) {
-          return NextResponse.redirect(paper.pdfUrl, 307);
-        }
         return NextResponse.json(
           { error: "Stored manuscript file could not be retrieved." },
           { status: 502 }
@@ -55,8 +90,13 @@ export async function GET(
       }
     }
 
-    // 2. If only external pdfUrl is available, redirect to it
-    if (paper.pdfUrl && paper.pdfUrl.startsWith("http")) {
+    // 2. If only external pdfUrl is available, redirect ONLY to verified external publisher URLs
+    // (Never redirect to internal Supabase Storage direct CDN URLs)
+    if (
+      paper.pdfUrl &&
+      paper.pdfUrl.startsWith("http") &&
+      !paper.pdfUrl.includes(".supabase.co/storage/")
+    ) {
       return NextResponse.redirect(paper.pdfUrl, 307);
     }
 
@@ -83,4 +123,3 @@ export async function HEAD(
     headers: res.headers,
   });
 }
-

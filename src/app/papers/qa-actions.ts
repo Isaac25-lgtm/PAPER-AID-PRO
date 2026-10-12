@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { askPaperQuestion } from "@/lib/rag/qa-orchestrator";
 import { PaperQAResponse, ConversationMessageView, GroundedCitationAnchor } from "@/lib/rag/types";
 import { revalidatePath } from "next/cache";
+import { authorizePaperAccess } from "@/lib/auth/paper-authorization";
 
 export interface AskPaperActionResult extends PaperQAResponse {
   requiresAuth?: boolean;
@@ -39,6 +40,44 @@ export async function askPaperQuestionAction(params: {
       insufficientEvidence: false,
       requiresAuth: true,
       error: "Authentication required",
+    };
+  }
+
+  // Authorize access to paper before proceeding
+  const paper = await prisma.paper.findUnique({
+    where: { id: params.paperId },
+    select: {
+      id: true,
+      title: true,
+      storagePath: true,
+      pdfUrl: true,
+      sourceProvenance: true,
+      doi: true,
+      arxivId: true,
+      pmid: true,
+      pmcid: true,
+      semanticScholarId: true,
+    },
+  });
+
+  if (!paper) {
+    return {
+      success: false,
+      answer: "Paper not found.",
+      citations: [],
+      insufficientEvidence: true,
+      error: "Paper not found",
+    };
+  }
+
+  const auth = await authorizePaperAccess(paper, session.user, "INTERACT_AI");
+  if (!auth.allowed) {
+    return {
+      success: false,
+      answer: "You do not have permission to ask questions about this manuscript.",
+      citations: [],
+      insufficientEvidence: true,
+      error: "Unauthorized",
     };
   }
 
@@ -83,6 +122,31 @@ export async function getPaperConversationAction(
   }
 
   try {
+    const paper = await prisma.paper.findUnique({
+      where: { id: paperId },
+      select: {
+        id: true,
+        title: true,
+        storagePath: true,
+        pdfUrl: true,
+        sourceProvenance: true,
+        doi: true,
+        arxivId: true,
+        pmid: true,
+        pmcid: true,
+        semanticScholarId: true,
+      },
+    });
+
+    if (!paper) {
+      return { success: false, messages: [], error: "Paper not found." };
+    }
+
+    const auth = await authorizePaperAccess(paper, session.user, "INTERACT_AI");
+    if (!auth.allowed) {
+      return { success: false, messages: [], error: "Unauthorized access to paper conversation." };
+    }
+
     let conversation;
 
     if (conversationId) {

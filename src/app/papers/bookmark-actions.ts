@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { authorizePaperAccess } from "@/lib/auth/paper-authorization";
 
 export interface BookmarkActionResult {
   success: boolean;
@@ -37,6 +38,39 @@ export async function toggleBookmarkAction(paperId: string): Promise<BookmarkAct
   const userId = session.user.id;
 
   try {
+    const paper = await prisma.paper.findUnique({
+      where: { id: paperId },
+      select: {
+        id: true,
+        title: true,
+        storagePath: true,
+        pdfUrl: true,
+        sourceProvenance: true,
+        doi: true,
+        arxivId: true,
+        pmid: true,
+        pmcid: true,
+        semanticScholarId: true,
+      },
+    });
+
+    if (!paper) {
+      return {
+        success: false,
+        isBookmarked: false,
+        error: "Paper not found.",
+      };
+    }
+
+    const auth = await authorizePaperAccess(paper, session.user, "VIEW_METADATA");
+    if (!auth.allowed) {
+      return {
+        success: false,
+        isBookmarked: false,
+        error: "Paper not found.",
+      };
+    }
+
     const existing = await prisma.bookmark.findUnique({
       where: {
         userId_paperId: {

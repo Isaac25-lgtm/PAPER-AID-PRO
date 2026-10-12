@@ -7,6 +7,7 @@ import { PaperQAAnswerSchema, PaperQAAnswerOutput } from "./schemas";
 import { PaperQAResponse } from "./types";
 import { zodTextFormat } from "openai/helpers/zod";
 import { AIMessageRole } from "@prisma/client";
+import { authorizePaperAccess } from "../auth/paper-authorization";
 
 export interface AskPaperParams {
   paperId: string;
@@ -39,6 +40,41 @@ export async function askPaperQuestion(params: AskPaperParams): Promise<PaperQAR
   }
   if (cleanQuestion.length > 2000) {
     throw new Error("Question exceeds maximum length of 2,000 characters.");
+  }
+
+  // 1B. Access Control: Verify user exists and has permission to query this paper
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true },
+  });
+
+  if (!user) {
+    throw new Error("User not found.");
+  }
+
+  const paper = await prisma.paper.findUnique({
+    where: { id: paperId },
+    select: {
+      id: true,
+      title: true,
+      storagePath: true,
+      pdfUrl: true,
+      sourceProvenance: true,
+      doi: true,
+      arxivId: true,
+      pmid: true,
+      pmcid: true,
+      semanticScholarId: true,
+    },
+  });
+
+  if (!paper) {
+    throw new Error(`Paper with ID "${paperId}" not found in database.`);
+  }
+
+  const authResult = await authorizePaperAccess(paper, user, "INTERACT_AI");
+  if (!authResult.allowed) {
+    throw new Error("Unauthorized: You do not have permission to query this manuscript.");
   }
 
   // 2. Resolve or Create Conversation
@@ -119,9 +155,10 @@ export async function askPaperQuestion(params: AskPaperParams): Promise<PaperQAR
   });
 
   try {
-    // 4. Retrieve Paper Evidence (Strictly paper-scoped)
+    // 4. Retrieve Paper Evidence (Strictly paper-scoped and authorized)
     const { paperTitle, evidenceChunks } = await retrievePaperEvidence(paperId, cleanQuestion, {
       limit: 8,
+      user,
     });
 
     // 5. Load recent conversation history (last 4 messages prior to the current user message)

@@ -34,17 +34,32 @@ export async function generateMetadata({ params }: { params: { id: string } }) {
   };
 }
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { ADMIN_TEST_FIXTURE_IDS } from "@/lib/auth/paper-authorization";
+
 export default async function CategoryDetailPage({
   params,
 }: {
   params: { id: string };
 }) {
+  const session = await getServerSession(authOptions);
+  const isAdmin = session?.user?.role === "ADMIN";
+
   const category = await prisma.category.findFirst({
     where: {
       OR: [{ id: params.id }, { slug: params.id }],
     },
     include: {
       papers: {
+        where: isAdmin
+          ? {}
+          : {
+              paper: {
+                id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
+                storagePath: null,
+              },
+            },
         include: {
           paper: {
             include: {

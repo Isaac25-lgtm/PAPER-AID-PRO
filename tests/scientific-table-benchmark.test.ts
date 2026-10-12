@@ -15,6 +15,7 @@
  * 6. Verifies atomic persistence and audit logging in isolated local PostgreSQL.
  */
 
+import "../scratch/load-env";
 import { PrismaClient } from "../prisma/generated-client";
 import { TableEvidenceOrchestrator } from "../src/lib/tables/table-orchestrator";
 import { PrismaTableRepository } from "../src/lib/tables/prisma-table-repository";
@@ -317,7 +318,9 @@ async function runBenchmarkValidation() {
   const synthMeasurements: Record<string, any[]> = {};
   for (const b of BENCHMARKS) {
     synthMeasurements[b.key] = await orchestrator.getActiveVerifiedNumericalMeasurements(
-      `${testPaperPrefix}${b.key}`
+      `${testPaperPrefix}${b.key}`,
+      null,
+      true
     );
     const verifiedCount = synthMeasurements[b.key].length;
     const recall = (verifiedCount / b.refNumericCount) * 100;

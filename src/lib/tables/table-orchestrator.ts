@@ -318,9 +318,10 @@ export class TableEvidenceOrchestrator {
     // 7. Activate run using transaction-safe supersession
     const activeRun = await this.repository.activateExtractionRun(run.id);
 
-    // 8. Retrieve verified scientific evidence strictly from active run
+    // 8. Retrieve verified scientific evidence strictly from active run (internal lifecycle step)
     const activeVerifiedEvidence = await this.repository.getActiveVerifiedEvidence({
       paperId: options.paperId,
+      isInternalSystemOperation: true,
     });
 
     const successRate =
@@ -344,10 +345,17 @@ export class TableEvidenceOrchestrator {
   /**
    * Retrieves verified numerical scientific measurements strictly for synthesis queries.
    * Excludes table headers, class indices, and categorical descriptors.
+   * Enforces paper-level authorization if called for user operations.
    */
   public async getActiveVerifiedNumericalMeasurements(
-    paperId: string
+    paperId: string,
+    user?: import("../auth/paper-authorization").UserContext | null,
+    isInternalSystemOperation?: boolean
   ): Promise<PrismaTableCell[]> {
-    return await this.repository.getActiveVerifiedNumericalMeasurements({ paperId });
+    return await this.repository.getActiveVerifiedNumericalMeasurements({
+      paperId,
+      user,
+      isInternalSystemOperation,
+    });
   }
 }

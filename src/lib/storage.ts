@@ -61,13 +61,11 @@ export async function uploadPaperPdf(
     throw new Error(`Supabase Storage upload failed: ${error.message}`);
   }
 
-  const { data: urlData } = supabaseStorage.storage
-    .from(BUCKET_NAME)
-    .getPublicUrl(relativePath);
-
+  // Phase 4B: Always route PDF requests through the authenticated endpoint
+  // Do not expose direct unauthenticated public CDN URLs
   return {
     storagePath,
-    publicUrl: urlData.publicUrl,
+    publicUrl: `/api/papers/${paperId}/pdf`,
     relativePath,
   };
 }
@@ -93,14 +91,13 @@ export async function downloadPaperPdf(storagePath: string): Promise<Buffer> {
 }
 
 /**
- * Retrieves the public/canonical URL for a stored PDF.
+ * Retrieves the canonical access URL for a stored PDF.
+ * Routes to the authenticated Next.js streaming endpoint.
  */
 export function getPaperPdfUrl(storagePath: string): string {
   const relativePath = normalizeStorageRelativePath(storagePath);
-  const { data } = supabaseStorage.storage
-    .from(BUCKET_NAME)
-    .getPublicUrl(relativePath);
-  return data.publicUrl;
+  const paperId = relativePath.split("/")[0];
+  return `/api/papers/${paperId}/pdf`;
 }
 
 /**

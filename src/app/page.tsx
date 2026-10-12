@@ -23,6 +23,7 @@ import { Paper } from "@/lib/types/paper";
 import { prisma } from "@/lib/prisma";
 import { FAQsSection } from "@/components/home/faqs-section";
 import { HeroSearch } from "@/components/home/hero-search";
+import { ADMIN_TEST_FIXTURE_IDS } from "@/lib/auth/paper-authorization";
 
 // High-fidelity fallback research papers if database is empty
 const fallbackPapers: Paper[] = [
@@ -135,8 +136,16 @@ export default async function HomePage({
     // Session check fallback in isolated contexts
   }
 
+  const isAdmin = session?.user?.role === "ADMIN";
+
   // Fetch real research papers directly from PostgreSQL
   const dbPapers = await prisma.paper.findMany({
+    where: isAdmin
+      ? {}
+      : {
+          id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
+          storagePath: null,
+        },
     take: 6,
     include: {
       authors: {

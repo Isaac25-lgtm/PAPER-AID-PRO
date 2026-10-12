@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "../prisma";
 import { generateEmbedding } from "../ai/embeddings";
 import { Paper } from "../types/paper";
+import { ADMIN_TEST_FIXTURE_IDS } from "../auth/paper-authorization";
 
 export interface MatchedEvidenceSnippet {
   chunkId: string;
@@ -34,6 +35,7 @@ export interface SearchPapersOptions {
   categorySlug?: string;
   sort?: string;
   limit?: number;
+  excludeFixtures?: boolean; // Defaults to true to hide admin test fixtures
 }
 
 // RRF constant k (standard information retrieval setting)
@@ -62,17 +64,18 @@ export async function searchPapersHybrid(
   const rawQuery = options.query?.trim() || "";
   const categorySlug = options.categorySlug?.trim() || "";
   const limit = Math.min(Math.max(options.limit || 20, 1), 50);
+  const excludeFixtures = options.excludeFixtures !== false;
 
   // If query is empty, return default listing sorted by citationCount or requested sort
   if (!rawQuery) {
-    return browsePapers({ categorySlug, sort: options.sort, limit });
+    return browsePapers({ categorySlug, sort: options.sort, limit, excludeFixtures });
   }
 
   // Guard against overly long queries
   const safeQuery = rawQuery.slice(0, 500);
 
   // 1. Execute Lexical Retrieval (PostgreSQL)
-  const lexicalPapers = await fetchLexicalCandidates(safeQuery, categorySlug);
+  const lexicalPapers = await fetchLexicalCandidates(safeQuery, categorySlug, excludeFixtures);
 
   // 2. Execute Semantic Retrieval (OpenAI Embeddings + pgvector Cosine Search)
   let semanticCandidates: Map<string, { rank: number; snippet: MatchedEvidenceSnippet }> = new Map();
@@ -80,7 +83,7 @@ export async function searchPapersHybrid(
 
   try {
     const queryVector = await generateEmbedding(safeQuery);
-    semanticCandidates = await fetchSemanticCandidates(queryVector, categorySlug);
+    semanticCandidates = await fetchSemanticCandidates(queryVector, categorySlug, excludeFixtures);
   } catch (embeddingError: any) {
     console.warn(
       "[HybridSearch] Embedding generation failed. Falling back gracefully to lexical search:",
@@ -219,7 +222,11 @@ export async function searchPapersHybrid(
 /**
  * Fetch lexical candidates using PostgreSQL text search across title, abstract, DOI, keywords, and author names.
  */
-async function fetchLexicalCandidates(query: string, categorySlug?: string): Promise<any[]> {
+async function fetchLexicalCandidates(
+  query: string,
+  categorySlug?: string,
+  excludeFixtures: boolean = true
+): Promise<any[]> {
   const where: any = {
     OR: [
       { title: { contains: query, mode: "insensitive" } },
@@ -237,6 +244,11 @@ async function fetchLexicalCandidates(query: string, categorySlug?: string): Pro
       },
     ],
   };
+
+  if (excludeFixtures) {
+    where.id = { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) };
+    where.storagePath = null;
+  }
 
   if (categorySlug) {
     where.categories = {
@@ -271,7 +283,8 @@ async function fetchLexicalCandidates(query: string, categorySlug?: string): Pro
  */
 async function fetchSemanticCandidates(
   queryVector: number[],
-  categorySlug?: string
+  categorySlug?: string,
+  excludeFixtures: boolean = true
 ): Promise<Map<string, { rank: number; snippet: MatchedEvidenceSnippet }>> {
   const vectorString = `[${queryVector.join(",")}]`;
 
@@ -350,9 +363,16 @@ async function fetchSemanticCandidates(
   }
 
   // Rank deduplicated papers by best chunk similarity descending
-  const sortedPaperEntries = Array.from(paperBestChunk.entries()).sort(
+  let sortedPaperEntries = Array.from(paperBestChunk.entries()).sort(
     (a, b) => b[1].similarity - a[1].similarity
   );
+
+  // Security Access Control: Exclude administrator test fixtures
+  if (excludeFixtures) {
+    sortedPaperEntries = sortedPaperEntries.filter(
+      ([paperId]) => !ADMIN_TEST_FIXTURE_IDS.has(paperId)
+    );
+  }
 
   const semanticRanking = new Map<string, { rank: number; snippet: MatchedEvidenceSnippet }>();
   sortedPaperEntries.forEach(([paperId, data], idx) => {
@@ -372,9 +392,16 @@ async function browsePapers(options: {
   categorySlug?: string;
   sort?: string;
   limit: number;
+  excludeFixtures?: boolean;
 }): Promise<HybridSearchResult> {
   const startTime = Date.now();
   const where: any = {};
+
+  if (options.excludeFixtures !== false) {
+    where.id = { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) };
+    where.storagePath = null;
+  }
+
   if (options.categorySlug) {
     where.categories = {
       some: {

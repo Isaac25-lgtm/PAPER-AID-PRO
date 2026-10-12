@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { PaperCard } from "@/components/shared/paper-card";
 import { searchPapersHybrid } from "@/lib/search/hybrid-search";
+import { ADMIN_TEST_FIXTURE_IDS } from "@/lib/auth/paper-authorization";
 
 export const metadata = {
   title: "Research Library | AI Research Hub",
@@ -51,6 +52,9 @@ export default async function PapersPage({
     savedPaperIds = new Set(userBookmarks.map((b) => b.paperId));
   }
 
+  const isAdmin = session?.user?.role === "ADMIN";
+  const excludeFixtures = !isAdmin;
+
   // Query hybrid search and categories in parallel with defensive error handling
   let searchResult: Awaited<ReturnType<typeof searchPapersHybrid>> = {
     papers: [],
@@ -70,6 +74,7 @@ export default async function PapersPage({
         categorySlug,
         sort,
         limit: 50,
+        excludeFixtures,
       }),
       prisma.category.findMany({
         include: {
@@ -79,7 +84,14 @@ export default async function PapersPage({
         },
         orderBy: { name: "asc" },
       }),
-      prisma.paper.count(),
+      excludeFixtures
+        ? prisma.paper.count({
+            where: {
+              id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
+              storagePath: null,
+            },
+          })
+        : prisma.paper.count(),
     ]);
     searchResult = sr;
     categories = cats;
