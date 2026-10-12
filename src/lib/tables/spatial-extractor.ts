@@ -17,6 +17,7 @@ export interface ExtractedCell {
   rowLabel: string;
   columnHeader: string;
   superHeader?: string | null;
+  headerPath?: string[];
   dataset?: string | null;
   metricName?: string | null;
   unit: string;
@@ -38,6 +39,15 @@ export interface ExtractedTable {
   bbox: [number, number, number, number];
   columnHeaders: string[];
   superHeaders: string[];
+  colIntervals?: Array<{
+    colIndex: number;
+    name: string;
+    superName?: string;
+    headerPath: string[];
+    xMin: number;
+    xMax: number;
+    xCenter: number;
+  }>;
   rowLabels: string[];
   cells: ExtractedCell[];
   footnotes: string[];
@@ -59,8 +69,8 @@ export interface TextItem {
   fontFamily: string;
 }
 
-function clean(str: string): string {
-  return str.replace(/\s+/g, " ").trim();
+export function clean(str: string): string {
+  return (str || "").replace(/\s+/g, " ").trim();
 }
 
 export function parseCellNumbers(valStr: string): {
@@ -281,73 +291,46 @@ export class SpatialTableExtractor {
         continue;
       }
 
-      // 4. Identify header rows and columns
-      const headerRow0 = rowClusters[0];
-      const headerRow1 =
-        rowClusters.length > 2 &&
-        rowClusters[1].items.some((it) =>
-          /(?:Easy|Mod|Hard|STD|Recall|Precision|F1|Accuracy|Sensitivity|Specificity|Mean|Std\.?\s*Dev|mIOU|Loss|AUC|Rate|Rank)/i.test(
-            it.str
-          )
-        )
-          ? rowClusters[1]
-          : null;
+      // 4. Identify header rows vs data rows deterministically
+      let firstDataRowIdx = -1;
+      for (let i = 0; i < rowClusters.length; i++) {
+        const r = rowClusters[i];
+        const measurementCount = r.items.filter((it) => {
+          const s = clean(it.str);
+          if (s === "N/A" || s === "-" || s === "–") return true;
+          const parsed = parseCellNumbers(s);
+          return parsed.numericValue !== null;
+        }).length;
 
-      const dataRowStartIndex = headerRow1 ? 2 : 1;
-      const dataRows = rowClusters.slice(dataRowStartIndex);
-
-      const superHeaders: string[] = [];
-      const columnHeaders: string[] = [];
-      const colIntervals: Array<{
-        colIndex: number;
-        name: string;
-        superName?: string;
-        xMin: number;
-        xMax: number;
-        xCenter: number;
-      }> = [];
-
-      if (headerRow1) {
-        for (const superIt of headerRow0.items) {
-          if (clean(superIt.str)) superHeaders.push(clean(superIt.str));
-        }
-
-        for (let cIdx = 0; cIdx < headerRow1.items.length; cIdx++) {
-          const subIt = headerRow1.items[cIdx];
-          const subName = clean(subIt.str);
-          if (!subName) continue;
-
-          const parentSuper = headerRow0.items.find(
-            (sIt) => subIt.x >= sIt.x - 20 && subIt.x <= sIt.x + sIt.width + 30
-          );
-          const superName = parentSuper ? clean(parentSuper.str) : undefined;
-          const fullHeader = superName ? `${superName} ${subName}` : subName;
-
-          columnHeaders.push(fullHeader);
-          colIntervals.push({
-            colIndex: cIdx,
-            name: fullHeader,
-            superName,
-            xMin: subIt.x - 12,
-            xMax: subIt.x + subIt.width + 12,
-            xCenter: subIt.x + subIt.width / 2,
+        const isAxisIndexRow =
+          r.items.length <= 3 &&
+          r.items.every((it) => {
+            const s = clean(it.str).toLowerCase();
+            return (
+              s === "0" ||
+              s === "1" ||
+              s === "predicted" ||
+              s === "actual" ||
+              s === "class"
+            );
           });
-        }
-      } else {
-        for (let cIdx = 0; cIdx < headerRow0.items.length; cIdx++) {
-          const it = headerRow0.items[cIdx];
-          const name = clean(it.str);
-          if (!name) continue;
-          columnHeaders.push(name);
-          colIntervals.push({
-            colIndex: cIdx,
-            name,
-            xMin: it.x - 10,
-            xMax: it.x + it.width + 15,
-            xCenter: it.x + it.width / 2,
-          });
+
+        if (measurementCount >= 2 && !isAxisIndexRow) {
+          firstDataRowIdx = i;
+          break;
         }
       }
+      if (firstDataRowIdx <= 0) firstDataRowIdx = 1;
+
+      const headerRows = rowClusters.slice(0, firstDataRowIdx);
+      const dataRows = rowClusters.slice(firstDataRowIdx);
+
+      // Multi-level column and subcolumn discovery
+      const colIntervals = this.discoverColumnsFromHeaderRows(headerRows);
+      const superHeaders = Array.from(
+        new Set(colIntervals.map((c) => c.superName).filter(Boolean))
+      ) as string[];
+      const columnHeaders = colIntervals.map((c) => c.name);
 
       if (colIntervals.length <= 1) {
         const xPositions = dataRows
@@ -369,6 +352,7 @@ export class SpatialTableExtractor {
           colIntervals.push({
             colIndex: c,
             name,
+            headerPath: [name],
             xMin: cx - 15,
             xMax: cx + 25,
             xCenter: cx,
@@ -406,21 +390,19 @@ export class SpatialTableExtractor {
             continue;
           }
 
-          const bestCol = colIntervals.reduce(
-            (best, col) => {
-              const dist = Math.abs(col.xCenter - (it.x + it.width / 2));
-              return !best || dist < best.dist ? { col, dist } : best;
-            },
-            null as { col: (typeof colIntervals)[0]; dist: number } | null
+          const itCenter = it.x + it.width / 2;
+          const matchedCol = colIntervals.find(
+            (c) => itCenter >= c.xMin && itCenter < c.xMax
           );
 
-          if (!bestCol || bestCol.dist > 50) {
+          if (!matchedCol) {
             ambiguousCount++;
             cells.push({
               rowIndex: rIdx,
               colIndex: -1,
               rowLabel: currentRowLabel,
               columnHeader: "Unassigned",
+              headerPath: ["Unassigned"],
               unit: "UNKNOWN",
               rawValue: str,
               numericValue: null,
@@ -438,10 +420,11 @@ export class SpatialTableExtractor {
 
           cells.push({
             rowIndex: rIdx,
-            colIndex: bestCol.col.colIndex,
+            colIndex: matchedCol.colIndex,
             rowLabel: currentRowLabel,
-            columnHeader: bestCol.col.name,
-            superHeader: bestCol.col.superName,
+            columnHeader: matchedCol.name,
+            superHeader: matchedCol.superName,
+            headerPath: matchedCol.headerPath,
             unit: parsed.unit,
             rawValue: str,
             numericValue: parsed.numericValue,
@@ -473,6 +456,7 @@ export class SpatialTableExtractor {
         bbox: [minX, minY, maxX - minX, maxY - minY],
         columnHeaders,
         superHeaders,
+        colIntervals,
         rowLabels,
         cells,
         footnotes: [],
@@ -489,4 +473,159 @@ export class SpatialTableExtractor {
 
     return tables;
   }
+
+  /**
+   * Deterministically reconstructs leaf column intervals and hierarchical super-header paths.
+   */
+  private discoverColumnsFromHeaderRows(
+    headerRows: Array<{ y: number; items: TextItem[] }>
+  ): Array<{
+    colIndex: number;
+    name: string;
+    superName?: string;
+    headerPath: string[];
+    xMin: number;
+    xMax: number;
+    xCenter: number;
+  }> {
+    const cleanHeaderRows = headerRows
+      .map((r) => ({
+        y: r.y,
+        items: r.items.filter((it) => clean(it.str).length > 0),
+      }))
+      .filter((r) => r.items.length > 0);
+
+    if (cleanHeaderRows.length === 0) return [];
+
+    if (cleanHeaderRows.length === 1) {
+      const hr = cleanHeaderRows[0];
+      const cols: Array<{
+        colIndex: number;
+        name: string;
+        superName?: string;
+        headerPath: string[];
+        xMin: number;
+        xMax: number;
+        xCenter: number;
+      }> = [];
+      for (let c = 0; c < hr.items.length; c++) {
+        const it = hr.items[c];
+        const prev = c > 0 ? hr.items[c - 1] : null;
+        const next = c < hr.items.length - 1 ? hr.items[c + 1] : null;
+        const cCenter = it.x + it.width / 2;
+        const prevCenter = prev ? prev.x + prev.width / 2 : cCenter - 40;
+        const nextCenter = next ? next.x + next.width / 2 : cCenter + 40;
+
+        const name = clean(it.str);
+        cols.push({
+          colIndex: c,
+          name,
+          headerPath: [name],
+          xMin: (prevCenter + cCenter) / 2,
+          xMax: (cCenter + nextCenter) / 2,
+          xCenter: cCenter,
+        });
+      }
+      return cols;
+    }
+
+    // Multi-level header
+    // 1. Collect all header tokens across all header rows tagged with their rowIndex
+    const allHeaderItems: Array<TextItem & { rowIndex: number; text: string }> = [];
+    for (let rIdx = 0; rIdx < cleanHeaderRows.length; rIdx++) {
+      for (const it of cleanHeaderRows[rIdx].items) {
+        allHeaderItems.push({ ...it, rowIndex: rIdx, text: clean(it.str) });
+      }
+    }
+
+    // Sort from bottom row to top row (highest rowIndex first), then left to right
+    allHeaderItems.sort((a, b) => b.rowIndex - a.rowIndex || a.x - b.x);
+
+    // 2. Discover distinct leaf x-centers (items >= 16 pt apart)
+    const distinctX: Array<{
+      item: TextItem & { rowIndex: number; text: string };
+      center: number;
+    }> = [];
+    for (const it of allHeaderItems) {
+      const itCenter = it.x + it.width / 2;
+      const exists = distinctX.some((d) => Math.abs(d.center - itCenter) < 16);
+      if (!exists) {
+        distinctX.push({ item: it, center: itCenter });
+      }
+    }
+    distinctX.sort((a, b) => a.center - b.center);
+
+    // 3. For each leaf column, find its parent spanning super-header in upper header rows via midpoint partitioning
+    const cols: Array<{
+      colIndex: number;
+      name: string;
+      superName?: string;
+      headerPath: string[];
+      xMin: number;
+      xMax: number;
+      xCenter: number;
+    }> = [];
+
+    for (let c = 0; c < distinctX.length; c++) {
+      const cur = distinctX[c];
+      const prev = c > 0 ? distinctX[c - 1] : null;
+      const next = c < distinctX.length - 1 ? distinctX[c + 1] : null;
+
+      const xMin = prev ? (prev.center + cur.center) / 2 : cur.center - 30;
+      const xMax = next ? (cur.center + next.center) / 2 : cur.center + 30;
+
+      let superName: string | undefined;
+      for (let r = 0; r < cur.item.rowIndex; r++) {
+        const upperRow = cleanHeaderRows[r];
+        for (let sIdx = 0; sIdx < upperRow.items.length; sIdx++) {
+          const sIt = upperRow.items[sIdx];
+          const sCenter = sIt.x + sIt.width / 2;
+          const prevS = sIdx > 0 ? upperRow.items[sIdx - 1] : null;
+          const nextS = sIdx < upperRow.items.length - 1 ? upperRow.items[sIdx + 1] : null;
+
+          const prevCenter = prevS ? prevS.x + prevS.width / 2 : null;
+          const nextCenter = nextS ? nextS.x + nextS.width / 2 : null;
+
+          const sLeft =
+            prevCenter !== null
+              ? (prevCenter + sCenter) / 2
+              : nextCenter !== null
+              ? sCenter - (nextCenter - sCenter) / 2
+              : sCenter - 45;
+
+          const sRight =
+            nextCenter !== null
+              ? (sCenter + nextCenter) / 2
+              : prevCenter !== null
+              ? sCenter + (sCenter - prevCenter) / 2
+              : sCenter + 45;
+
+          if (cur.center >= sLeft && cur.center < sRight) {
+            superName = clean(sIt.str);
+            break;
+          }
+        }
+        if (superName) break;
+      }
+
+      const colName = cur.item.text;
+      const headerPath =
+        superName && superName !== colName ? [superName, colName] : [colName];
+      const fullName =
+        superName && superName !== colName ? `${superName} ${colName}` : colName;
+
+      cols.push({
+        colIndex: c,
+        name: fullName,
+        superName,
+        headerPath,
+        xMin,
+        xMax,
+        xCenter: cur.center,
+      });
+    }
+
+    return cols;
+  }
 }
+

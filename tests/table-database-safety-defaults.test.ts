@@ -92,7 +92,7 @@ class MockPrismaEvidenceDatabase {
   // Emulates Prisma `prisma.tableCell.findMany({ where: { verificationStatus: 'VERIFIED' } })`
   findVerifiedEvidence(query?: { paperId?: string; modelOrMethod?: string }): MockPrismaTableCell[] {
     const results: MockPrismaTableCell[] = [];
-    for (const cell of this.cells.values()) {
+    for (const cell of Array.from(this.cells.values())) {
       if (cell.verificationStatus !== "VERIFIED") continue;
       if (query?.paperId && cell.paperId !== query.paperId) continue;
       if (query?.modelOrMethod && cell.modelOrMethod !== query.modelOrMethod) continue;
@@ -352,7 +352,16 @@ async function runDatabaseSafetyTestSuite() {
     verificationMethod: "UNVERIFIED",
   };
 
-  const vResult = verifyCellEvidence(verifyEvidenceCandidate, sampleLayout, pageTokens);
+  const candidateForVerifier = {
+    rawPrintedValue: verifyEvidenceCandidate.rawPrintedValue,
+    numericValue: verifyEvidenceCandidate.normalizedNumericValue,
+    modelOrMethod: verifyEvidenceCandidate.modelOrMethod,
+    headerPath: verifyEvidenceCandidate.headerPath,
+    rowIdx: verifyEvidenceCandidate.rowIdx,
+    colIdx: verifyEvidenceCandidate.colIdx,
+  };
+
+  const vResult = verifyCellEvidence(candidateForVerifier, sampleLayout, pageTokens);
   assert(
     vResult.status === "VERIFIED",
     "SAFE_09_ENGINE_VERIFICATION_SUCCESS",
@@ -363,8 +372,11 @@ async function runDatabaseSafetyTestSuite() {
   db.promoteCellVerification("cell-001", {
     status: vResult.status,
     verifierVersion: "cell-verifier-v1.0",
-    notes: vResult.verificationNotes,
-    errors: vResult.errors,
+    notes: vResult.notes,
+    errors: {
+      columnShiftError: vResult.columnShiftError,
+      rowMisattribution: vResult.rowMisattribution,
+    },
   });
 
   const promotedCell = db.getCell("cell-001");

@@ -303,13 +303,25 @@ export function verifyCellEvidence(
       const normLayoutCol = (colLayout.header + " " + (colLayout.superHeader || ""))
         .toLowerCase()
         .replace(/[^a-z0-9]/g, "");
+      const normLayoutLeaf = colLayout.header.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const normCandLeaf = normCandHeaders[normCandHeaders.length - 1];
 
-      const headerMatches = normCandHeaders.some(
-        (h) =>
-          normLayoutCol.includes(h) ||
-          h.includes(normLayoutCol) ||
-          normLayoutCol.startsWith("col")
-      );
+      // If candidate specifies a leaf subcolumn header, it must align with layout leaf (unless generic "col_X")
+      const leafMismatch =
+        normCandLeaf &&
+        normLayoutLeaf &&
+        !normLayoutCol.startsWith("col") &&
+        !normLayoutLeaf.includes(normCandLeaf) &&
+        !normCandLeaf.includes(normLayoutLeaf);
+
+      const headerMatches =
+        !leafMismatch &&
+        normCandHeaders.some(
+          (h) =>
+            normLayoutCol.includes(h) ||
+            h.includes(normLayoutCol) ||
+            normLayoutCol.startsWith("col")
+        );
 
       if (!headerMatches && normCandHeaders.length > 0 && !normLayoutCol.startsWith("col")) {
         return {

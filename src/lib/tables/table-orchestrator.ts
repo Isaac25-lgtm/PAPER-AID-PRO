@@ -104,25 +104,43 @@ export class TableEvidenceOrchestrator {
       };
     });
 
-    // Group cells by colIndex
-    const colMap = new Map<number, ExtractedCell[]>();
-    for (const cell of table.cells) {
-      const cIdx = cell.colIndex >= 0 ? cell.colIndex : 0;
-      if (!colMap.has(cIdx)) colMap.set(cIdx, []);
-      colMap.get(cIdx)!.push(cell);
-    }
+    let colIntervals: Array<{
+      colIdx: number;
+      header: string;
+      superHeader?: string;
+      xMin: number;
+      xMax: number;
+    }> = [];
 
-    const colIntervals = Array.from(colMap.entries()).map(([cIdx, cCells]) => {
-      const xMin = Math.min(...cCells.map((c) => c.bbox[0])) - 4.0;
-      const xMax = Math.max(...cCells.map((c) => c.bbox[0] + c.bbox[2])) + 4.0;
-      return {
-        colIdx: cIdx,
-        header: cCells[0]?.columnHeader || `Col_${cIdx}`,
-        superHeader: cCells[0]?.superHeader || undefined,
-        xMin,
-        xMax,
-      };
-    });
+    if (table.colIntervals && table.colIntervals.length > 0) {
+      colIntervals = table.colIntervals.map((c) => ({
+        colIdx: c.colIndex,
+        header: c.name,
+        superHeader: c.superName,
+        xMin: c.xMin,
+        xMax: c.xMax,
+      }));
+    } else {
+      // Group cells by colIndex
+      const colMap = new Map<number, ExtractedCell[]>();
+      for (const cell of table.cells) {
+        const cIdx = cell.colIndex >= 0 ? cell.colIndex : 0;
+        if (!colMap.has(cIdx)) colMap.set(cIdx, []);
+        colMap.get(cIdx)!.push(cell);
+      }
+
+      colIntervals = Array.from(colMap.entries()).map(([cIdx, cCells]) => {
+        const xMin = Math.min(...cCells.map((c) => c.bbox[0])) - 4.0;
+        const xMax = Math.max(...cCells.map((c) => c.bbox[0] + c.bbox[2])) + 4.0;
+        return {
+          colIdx: cIdx,
+          header: cCells[0]?.columnHeader || `Col_${cIdx}`,
+          superHeader: cCells[0]?.superHeader || undefined,
+          xMin,
+          xMax,
+        };
+      });
+    }
 
     return {
       tableBbox,
@@ -218,7 +236,10 @@ export class TableEvidenceOrchestrator {
           colIdx: assignedCol,
           rawPrintedValue: c.rawValue,
           modelOrMethod: c.rowLabel,
-          headerPath: [c.superHeader, c.columnHeader].filter(Boolean) as string[],
+          headerPath:
+            c.headerPath && c.headerPath.length > 0
+              ? c.headerPath
+              : ([c.superHeader, c.columnHeader].filter(Boolean) as string[]),
           normalizedNumericValue: c.numericValue,
           confidenceInterval:
             typeof c.ciLower === "number" && typeof c.ciUpper === "number"

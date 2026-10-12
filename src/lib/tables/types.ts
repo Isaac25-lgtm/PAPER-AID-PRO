@@ -153,12 +153,16 @@ export function isScientificNumericalMeasurement(cell: {
   // Numeric-looking class labels (e.g. "0" and "1") in header rows or header/index columns
   const isZeroOrOne = raw === "0" || raw === "1";
   if (isZeroOrOne) {
-    // If it's in the header row (rowIdx <= 1) or in the row header column (colIdx <= 3)
-    if (rowIdx <= 1 || colIdx <= 3) {
+    // If it's in the row-header column of the table (colIdx === 0)
+    if (colIdx === 0) {
       return false;
     }
-    // Or if header explicitly denotes a class index
-    if (headers.some((h) => h === "class" || h === "index" || h === "label")) {
+    // If in synthetic test header row where model is literally "predicted" or "actual" and rowIdx <= 1
+    if ((model === "predicted" || model === "actual") && rowIdx <= 1) {
+      return false;
+    }
+    // If header explicitly denotes a class index or unassigned index column (e.g. "Col_3")
+    if (headers.some((h) => h === "class" || h === "index" || h === "label" || h === "col_3")) {
       return false;
     }
   }
