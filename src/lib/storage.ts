@@ -20,7 +20,8 @@ export function setStorageClientOverride(client: any): void {
 
 /**
  * Returns a server-authorized Supabase storage client.
- * Strictly requires SUPABASE_SERVICE_ROLE_KEY for server operations on stored manuscripts.
+ * Strictly requires SUPABASE_SECRET_KEY (supporting newer sb_secret_... format)
+ * for privileged server operations on stored manuscripts.
  * Fails closed without any silent fallback to NEXT_PUBLIC_SUPABASE_ANON_KEY.
  */
 export function getStorageClient() {
@@ -29,7 +30,9 @@ export function getStorageClient() {
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const secretKey =
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl) {
     throw new Error(
@@ -37,15 +40,19 @@ export function getStorageClient() {
     );
   }
 
-  if (!serviceRoleKey) {
+  if (!secretKey) {
     throw new Error(
-      "Server storage configuration error: SUPABASE_SERVICE_ROLE_KEY is required for server-authorized manuscript storage operations. " +
+      "Server storage configuration error: SUPABASE_SECRET_KEY is required for server-authorized manuscript storage operations. " +
       "Silent fallback to NEXT_PUBLIC_SUPABASE_ANON_KEY is disabled to prevent unauthorized access or silent failure on private buckets."
     );
   }
 
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
+  return createClient(supabaseUrl, secretKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
     realtime: { transport: WebSocket as any },
     global: {
       fetch: (url, options) => fetch(url, { ...options, cache: "no-store" }),

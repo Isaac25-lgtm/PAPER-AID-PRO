@@ -62,9 +62,10 @@ Direct unauthenticated public pattern:
    - The production environment MUST be running local commit `9f81bd4bf95b3cf08f64e8941796e4ed38f10611` (or later).
    - The currently deployed commit on `origin/main` (`9a8156d`) contains the legacy UNPROTECTED PDF route with `Cache-Control: public`. Switching the bucket while `9a8156d` is deployed will either break PDF streaming (if service role key is absent) or continue serving public-cached PDFs to anonymous requesters.
 2. **Server-Side Credentials**:
-   - In `.env` (and production server environment secrets), verify that `SUPABASE_SERVICE_ROLE_KEY` is explicitly configured.
+   - In `.env` (and production server environment secrets), verify that `SUPABASE_SECRET_KEY` (the newer `sb_secret_...` format, or legacy `SUPABASE_SERVICE_ROLE_KEY`) is explicitly configured.
+   - Recommended provisioning: Configure strictly for the **Production** environment in Vercel (`Settings > Environment Variables`) unless another environment explicitly requires manuscript storage access.
    - **CRITICAL**: The anonymous key (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) **CANNOT** read from a private bucket. Falling back to the anon key on a private bucket will cause all server downloads to fail with `403 Forbidden` / `404 Not Found`.
-   - Verify `src/lib/storage.ts` initializes `supabaseStorage` using `SUPABASE_SERVICE_ROLE_KEY`.
+   - Verify `src/lib/storage.ts` initializes privileged clients using `SUPABASE_SECRET_KEY`.
    - Test server-side download using an isolated script before flipping the bucket switch.
 
 ### Step 2: Toggle Bucket from PUBLIC to PRIVATE
@@ -147,13 +148,12 @@ If after toggling to PRIVATE, legitimate server-side streaming encounters `403 F
 > **NEVER TOGGLE THE BUCKET BACK TO PUBLIC** as an emergency fix. Doing so immediately re-exposes all user documents to the world.
 
 ### Safe Troubleshooting Steps:
-1. **Check Service Role Key**:
-   Ensure `SUPABASE_SERVICE_ROLE_KEY` is defined in `.env` and initialized in `src/lib/storage.ts`:
+1. **Check Secret Key Configuration**:
+   Ensure `SUPABASE_SECRET_KEY` (or `SUPABASE_SERVICE_ROLE_KEY`) is defined in hosting secrets and `.env`:
    ```ts
-   const supabaseStorage = createClient(
-     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-   );
+   const secretKey =
+     process.env.SUPABASE_SECRET_KEY ||
+     process.env.SUPABASE_SERVICE_ROLE_KEY;
    ```
 2. **Verify Storage RLS Policies**:
    In Supabase Dashboard -> Storage -> Policies -> `objects`:

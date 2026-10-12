@@ -44,11 +44,12 @@ async function runStoragePrivacyReadinessTests() {
   // --------------------------------------------------------------------------
   console.log("\n--- TEST GROUP 1: Credential Isolation & Bundle Protection ---");
 
-  // 1A: Assert NEXT_PUBLIC_ does not expose service role key
+  // 1A: Assert NEXT_PUBLIC_ does not expose secret or service role key
   assert(
-    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY === undefined,
-    "SEC_4C_01_NO_PUBLIC_SERVICE_ROLE_ENV",
-    "NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY is not defined in environment"
+    process.env.NEXT_PUBLIC_SUPABASE_SECRET_KEY === undefined &&
+      process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY === undefined,
+    "SEC_4C_01_NO_PUBLIC_SECRET_KEY_ENV",
+    "Neither NEXT_PUBLIC_SUPABASE_SECRET_KEY nor NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY is defined in environment"
   );
 
   // 1B: Scan src directory for any client files importing storage
@@ -69,7 +70,7 @@ async function runStoragePrivacyReadinessTests() {
   collectFiles(srcDir);
 
   const clientFilesImportingStorage: string[] = [];
-  const clientFilesReferencingServiceKey: string[] = [];
+  const clientFilesReferencingSecretKey: string[] = [];
 
   for (const f of allSrcFiles) {
     const content = fs.readFileSync(f, "utf-8");
@@ -79,8 +80,11 @@ async function runStoragePrivacyReadinessTests() {
       if (content.includes("@/lib/storage") || content.includes("lib/storage")) {
         clientFilesImportingStorage.push(path.relative(process.cwd(), f));
       }
-      if (content.includes("SUPABASE_SERVICE_ROLE_KEY")) {
-        clientFilesReferencingServiceKey.push(path.relative(process.cwd(), f));
+      if (
+        content.includes("SUPABASE_SECRET_KEY") ||
+        content.includes("SUPABASE_SERVICE_ROLE_KEY")
+      ) {
+        clientFilesReferencingSecretKey.push(path.relative(process.cwd(), f));
       }
     }
   }
@@ -92,9 +96,9 @@ async function runStoragePrivacyReadinessTests() {
   );
 
   assert(
-    clientFilesReferencingServiceKey.length === 0,
-    "SEC_4C_03_ZERO_CLIENT_SERVICE_ROLE_REFS",
-    `Zero client components reference SUPABASE_SERVICE_ROLE_KEY (found ${clientFilesReferencingServiceKey.length})`
+    clientFilesReferencingSecretKey.length === 0,
+    "SEC_4C_03_ZERO_CLIENT_SECRET_KEY_REFS",
+    `Zero client components reference SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY (found ${clientFilesReferencingSecretKey.length})`
   );
 
   // --------------------------------------------------------------------------
@@ -126,8 +130,8 @@ async function runStoragePrivacyReadinessTests() {
     `Standard user fixture request rejected with HTTP 404 before any storage operation (status: ${userFixtureRes.status})`
   );
 
-  // 2C: Fail-closed verification without SUPABASE_SERVICE_ROLE_KEY
-  // When service-role key is absent, downloadPaperPdf must throw server configuration error
+  // 2C: Fail-closed verification without SUPABASE_SECRET_KEY
+  // When secret key is absent, downloadPaperPdf must throw server configuration error
   let failClosedThrew = false;
   setStorageClientOverride(null);
   try {
@@ -135,7 +139,7 @@ async function runStoragePrivacyReadinessTests() {
   } catch (err: any) {
     failClosedThrew = true;
     assert(
-      err.message.includes("SUPABASE_SERVICE_ROLE_KEY is required"),
+      err.message.includes("SUPABASE_SECRET_KEY is required"),
       "SEC_4C_06_FAIL_CLOSED_WITHOUT_KEY",
       `Storage operation fails closed with explicit error: "${err.message}"`
     );
