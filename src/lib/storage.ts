@@ -3,23 +3,62 @@ import WebSocket from "ws";
 
 const BUCKET_NAME = "research-papers";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+let storageClientOverride: any = null;
 
-if (!supabaseUrl || !supabaseKey) {
-  console.warn("Supabase credentials missing in storage client initialization.");
+/**
+ * Allows isolated testing and mock harnesses to supply a mock storage client.
+ * Strictly prohibited and blocked in production environments.
+ */
+export function setStorageClientOverride(client: any): void {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Security violation: Storage client overrides are strictly prohibited in production environments."
+    );
+  }
+  storageClientOverride = client;
 }
 
-// Server-side Supabase client singleton for storage operations
-export const supabaseStorage = createClient(supabaseUrl || "", supabaseKey || "", {
-  auth: { persistSession: false },
-  realtime: { transport: WebSocket as any },
-  global: {
-    fetch: (url, options) => fetch(url, { ...options, cache: "no-store" }),
+/**
+ * Returns a server-authorized Supabase storage client.
+ * Strictly requires SUPABASE_SERVICE_ROLE_KEY for server operations on stored manuscripts.
+ * Fails closed without any silent fallback to NEXT_PUBLIC_SUPABASE_ANON_KEY.
+ */
+export function getStorageClient() {
+  if (process.env.NODE_ENV !== "production" && storageClientOverride) {
+    return storageClientOverride;
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl) {
+    throw new Error(
+      "Server storage configuration error: NEXT_PUBLIC_SUPABASE_URL is not configured."
+    );
+  }
+
+  if (!serviceRoleKey) {
+    throw new Error(
+      "Server storage configuration error: SUPABASE_SERVICE_ROLE_KEY is required for server-authorized manuscript storage operations. " +
+      "Silent fallback to NEXT_PUBLIC_SUPABASE_ANON_KEY is disabled to prevent unauthorized access or silent failure on private buckets."
+    );
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+    realtime: { transport: WebSocket as any },
+    global: {
+      fetch: (url, options) => fetch(url, { ...options, cache: "no-store" }),
+    },
+  });
+}
+
+// Server-side Supabase client accessor enforcing service-role authorization
+export const supabaseStorage = {
+  get storage() {
+    return getStorageClient().storage;
   },
-});
+};
 
 export interface UploadResult {
   storagePath: string;

@@ -57,16 +57,15 @@ Direct unauthenticated public pattern:
 > DO NOT execute this step without explicit operational authorization.  
 > This runbook is strictly prepared for authorized maintenance windows.
 
-### Step 1: Pre-Flight Verification
-Ensure the Next.js server environment has a valid Supabase Service Role Key or authenticated client configured:
-- In `.env`, verify `SUPABASE_SERVICE_ROLE_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY` is present.
-- Verify `src/lib/storage.ts` uses `downloadPaperPdf` which operates via the authenticated Supabase client:
-  ```ts
-  const { data, error } = await supabaseStorage.storage
-    .from(BUCKET_NAME)
-    .download(relativePath);
-  ```
-  The Supabase JS client `.download()` method automatically sends authorization headers when authenticated.
+### Step 1: Pre-Flight Verification & Deployment Prerequisite
+1. **Application Deployment Prerequisite**:
+   - The production environment MUST be running local commit `9f81bd4bf95b3cf08f64e8941796e4ed38f10611` (or later).
+   - The currently deployed commit on `origin/main` (`9a8156d`) contains the legacy UNPROTECTED PDF route with `Cache-Control: public`. Switching the bucket while `9a8156d` is deployed will either break PDF streaming (if service role key is absent) or continue serving public-cached PDFs to anonymous requesters.
+2. **Server-Side Credentials**:
+   - In `.env` (and production server environment secrets), verify that `SUPABASE_SERVICE_ROLE_KEY` is explicitly configured.
+   - **CRITICAL**: The anonymous key (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) **CANNOT** read from a private bucket. Falling back to the anon key on a private bucket will cause all server downloads to fail with `403 Forbidden` / `404 Not Found`.
+   - Verify `src/lib/storage.ts` initializes `supabaseStorage` using `SUPABASE_SERVICE_ROLE_KEY`.
+   - Test server-side download using an isolated script before flipping the bucket switch.
 
 ### Step 2: Toggle Bucket from PUBLIC to PRIVATE
 Execute in Supabase Management Console:

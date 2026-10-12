@@ -41,7 +41,7 @@ import { PrismaTableRepository } from "../src/lib/tables/prisma-table-repository
 import { TableEvidenceOrchestrator } from "../src/lib/tables/table-orchestrator";
 import { toggleBookmarkAction } from "../src/app/papers/bookmark-actions";
 import { searchPapersHybrid } from "../src/lib/search/hybrid-search";
-import { getPaperPdfUrl } from "../src/lib/storage";
+import { getPaperPdfUrl, setStorageClientOverride } from "../src/lib/storage";
 
 async function runSecurityTestSuite() {
   console.log("================================================================================");
@@ -227,10 +227,21 @@ async function runSecurityTestSuite() {
       `PDF endpoint returns 404 for non-admin requesting administrator fixture`
     );
 
-    // Admin user calls PDF endpoint on fixture
+    // Admin user calls PDF endpoint on fixture (uses storage override for deterministic test isolation)
     setMockSession({ user: { id: adminUser.id, role: adminUser.role } });
+    setStorageClientOverride({
+      storage: {
+        from: () => ({
+          download: async () => ({
+            data: { arrayBuffer: async () => new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer },
+            error: null,
+          }),
+        }),
+      },
+    });
     const adminPdfReq = new Request(`http://localhost:3000/api/papers/${FIXTURE_ID}/pdf`);
     const adminPdfRes = await pdfRouteHandler(adminPdfReq as any, { params: { id: FIXTURE_ID } });
+    setStorageClientOverride(null);
     // Admin request proceeds past authorization (either 200 streaming or 307 redirect)
     assert(
       adminPdfRes.status === 200 || adminPdfRes.status === 307,
