@@ -42,6 +42,7 @@ export default async function ConversationsPage({
   const allConversations = await prisma.aIConversation.findMany({
     where: {
       userId: session.user.id,
+      NOT: { title: { startsWith: "__SYSTEM_" } },
     },
     include: {
       paper: {

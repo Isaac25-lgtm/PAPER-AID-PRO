@@ -67,6 +67,7 @@ model User {
   // Relationships
   conversations AIConversation[]
   bookmarks     Bookmark[]
+  collections   Collection[]
 
   // Note: @@index([email]) omitted because @unique already provisions a PostgreSQL unique B-tree index
   @@map("users")
@@ -114,6 +115,7 @@ model Paper {
   processingJobs   ProcessingJob[]
   bookmarks        Bookmark[]
   conversations    AIConversation[]
+  collections      CollectionPaper[]
 
   @@index([status])
   @@index([publicationDate])
@@ -318,3 +320,38 @@ model ProcessingJob {
   @@index([stage])
   @@map("processing_jobs")
 }
+
+model Collection {
+  id          String            @id @default(cuid())
+  userId      String
+  name        String
+  description String?           @db.Text
+  color       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Foreign keys & relations
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  papers      CollectionPaper[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("collections")
+}
+
+model CollectionPaper {
+  id           String     @id @default(cuid())
+  collectionId String
+  paperId      String
+  addedAt      DateTime   @default(now())
+
+  // Foreign keys & relations
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  paper        Paper      @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, paperId])
+  @@index([collectionId])
+  @@index([paperId])
+  @@map("collection_papers")
+}
+

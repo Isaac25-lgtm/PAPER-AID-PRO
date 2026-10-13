@@ -10,6 +10,27 @@ import {
   UserLibraryItem,
   UserDocumentType,
 } from "@/lib/library/user-library-service";
+import {
+  getUserCollections,
+  createCollection,
+  renameCollection,
+  deleteCollection,
+  addPaperToCollection,
+  removePaperFromCollection,
+  setPaperCollections,
+  UserCollection,
+} from "@/lib/library/collections-service";
+import {
+  lookupPaperByIdentifier,
+  importPaperByIdentifier,
+  LookupPaperMetadata,
+} from "@/lib/library/identifier-lookup-service";
+import {
+  previewReferenceImport,
+  executeReferenceImport,
+  ImportPreviewSummary,
+  ReferencePreviewItem,
+} from "@/lib/library/citation-import-service";
 import { revalidatePath } from "next/cache";
 
 export interface LibraryActionResponse {
@@ -191,5 +212,250 @@ export async function fetchUserLibraryItemsAction(): Promise<{
       items: [],
       error: err?.message || "Failed to load library items.",
     };
+  }
+}
+
+// ============================================================================
+// PHASE 5B: COLLECTIONS SERVER ACTIONS
+// ============================================================================
+
+export async function getUserCollectionsAction(): Promise<{
+  success: boolean;
+  collections: UserCollection[];
+  error?: string;
+}> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, collections: [], error: "Authentication required." };
+  }
+  try {
+    const collections = await getUserCollections(session.user.id);
+    return { success: true, collections };
+  } catch (err: any) {
+    console.error("[getUserCollectionsAction] Error:", err);
+    return { success: false, collections: [], error: err?.message || "Failed to load collections." };
+  }
+}
+
+export async function createCollectionAction(
+  name: string,
+  options?: { description?: string; color?: string }
+): Promise<{
+  success: boolean;
+  collection?: UserCollection;
+  error?: string;
+}> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, error: "Authentication required." };
+  }
+  try {
+    const collection = await createCollection(session.user.id, name, options);
+    revalidatePath("/library");
+    return { success: true, collection };
+  } catch (err: any) {
+    console.error("[createCollectionAction] Error:", err);
+    return { success: false, error: err?.message || "Failed to create collection." };
+  }
+}
+
+export async function renameCollectionAction(
+  oldName: string,
+  newName: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, error: "Authentication required." };
+  }
+  try {
+    await renameCollection(session.user.id, oldName, newName);
+    revalidatePath("/library");
+    return { success: true };
+  } catch (err: any) {
+    console.error("[renameCollectionAction] Error:", err);
+    return { success: false, error: err?.message || "Failed to rename collection." };
+  }
+}
+
+export async function deleteCollectionAction(
+  name: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, error: "Authentication required." };
+  }
+  try {
+    await deleteCollection(session.user.id, name);
+    revalidatePath("/library");
+    return { success: true };
+  } catch (err: any) {
+    console.error("[deleteCollectionAction] Error:", err);
+    return { success: false, error: err?.message || "Failed to delete collection." };
+  }
+}
+
+export async function addPaperToCollectionAction(
+  paperId: string,
+  collectionName: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, error: "Authentication required." };
+  }
+  try {
+    await addPaperToCollection(session.user.id, paperId, collectionName);
+    revalidatePath("/library");
+    return { success: true };
+  } catch (err: any) {
+    console.error("[addPaperToCollectionAction] Error:", err);
+    return { success: false, error: err?.message || "Failed to add paper to collection." };
+  }
+}
+
+export async function removePaperFromCollectionAction(
+  paperId: string,
+  collectionName: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, error: "Authentication required." };
+  }
+  try {
+    await removePaperFromCollection(session.user.id, paperId, collectionName);
+    revalidatePath("/library");
+    return { success: true };
+  } catch (err: any) {
+    console.error("[removePaperFromCollectionAction] Error:", err);
+    return { success: false, error: err?.message || "Failed to remove paper from collection." };
+  }
+}
+
+export async function setPaperCollectionsAction(
+  paperId: string,
+  collections: string[]
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, error: "Authentication required." };
+  }
+  try {
+    await setPaperCollections(session.user.id, paperId, collections);
+    revalidatePath("/library");
+    return { success: true };
+  } catch (err: any) {
+    console.error("[setPaperCollectionsAction] Error:", err);
+    return { success: false, error: err?.message || "Failed to update collections." };
+  }
+}
+
+// ============================================================================
+// PHASE 5B: IDENTIFIER LOOKUP SERVER ACTIONS
+// ============================================================================
+
+export async function lookupIdentifierAction(rawInput: string): Promise<{
+  success: boolean;
+  metadata?: LookupPaperMetadata;
+  existingPaperId?: string;
+  error?: string;
+}> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, error: "Authentication required." };
+  }
+  try {
+    return await lookupPaperByIdentifier(rawInput);
+  } catch (err: any) {
+    console.error("[lookupIdentifierAction] Error:", err);
+    return { success: false, error: err?.message || "Failed to lookup identifier." };
+  }
+}
+
+export async function importPaperByIdentifierAction(
+  identifier: string,
+  collectionName?: string
+): Promise<{
+  success: boolean;
+  paperId?: string;
+  isDuplicate?: boolean;
+  message?: string;
+  error?: string;
+}> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, error: "Authentication required." };
+  }
+  try {
+    const result = await importPaperByIdentifier({
+      userId: session.user.id,
+      identifier,
+      collectionName,
+    });
+    revalidatePath("/library");
+    revalidatePath("/saved");
+    return {
+      success: true,
+      paperId: result.paperId,
+      isDuplicate: result.isDuplicate,
+      message: result.message,
+    };
+  } catch (err: any) {
+    console.error("[importPaperByIdentifierAction] Error:", err);
+    return { success: false, error: err?.message || "Failed to import paper." };
+  }
+}
+
+// ============================================================================
+// PHASE 5B: CITATION IMPORT (BIBTEX / RIS) SERVER ACTIONS
+// ============================================================================
+
+export async function previewReferenceImportAction(rawContent: string): Promise<{
+  success: boolean;
+  summary?: ImportPreviewSummary;
+  error?: string;
+}> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, error: "Authentication required." };
+  }
+  try {
+    const summary = await previewReferenceImport(session.user.id, rawContent);
+    return { success: true, summary };
+  } catch (err: any) {
+    console.error("[previewReferenceImportAction] Error:", err);
+    return { success: false, error: err?.message || "Failed to preview references." };
+  }
+}
+
+export async function executeReferenceImportAction(params: {
+  items: ReferencePreviewItem[];
+  collectionName?: string;
+  importDuplicates?: boolean;
+}): Promise<{
+  success: boolean;
+  importedCount?: number;
+  skippedCount?: number;
+  error?: string;
+}> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, error: "Authentication required." };
+  }
+  try {
+    const result = await executeReferenceImport({
+      userId: session.user.id,
+      items: params.items,
+      collectionName: params.collectionName,
+      importDuplicates: params.importDuplicates,
+    });
+    revalidatePath("/library");
+    revalidatePath("/saved");
+    return {
+      success: true,
+      importedCount: result.importedCount,
+      skippedCount: result.skippedCount,
+    };
+  } catch (err: any) {
+    console.error("[executeReferenceImportAction] Error:", err);
+    return { success: false, error: err?.message || "Failed to import references." };
   }
 }

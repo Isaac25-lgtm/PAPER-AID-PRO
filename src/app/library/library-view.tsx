@@ -25,6 +25,15 @@ import {
   MessageSquare,
   ShieldCheck,
   ChevronRight,
+  FolderPlus,
+  Folder,
+  Tag,
+  BookOpen,
+  FileCode,
+  Check,
+  Plus,
+  Edit3,
+  Filter,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,14 +43,32 @@ import {
   UserLibraryItem,
   UserDocumentType,
 } from "@/lib/library/user-library-service";
+import { UserCollection } from "@/lib/library/collections-service";
+import { LookupPaperMetadata } from "@/lib/library/identifier-lookup-service";
+import {
+  ImportPreviewSummary,
+  ReferencePreviewItem,
+} from "@/lib/library/citation-import-service";
 import {
   uploadUserDocumentAction,
   deleteLibraryItemAction,
   reprocessUserDocumentAction,
+  getUserCollectionsAction,
+  createCollectionAction,
+  renameCollectionAction,
+  deleteCollectionAction,
+  addPaperToCollectionAction,
+  removePaperFromCollectionAction,
+  setPaperCollectionsAction,
+  lookupIdentifierAction,
+  importPaperByIdentifierAction,
+  previewReferenceImportAction,
+  executeReferenceImportAction,
 } from "./actions";
 
 interface LibraryViewProps {
   initialItems: UserLibraryItem[];
+  initialCollections?: UserCollection[];
   user: {
     id?: string;
     name?: string | null;
@@ -50,24 +77,46 @@ interface LibraryViewProps {
   };
 }
 
-export function LibraryView({ initialItems, user }: LibraryViewProps) {
+const PRESET_COLLECTION_COLORS = [
+  "#4f46e5", // Indigo
+  "#0ea5e9", // Sky
+  "#059669", // Emerald
+  "#d97706", // Amber
+  "#7c3aed", // Violet
+  "#e11d48", // Rose
+];
+
+export function LibraryView({
+  initialItems,
+  initialCollections = [],
+  user,
+}: LibraryViewProps) {
   const router = useRouter();
   const [items, setItems] = React.useState<UserLibraryItem[]>(initialItems);
-  const [activeTab, setActiveTab] = React.useState<"all" | "private" | "saved">("all");
+  const [collections, setCollections] =
+    React.useState<UserCollection[]>(initialCollections);
+  const [activeTab, setActiveTab] = React.useState<"all" | "private" | "saved">(
+    "all"
+  );
+  const [selectedCollection, setSelectedCollection] = React.useState<
+    string | null
+  >(null);
   const [searchQuery, setSearchQuery] = React.useState("");
+
+  // Modals state
   const [isUploadOpen, setIsUploadOpen] = React.useState(false);
+  const [isDoiModalOpen, setIsDoiModalOpen] = React.useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = React.useState(false);
+  const [isNewCollectionOpen, setIsNewCollectionOpen] = React.useState(false);
+  const [editingCollection, setEditingCollection] =
+    React.useState<UserCollection | null>(null);
+  const [managingCollectionsPaper, setManagingCollectionsPaper] =
+    React.useState<UserLibraryItem | null>(null);
+
+  // Upload state
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = React.useState<string | null>(null);
-
-  // Deletion state
-  const [deletingId, setDeletingId] = React.useState<string | null>(null);
-  const [itemToDelete, setItemToDelete] = React.useState<UserLibraryItem | null>(null);
-
-  // Reprocessing state
-  const [reprocessingId, setReprocessingId] = React.useState<string | null>(null);
-
-  // File upload form state
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
   const [docType, setDocType] = React.useState<UserDocumentType>("THESIS");
   const [title, setTitle] = React.useState("");
@@ -76,10 +125,69 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
   const [researchCategory, setResearchCategory] = React.useState("");
   const [description, setDescription] = React.useState("");
 
-  // Sync state if initialItems change (e.g. from server revalidation)
+  // DOI Lookup state
+  const [doiInput, setDoiInput] = React.useState("");
+  const [isLookingUpDoi, setIsLookingUpDoi] = React.useState(false);
+  const [doiLookupResult, setDoiLookupResult] =
+    React.useState<LookupPaperMetadata | null>(null);
+  const [doiExistingPaperId, setDoiExistingPaperId] = React.useState<
+    string | null
+  >(null);
+  const [doiLookupError, setDoiLookupError] = React.useState<string | null>(null);
+  const [doiCollectionAssign, setDoiCollectionAssign] = React.useState("");
+  const [isImportingDoi, setIsImportingDoi] = React.useState(false);
+  const [doiImportSuccess, setDoiImportSuccess] = React.useState<string | null>(
+    null
+  );
+
+  // BibTeX / RIS Import state
+  const [importMode, setImportMode] = React.useState<"paste" | "file">("file");
+  const [pastedContent, setPastedContent] = React.useState("");
+  const [referenceFile, setReferenceFile] = React.useState<File | null>(null);
+  const [isParsingReferences, setIsParsingReferences] = React.useState(false);
+  const [previewSummary, setPreviewSummary] =
+    React.useState<ImportPreviewSummary | null>(null);
+  const [importCollectionAssign, setImportCollectionAssign] = React.useState("");
+  const [importIncludeDuplicates, setImportIncludeDuplicates] =
+    React.useState(true);
+  const [isExecutingImport, setIsExecutingImport] = React.useState(false);
+  const [importSuccessMsg, setImportSuccessMsg] = React.useState<string | null>(
+    null
+  );
+  const [importError, setImportError] = React.useState<string | null>(null);
+
+  // Collection form state
+  const [newCollectionName, setNewCollectionName] = React.useState("");
+  const [newCollectionDesc, setNewCollectionDesc] = React.useState("");
+  const [newCollectionColor, setNewCollectionColor] = React.useState(
+    PRESET_COLLECTION_COLORS[0]
+  );
+  const [collectionFormError, setCollectionFormError] = React.useState<
+    string | null
+  >(null);
+  const [isSubmittingCollection, setIsSubmittingCollection] =
+    React.useState(false);
+
+  // Deletion state
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
+  const [itemToDelete, setItemToDelete] =
+    React.useState<UserLibraryItem | null>(null);
+
+  // Reprocessing state
+  const [reprocessingId, setReprocessingId] = React.useState<string | null>(null);
+
+  // Paper collection assignment state
+  const [paperSelectedCols, setPaperSelectedCols] = React.useState<string[]>([]);
+  const [isUpdatingPaperCols, setIsUpdatingPaperCols] = React.useState(false);
+
+  // Sync state if initialItems change
   React.useEffect(() => {
     setItems(initialItems);
   }, [initialItems]);
+
+  React.useEffect(() => {
+    setCollections(initialCollections);
+  }, [initialCollections]);
 
   // Statistics
   const privateCount = items.filter((i) => i.isPrivate).length;
@@ -91,6 +199,13 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
     if (activeTab === "private" && !item.isPrivate) return false;
     if (activeTab === "saved" && item.isPrivate) return false;
 
+    if (
+      selectedCollection &&
+      !item.collections.includes(selectedCollection)
+    ) {
+      return false;
+    }
+
     if (searchQuery.trim().length > 0) {
       const q = searchQuery.toLowerCase();
       const matchTitle = item.title.toLowerCase().includes(q);
@@ -98,12 +213,21 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
       const matchAuthors = item.authors.some((a) => a.toLowerCase().includes(q));
       const matchInst = item.institution?.toLowerCase().includes(q);
       const matchType = item.documentType.toLowerCase().includes(q);
-      return matchTitle || matchAbstract || matchAuthors || matchInst || matchType;
+      const matchCol = item.collections.some((c) => c.toLowerCase().includes(q));
+      return (
+        matchTitle ||
+        matchAbstract ||
+        matchAuthors ||
+        matchInst ||
+        matchType ||
+        matchCol
+      );
     }
 
     return true;
   });
 
+  // Handle PDF file upload selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -138,7 +262,6 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
       const res = await uploadUserDocumentAction(formData);
       if (res.success) {
         setUploadSuccess("Manuscript successfully uploaded and processed!");
-        // Reset form
         setSelectedFile(null);
         setTitle("");
         setAuthors("");
@@ -154,7 +277,9 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
         setUploadError(res.error || "Upload failed. Please try again.");
       }
     } catch (err: any) {
-      setUploadError(err?.message || "An unexpected error occurred during upload.");
+      setUploadError(
+        err?.message || "An unexpected error occurred during upload."
+      );
     } finally {
       setIsUploading(false);
     }
@@ -194,6 +319,316 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
     }
   };
 
+  // ============================================================================
+  // COLLECTION ACTIONS
+  // ============================================================================
+
+  const handleCreateOrUpdateCollection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCollectionName.trim()) {
+      setCollectionFormError("Please enter a collection name.");
+      return;
+    }
+
+    setIsSubmittingCollection(true);
+    setCollectionFormError(null);
+
+    try {
+      if (editingCollection) {
+        const res = await renameCollectionAction(
+          editingCollection.name,
+          newCollectionName.trim()
+        );
+        if (!res.success) {
+          setCollectionFormError(res.error || "Failed to rename collection.");
+          return;
+        }
+        setCollections((prev) =>
+          prev.map((c) =>
+            c.id === editingCollection.id
+              ? { ...c, name: newCollectionName.trim() }
+              : c
+          )
+        );
+        if (selectedCollection === editingCollection.name) {
+          setSelectedCollection(newCollectionName.trim());
+        }
+        setItems((prev) =>
+          prev.map((item) => ({
+            ...item,
+            collections: item.collections.map((c) =>
+              c === editingCollection.name ? newCollectionName.trim() : c
+            ),
+          }))
+        );
+      } else {
+        const res = await createCollectionAction(newCollectionName.trim(), {
+          description: newCollectionDesc.trim() || undefined,
+          color: newCollectionColor,
+        });
+        if (!res.success || !res.collection) {
+          setCollectionFormError(res.error || "Failed to create collection.");
+          return;
+        }
+        setCollections((prev) => [...prev, res.collection!]);
+      }
+
+      setIsNewCollectionOpen(false);
+      setEditingCollection(null);
+      setNewCollectionName("");
+      setNewCollectionDesc("");
+      router.refresh();
+    } catch (err: any) {
+      setCollectionFormError(err.message || "An error occurred.");
+    } finally {
+      setIsSubmittingCollection(false);
+    }
+  };
+
+  const handleDeleteCollection = async (name: string) => {
+    if (
+      !confirm(
+        `Are you sure you want to delete the collection "${name}"? Papers in this collection will NOT be deleted from your library.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await deleteCollectionAction(name);
+      if (res.success) {
+        setCollections((prev) => prev.filter((c) => c.name !== name));
+        if (selectedCollection === name) {
+          setSelectedCollection(null);
+        }
+        // Update local item collection tags
+        setItems((prev) =>
+          prev.map((item) => ({
+            ...item,
+            collections: item.collections.filter((c) => c !== name),
+          }))
+        );
+        router.refresh();
+      } else {
+        alert(res.error || "Failed to delete collection.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Error deleting collection.");
+    }
+  };
+
+  const handleRemoveFromCollection = async (
+    paperId: string,
+    collectionName: string
+  ) => {
+    try {
+      const res = await removePaperFromCollectionAction(paperId, collectionName);
+      if (res.success) {
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === paperId
+              ? {
+                  ...item,
+                  collections: item.collections.filter(
+                    (c) => c !== collectionName
+                  ),
+                }
+              : item
+          )
+        );
+        setCollections((prev) =>
+          prev.map((c) =>
+            c.name === collectionName
+              ? { ...c, paperCount: Math.max(0, c.paperCount - 1) }
+              : c
+          )
+        );
+        router.refresh();
+      } else {
+        alert(res.error || "Failed to remove paper from collection.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Error removing paper from collection.");
+    }
+  };
+
+  const openManageCollectionsModal = (item: UserLibraryItem) => {
+    setManagingCollectionsPaper(item);
+    setPaperSelectedCols([...item.collections]);
+  };
+
+  const handleSavePaperCollections = async () => {
+    if (!managingCollectionsPaper) return;
+    setIsUpdatingPaperCols(true);
+    try {
+      const res = await setPaperCollectionsAction(
+        managingCollectionsPaper.id,
+        paperSelectedCols
+      );
+      if (res.success) {
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === managingCollectionsPaper.id
+              ? { ...item, collections: paperSelectedCols }
+              : item
+          )
+        );
+        setManagingCollectionsPaper(null);
+        router.refresh();
+      } else {
+        alert(res.error || "Failed to update collections.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Error updating paper collections.");
+    } finally {
+      setIsUpdatingPaperCols(false);
+    }
+  };
+
+  // ============================================================================
+  // DOI / PMID LOOKUP ACTIONS
+  // ============================================================================
+
+  const handleDoiLookup = async () => {
+    if (!doiInput.trim()) return;
+    setIsLookingUpDoi(true);
+    setDoiLookupError(null);
+    setDoiLookupResult(null);
+    setDoiExistingPaperId(null);
+
+    try {
+      const res = await lookupIdentifierAction(doiInput.trim());
+      if (res.success && res.metadata) {
+        setDoiLookupResult(res.metadata);
+        setDoiExistingPaperId(res.existingPaperId || null);
+      } else {
+        setDoiLookupError(res.error || "Could not find paper metadata.");
+      }
+    } catch (err: any) {
+      setDoiLookupError(err.message || "Lookup service error.");
+    } finally {
+      setIsLookingUpDoi(false);
+    }
+  };
+
+  const handleDoiImportSubmit = async () => {
+    if (!doiLookupResult) return;
+    setIsImportingDoi(true);
+    setDoiLookupError(null);
+
+    try {
+      const res = await importPaperByIdentifierAction(
+        doiInput.trim(),
+        doiCollectionAssign || undefined
+      );
+      if (res.success) {
+        setDoiImportSuccess(res.message || "Paper added to your library.");
+        setTimeout(() => {
+          setIsDoiModalOpen(false);
+          setDoiImportSuccess(null);
+          setDoiLookupResult(null);
+          setDoiInput("");
+          router.refresh();
+        }, 1200);
+      } else {
+        setDoiLookupError(res.error || "Failed to add paper to library.");
+      }
+    } catch (err: any) {
+      setDoiLookupError(err.message || "Error importing paper.");
+    } finally {
+      setIsImportingDoi(false);
+    }
+  };
+
+  // ============================================================================
+  // BIBTEX / RIS REFERENCE IMPORT ACTIONS
+  // ============================================================================
+
+  const handleReferenceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setReferenceFile(file);
+    }
+  };
+
+  const handlePreviewReferences = async () => {
+    let contentToPreview = "";
+
+    if (importMode === "file") {
+      if (!referenceFile) {
+        setImportError("Please select a .bib or .ris file.");
+        return;
+      }
+      contentToPreview = await referenceFile.text();
+    } else {
+      if (!pastedContent.trim()) {
+        setImportError("Please paste BibTeX or RIS reference text.");
+        return;
+      }
+      contentToPreview = pastedContent.trim();
+    }
+
+    setIsParsingReferences(true);
+    setImportError(null);
+    setPreviewSummary(null);
+
+    try {
+      const res = await previewReferenceImportAction(contentToPreview);
+      if (res.success && res.summary) {
+        if (res.summary.totalFound === 0) {
+          setImportError(
+            "No recognized BibTeX or RIS entries found in input. Please check the file formatting."
+          );
+        } else {
+          setPreviewSummary(res.summary);
+        }
+      } else {
+        setImportError(res.error || "Failed to parse references.");
+      }
+    } catch (err: any) {
+      setImportError(err.message || "Error parsing references.");
+    } finally {
+      setIsParsingReferences(false);
+    }
+  };
+
+  const handleExecuteImport = async () => {
+    if (!previewSummary || previewSummary.items.length === 0) return;
+    setIsExecutingImport(true);
+    setImportError(null);
+
+    try {
+      const res = await executeReferenceImportAction({
+        items: previewSummary.items,
+        collectionName: importCollectionAssign || undefined,
+        importDuplicates: importIncludeDuplicates,
+      });
+
+      if (res.success) {
+        setImportSuccessMsg(
+          `Successfully imported ${res.importedCount} references into your library!` +
+            (res.skippedCount && res.skippedCount > 0
+              ? ` (${res.skippedCount} skipped)`
+              : "")
+        );
+        setTimeout(() => {
+          setIsImportModalOpen(false);
+          setPreviewSummary(null);
+          setPastedContent("");
+          setReferenceFile(null);
+          setImportSuccessMsg(null);
+          router.refresh();
+        }, 1500);
+      } else {
+        setImportError(res.error || "Failed to complete reference import.");
+      }
+    } catch (err: any) {
+      setImportError(err.message || "Error executing import.");
+    } finally {
+      setIsExecutingImport(false);
+    }
+  };
+
   const formatDocTypeLabel = (type: string) => {
     switch (type.toUpperCase()) {
       case "THESIS":
@@ -208,6 +643,8 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
         return "Student Paper";
       case "JOURNAL_ARTICLE":
         return "Journal Article";
+      case "METADATA_ONLY":
+        return "Catalog Reference";
       case "PUBLISHED_PAPER":
         return "Scholarly Discovery";
       default:
@@ -231,18 +668,47 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
               My Research Library
             </h1>
             <p className="text-sm text-slate-300 leading-relaxed">
-              Upload your private dissertations, theses, proposals, and manuscript drafts.
-              Manage your personal literature and chat with your papers using verifiable citations.
+              Upload private dissertations, organize papers into collections,
+              import references via BibTeX/RIS, and look up scholarly papers by
+              DOI or PMID.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Action Buttons Group */}
+          <div className="flex flex-wrap items-center gap-2.5">
             <Button
               onClick={() => setIsUploadOpen(true)}
               className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold shadow-md gap-2 h-10 px-4 text-xs sm:text-sm"
             >
               <FileUp className="h-4 w-4" />
-              <span>Upload Private PDF</span>
+              <span>Upload PDF</span>
+            </Button>
+
+            <Button
+              onClick={() => {
+                setIsDoiModalOpen(true);
+                setDoiLookupResult(null);
+                setDoiLookupError(null);
+                setDoiInput("");
+              }}
+              variant="outline"
+              className="bg-white/10 hover:bg-white/20 text-white border-white/20 font-semibold gap-1.5 h-10 px-3.5 text-xs sm:text-sm"
+            >
+              <BookOpen className="h-4 w-4" />
+              <span>Add by DOI / PMID</span>
+            </Button>
+
+            <Button
+              onClick={() => {
+                setIsImportModalOpen(true);
+                setPreviewSummary(null);
+                setImportError(null);
+              }}
+              variant="outline"
+              className="bg-white/10 hover:bg-white/20 text-white border-white/20 font-semibold gap-1.5 h-10 px-3.5 text-xs sm:text-sm"
+            >
+              <FileCode className="h-4 w-4" />
+              <span>Import BibTeX / RIS</span>
             </Button>
           </div>
         </div>
@@ -251,29 +717,156 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 mt-6 border-t border-slate-800 text-xs">
           <div className="bg-white/5 rounded-xl p-3 border border-white/5">
             <div className="text-slate-400 font-medium">Total Items</div>
-            <div className="text-xl font-bold text-white mt-0.5">{items.length}</div>
+            <div className="text-xl font-bold text-white mt-0.5">
+              {items.length}
+            </div>
           </div>
           <div className="bg-white/5 rounded-xl p-3 border border-white/5">
             <div className="text-indigo-300 font-medium flex items-center gap-1">
+              <Folder className="h-3 w-3" />
+              <span>Collections</span>
+            </div>
+            <div className="text-xl font-bold text-white mt-0.5">
+              {collections.length}
+            </div>
+          </div>
+          <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+            <div className="text-purple-300 font-medium flex items-center gap-1">
               <Lock className="h-3 w-3" />
               <span>Private Uploads</span>
             </div>
-            <div className="text-xl font-bold text-white mt-0.5">{privateCount}</div>
-          </div>
-          <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-            <div className="text-slate-300 font-medium flex items-center gap-1">
-              <Globe className="h-3 w-3" />
-              <span>Saved Scholarly</span>
+            <div className="text-xl font-bold text-white mt-0.5">
+              {privateCount}
             </div>
-            <div className="text-xl font-bold text-white mt-0.5">{savedCount}</div>
           </div>
           <div className="bg-white/5 rounded-xl p-3 border border-white/5">
             <div className="text-emerald-300 font-medium flex items-center gap-1">
               <Sparkles className="h-3 w-3" />
               <span>Ready for Chat</span>
             </div>
-            <div className="text-xl font-bold text-white mt-0.5">{readyCount}</div>
+            <div className="text-xl font-bold text-white mt-0.5">
+              {readyCount}
+            </div>
           </div>
+        </div>
+      </div>
+
+      {/* Collections Filter Bar */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+            <Folder className="h-4 w-4 text-indigo-600" />
+            <span>Personal Collections</span>
+            <span className="text-slate-400 font-normal">
+              ({collections.length})
+            </span>
+          </div>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setEditingCollection(null);
+              setNewCollectionName("");
+              setNewCollectionDesc("");
+              setNewCollectionColor(PRESET_COLLECTION_COLORS[0]);
+              setCollectionFormError(null);
+              setIsNewCollectionOpen(true);
+            }}
+            className="h-8 text-xs text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 font-semibold gap-1"
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+            <span>New Collection</span>
+          </Button>
+        </div>
+
+        {/* Collection Pills Carousel / List */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setSelectedCollection(null)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              selectedCollection === null
+                ? "bg-slate-900 text-white shadow-xs"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            <span>All Items</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                selectedCollection === null
+                  ? "bg-slate-800 text-slate-300"
+                  : "bg-slate-200 text-slate-600"
+              }`}
+            >
+              {items.length}
+            </span>
+          </button>
+
+          {collections.map((col) => {
+            const isSelected = selectedCollection === col.name;
+            return (
+              <div key={col.id} className="relative group inline-flex items-center">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedCollection(isSelected ? null : col.name)
+                  }
+                  className={`pl-3 pr-2 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 ${
+                    isSelected
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: col.color }}
+                  />
+                  <span>{col.name}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      isSelected
+                        ? "bg-indigo-700 text-indigo-100"
+                        : "bg-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {col.paperCount}
+                  </span>
+                </button>
+
+                {/* Edit / Delete quick buttons */}
+                <div className="hidden group-hover:flex items-center ml-1 bg-white border border-slate-200 rounded-md shadow-xs p-0.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingCollection(col);
+                      setNewCollectionName(col.name);
+                      setNewCollectionDesc(col.description || "");
+                      setNewCollectionColor(col.color);
+                      setCollectionFormError(null);
+                      setIsNewCollectionOpen(true);
+                    }}
+                    className="p-1 text-slate-400 hover:text-indigo-600 rounded-sm"
+                    title="Rename Collection"
+                  >
+                    <Edit3 className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteCollection(col.name);
+                    }}
+                    className="p-1 text-slate-400 hover:text-rose-600 rounded-sm"
+                    title="Delete Collection"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -323,7 +916,7 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
           <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
           <Input
             type="search"
-            placeholder="Filter library..."
+            placeholder="Filter library or collections..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9 h-9 text-xs bg-white border-slate-200"
@@ -331,12 +924,34 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
         </div>
       </div>
 
+      {/* Active Collection Filter Bar indicator */}
+      {selectedCollection && (
+        <div className="flex items-center justify-between p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs">
+          <div className="flex items-center gap-2">
+            <Folder className="h-4 w-4 text-indigo-600" />
+            <span className="text-slate-600">Filtering by collection:</span>
+            <span className="font-bold text-indigo-900">
+              {selectedCollection}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedCollection(null)}
+            className="text-indigo-600 hover:text-indigo-800 font-semibold underline"
+          >
+            Show All Papers
+          </button>
+        </div>
+      )}
+
       {/* Main Library List */}
       {filteredItems.length === 0 ? (
         <Card className="bg-white border-dashed border-2 border-slate-300 p-12 text-center space-y-4">
           <div className="mx-auto h-12 w-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
             {activeTab === "private" ? (
               <FileUp className="h-6 w-6" />
+            ) : selectedCollection ? (
+              <Folder className="h-6 w-6" />
             ) : (
               <Bookmark className="h-6 w-6" />
             )}
@@ -345,6 +960,8 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
             <h3 className="text-base font-semibold text-slate-900">
               {searchQuery
                 ? "No matching documents found"
+                : selectedCollection
+                ? `No papers in collection "${selectedCollection}"`
                 : activeTab === "private"
                 ? "No Private Uploads Yet"
                 : activeTab === "saved"
@@ -352,12 +969,14 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                 : "Your Research Library is Empty"}
             </h3>
             <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
-              {activeTab === "private"
+              {selectedCollection
+                ? "You can add papers to this collection by clicking the collection tag on any paper card."
+                : activeTab === "private"
                 ? "Upload your theses, dissertations, research proposals, or draft manuscripts to analyze and chat with them privately."
-                : "Explore our scholarly catalog of 300M+ research papers and save literature to your personal library."}
+                : "Add papers by DOI or PMID, import BibTeX/RIS references, or upload your own research PDFs."}
             </p>
           </div>
-          <div className="pt-2 flex items-center justify-center gap-3">
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
             <Button
               size="sm"
               onClick={() => setIsUploadOpen(true)}
@@ -365,6 +984,15 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
             >
               <FileUp className="h-3.5 w-3.5" />
               <span>Upload PDF</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setIsDoiModalOpen(true)}
+              className="text-xs gap-1.5"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              <span>Add by DOI</span>
             </Button>
             <Link href="/discover">
               <Button size="sm" variant="outline" className="text-xs gap-1.5">
@@ -397,7 +1025,10 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                       </span>
                     )}
 
-                    <Badge variant="secondary" className="text-[10px] font-medium">
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] font-medium"
+                    >
                       {formatDocTypeLabel(item.documentType)}
                     </Badge>
                   </div>
@@ -409,7 +1040,8 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                         <CheckCircle2 className="h-3 w-3 text-emerald-600" />
                         <span>Ready</span>
                       </span>
-                    ) : item.status === "PROCESSING" || item.status === "EMBEDDING" ? (
+                    ) : item.status === "PROCESSING" ||
+                      item.status === "EMBEDDING" ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200 animate-pulse">
                         <RefreshCw className="h-3 w-3 animate-spin text-indigo-600" />
                         <span>Processing</span>
@@ -443,7 +1075,9 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                   {item.authors.length > 0 && (
                     <div className="flex items-center gap-1.5 truncate">
                       <Users className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">{item.authors.join(", ")}</span>
+                      <span className="truncate">
+                        {item.authors.join(", ")}
+                      </span>
                     </div>
                   )}
 
@@ -453,6 +1087,28 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                       <span className="truncate">{item.institution}</span>
                     </div>
                   )}
+                </div>
+
+                {/* Assigned Collections Pills */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  {item.collections.map((colName) => (
+                    <span
+                      key={colName}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200"
+                    >
+                      <Folder className="h-2.5 w-2.5" />
+                      <span>{colName}</span>
+                    </span>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => openManageCollectionsModal(item)}
+                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold text-slate-500 hover:text-indigo-600 hover:bg-slate-100 border border-dashed border-slate-300 transition-colors"
+                    title="Manage Collections for this paper"
+                  >
+                    <Plus className="h-2.5 w-2.5" />
+                    <span>Collection</span>
+                  </button>
                 </div>
               </CardHeader>
 
@@ -507,8 +1163,27 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                     )}
                   </div>
 
-                  {/* Right: Open & Remove Actions */}
+                  {/* Right: Actions */}
                   <div className="flex items-center gap-1">
+                    {/* If currently filtering by collection, allow removing from collection */}
+                    {selectedCollection &&
+                      item.collections.includes(selectedCollection) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            handleRemoveFromCollection(
+                              item.id,
+                              selectedCollection
+                            )
+                          }
+                          className="h-7 px-1.5 text-slate-400 hover:text-amber-700 hover:bg-amber-50 text-[11px]"
+                          title={`Remove from collection "${selectedCollection}" (paper remains in library)`}
+                        >
+                          <span>Remove from folder</span>
+                        </Button>
+                      )}
+
                     <Link href={`/papers/${item.id}`}>
                       <Button
                         variant="ghost"
@@ -542,7 +1217,9 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
         </div>
       )}
 
-      {/* Upload Private Document Modal */}
+      {/* ============================================================================ */}
+      {/* MODAL 1: UPLOAD PRIVATE DOCUMENT                                              */}
+      {/* ============================================================================ */}
       {isUploadOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-slate-200 p-6 space-y-5">
@@ -556,7 +1233,8 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                     Upload Private Document
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Theses, dissertations, proposals, drafts, and research manuscripts
+                    Theses, dissertations, proposals, drafts, and research
+                    manuscripts
                   </p>
                 </div>
               </div>
@@ -602,7 +1280,10 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                     className="hidden"
                     id="modal-pdf-file"
                   />
-                  <label htmlFor="modal-pdf-file" className="cursor-pointer block">
+                  <label
+                    htmlFor="modal-pdf-file"
+                    className="cursor-pointer block"
+                  >
                     <Upload className="mx-auto h-7 w-7 text-indigo-500 mb-1.5" />
                     {selectedFile ? (
                       <div className="space-y-0.5">
@@ -635,7 +1316,9 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                 </label>
                 <select
                   value={docType}
-                  onChange={(e) => setDocType(e.target.value as UserDocumentType)}
+                  onChange={(e) =>
+                    setDocType(e.target.value as UserDocumentType)
+                  }
                   className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                 >
                   <option value="THESIS">Master's / Ph.D. Thesis</option>
@@ -725,8 +1408,9 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                   <span className="font-semibold text-slate-800">
                     Zero Public Exposure:
                   </span>{" "}
-                  Your file is stored in encrypted private storage scoped to your account.
-                  It will not be indexed into public discovery, nor accessible by other users.
+                  Your file is stored in encrypted private storage scoped to your
+                  account. It will not be indexed into public discovery, nor
+                  accessible by other users.
                 </p>
               </div>
 
@@ -764,7 +1448,750 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* ============================================================================ */}
+      {/* MODAL 2: ADD BY DOI / PMID LOOKUP                                             */}
+      {/* ============================================================================ */}
+      {isDoiModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-slate-200 p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <BookOpen className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">
+                    Add Paper by DOI or PMID
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Fetch verified metadata from Crossref, PubMed, or local catalog
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDoiModalOpen(false);
+                  setDoiLookupResult(null);
+                  setDoiLookupError(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {doiLookupError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{doiLookupError}</span>
+              </div>
+            )}
+
+            {doiImportSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                <span>{doiImportSuccess}</span>
+              </div>
+            )}
+
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  DOI, PMID, or arXiv ID
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    placeholder="e.g. 10.1038/s41586-024-07487-w or pmid:38720073"
+                    value={doiInput}
+                    onChange={(e) => setDoiInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleDoiLookup();
+                      }
+                    }}
+                    className="h-9 text-xs"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleDoiLookup}
+                    disabled={isLookingUpDoi || !doiInput.trim()}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs shrink-0"
+                  >
+                    {isLookingUpDoi ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <span>Search</span>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Resolved Metadata Preview */}
+              {doiLookupResult && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700">
+                      <span>Source: {doiLookupResult.provider}</span>
+                    </span>
+
+                    {doiExistingPaperId && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                        <span>Already in Catalog</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 className="font-bold text-slate-900 text-sm leading-snug">
+                    {doiLookupResult.title}
+                  </h3>
+
+                  <div className="text-slate-600 space-y-0.5">
+                    {doiLookupResult.authors.length > 0 && (
+                      <div className="font-medium text-slate-700">
+                        {doiLookupResult.authors.join(", ")}
+                      </div>
+                    )}
+                    {(doiLookupResult.journal ||
+                      doiLookupResult.publicationDate) && (
+                      <div className="text-slate-500">
+                        {[
+                          doiLookupResult.journal,
+                          doiLookupResult.publicationDate?.slice(0, 4),
+                        ]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </div>
+                    )}
+                    {doiLookupResult.doi && (
+                      <div className="text-indigo-600 font-mono text-[11px]">
+                        doi:{doiLookupResult.doi}
+                      </div>
+                    )}
+                  </div>
+
+                  {doiLookupResult.abstract && (
+                    <p className="text-slate-500 text-[11px] line-clamp-3 leading-relaxed border-t border-slate-200 pt-2">
+                      {doiLookupResult.abstract}
+                    </p>
+                  )}
+
+                  {/* Assign to Collection */}
+                  {collections.length > 0 && (
+                    <div className="pt-2 border-t border-slate-200">
+                      <label className="block font-semibold text-slate-700 mb-1">
+                        Assign to Collection (Optional)
+                      </label>
+                      <select
+                        value={doiCollectionAssign}
+                        onChange={(e) => setDoiCollectionAssign(e.target.value)}
+                        className="w-full h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs"
+                      >
+                        <option value="">No Collection</option>
+                        {collections.map((col) => (
+                          <option key={col.id} value={col.name}>
+                            {col.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex justify-end">
+                    <Button
+                      type="button"
+                      onClick={handleDoiImportSubmit}
+                      disabled={isImportingDoi}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs gap-1.5"
+                    >
+                      {isImportingDoi ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          <span>Saving...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="h-3.5 w-3.5" />
+                          <span>Add to My Library</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================================ */}
+      {/* MODAL 3: BIBTEX / RIS REFERENCE IMPORT                                        */}
+      {/* ============================================================================ */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-200 p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <FileCode className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">
+                    Import References (BibTeX / RIS)
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Batch import academic citations into your research library
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsImportModalOpen(false);
+                  setPreviewSummary(null);
+                  setImportError(null);
+                  setImportSuccessMsg(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {importError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{importError}</span>
+              </div>
+            )}
+
+            {importSuccessMsg && (
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                <span>{importSuccessMsg}</span>
+              </div>
+            )}
+
+            {!previewSummary ? (
+              <div className="space-y-4 text-xs">
+                {/* Mode Selector */}
+                <div className="flex items-center p-1 bg-slate-100 rounded-lg text-xs font-semibold text-slate-600 self-start w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setImportMode("file")}
+                    className={`px-3 py-1 rounded-md transition-all ${
+                      importMode === "file"
+                        ? "bg-white text-indigo-700 shadow-xs font-bold"
+                        : "hover:text-slate-900"
+                    }`}
+                  >
+                    Upload File (.bib, .ris)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImportMode("paste")}
+                    className={`px-3 py-1 rounded-md transition-all ${
+                      importMode === "paste"
+                        ? "bg-white text-indigo-700 shadow-xs font-bold"
+                        : "hover:text-slate-900"
+                    }`}
+                  >
+                    Paste Text
+                  </button>
+                </div>
+
+                {importMode === "file" ? (
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Reference File
+                    </label>
+                    <div className="border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-xl p-4 text-center cursor-pointer transition-colors bg-slate-50/50">
+                      <input
+                        type="file"
+                        accept=".bib,.ris,.txt"
+                        onChange={handleReferenceFileChange}
+                        className="hidden"
+                        id="modal-ref-file"
+                      />
+                      <label
+                        htmlFor="modal-ref-file"
+                        className="cursor-pointer block"
+                      >
+                        <FileCode className="mx-auto h-7 w-7 text-indigo-500 mb-1.5" />
+                        {referenceFile ? (
+                          <div className="font-semibold text-slate-900 truncate max-w-xs mx-auto">
+                            {referenceFile.name}
+                          </div>
+                        ) : (
+                          <>
+                            <span className="font-semibold text-indigo-600 hover:underline">
+                              Choose a .bib or .ris file
+                            </span>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              Standard BibTeX or RIS format
+                            </p>
+                          </>
+                        )}
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Paste BibTeX or RIS records
+                    </label>
+                    <textarea
+                      rows={8}
+                      placeholder="@article{vaswani2017attention, title={Attention is All you Need}, author={Vaswani, Ashish}, year={2017}}..."
+                      value={pastedContent}
+                      onChange={(e) => setPastedContent(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 p-2 text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                    />
+                  </div>
+                )}
+
+                <div className="pt-2 flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={handlePreviewReferences}
+                    disabled={isParsingReferences}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs gap-1.5"
+                  >
+                    {isParsingReferences ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>Parsing Records...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-3.5 w-3.5" />
+                        <span>Parse & Preview</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              /* Preview Stage */
+              <div className="space-y-4 text-xs">
+                {/* Summary Badges */}
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="p-2 rounded-lg bg-slate-100 border border-slate-200">
+                    <div className="text-slate-500 text-[10px] uppercase font-bold">
+                      Format
+                    </div>
+                    <div className="font-bold text-slate-900">
+                      {previewSummary.format}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200">
+                    <div className="text-emerald-700 text-[10px] uppercase font-bold">
+                      Valid
+                    </div>
+                    <div className="font-bold text-emerald-800">
+                      {previewSummary.validCount}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-amber-50 border border-amber-200">
+                    <div className="text-amber-700 text-[10px] uppercase font-bold">
+                      Duplicates
+                    </div>
+                    <div className="font-bold text-amber-800">
+                      {previewSummary.duplicateCount}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-rose-50 border border-rose-200">
+                    <div className="text-rose-700 text-[10px] uppercase font-bold">
+                      Invalid
+                    </div>
+                    <div className="font-bold text-rose-800">
+                      {previewSummary.invalidCount}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Import options */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Add to Collection (Optional)
+                    </label>
+                    <select
+                      value={importCollectionAssign}
+                      onChange={(e) =>
+                        setImportCollectionAssign(e.target.value)
+                      }
+                      className="w-full h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs"
+                    >
+                      <option value="">No Collection</option>
+                      {collections.map((col) => (
+                        <option key={col.id} value={col.name}>
+                          {col.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-4">
+                    <input
+                      type="checkbox"
+                      id="chk-duplicates"
+                      checked={importIncludeDuplicates}
+                      onChange={(e) =>
+                        setImportIncludeDuplicates(e.target.checked)
+                      }
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <label
+                      htmlFor="chk-duplicates"
+                      className="text-xs text-slate-700 cursor-pointer"
+                    >
+                      Include duplicates (link to my library)
+                    </label>
+                  </div>
+                </div>
+
+                {/* Records Table Preview */}
+                <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+                  {previewSummary.items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-3 text-xs flex items-start justify-between gap-3 bg-white"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-slate-900 line-clamp-1">
+                          {item.title || "Untitled Record"}
+                        </div>
+                        <div className="text-slate-500 text-[11px] line-clamp-1">
+                          {item.authors.join(", ")}
+                          {item.year ? ` (${item.year})` : ""}
+                        </div>
+                        {item.doi && (
+                          <div className="text-indigo-600 font-mono text-[10px]">
+                            doi:{item.doi}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="shrink-0">
+                        {item.validationStatus === "VALID" ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Valid
+                          </span>
+                        ) : item.validationStatus === "DUPLICATE" ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            Duplicate
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                            Invalid
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setPreviewSummary(null)}
+                    disabled={isExecutingImport}
+                    className="text-xs"
+                  >
+                    Back to Edit
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={handleExecuteImport}
+                    disabled={
+                      isExecutingImport ||
+                      previewSummary.validCount +
+                        (importIncludeDuplicates
+                          ? previewSummary.duplicateCount
+                          : 0) ===
+                        0
+                    }
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs gap-1.5"
+                  >
+                    {isExecutingImport ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>Importing Records...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>
+                          Import{" "}
+                          {previewSummary.validCount +
+                            (importIncludeDuplicates
+                              ? previewSummary.duplicateCount
+                              : 0)}{" "}
+                          References
+                        </span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================================ */}
+      {/* MODAL 4: CREATE / EDIT COLLECTION                                             */}
+      {/* ============================================================================ */}
+      {isNewCollectionOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full border border-slate-200 p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <FolderPlus className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {editingCollection
+                      ? "Rename Collection"
+                      : "New Collection"}
+                  </h3>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsNewCollectionOpen(false);
+                  setEditingCollection(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {collectionFormError && (
+              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-1.5">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{collectionFormError}</span>
+              </div>
+            )}
+
+            <form
+              onSubmit={handleCreateOrUpdateCollection}
+              className="space-y-3 text-xs"
+            >
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Collection Name <span className="text-rose-500">*</span>
+                </label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Thesis Chapter 3, Surface Codes"
+                  value={newCollectionName}
+                  onChange={(e) => setNewCollectionName(e.target.value)}
+                  className="h-9 text-xs"
+                  autoFocus
+                />
+              </div>
+
+              {!editingCollection && (
+                <>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Description (Optional)
+                    </label>
+                    <Input
+                      type="text"
+                      placeholder="Brief notes about this topic..."
+                      value={newCollectionDesc}
+                      onChange={(e) => setNewCollectionDesc(e.target.value)}
+                      className="h-9 text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1.5">
+                      Color Marker
+                    </label>
+                    <div className="flex items-center gap-2">
+                      {PRESET_COLLECTION_COLORS.map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => setNewCollectionColor(color)}
+                          className={`h-6 w-6 rounded-full transition-transform ${
+                            newCollectionColor === color
+                              ? "scale-125 ring-2 ring-offset-2 ring-indigo-500"
+                              : "hover:scale-110"
+                          }`}
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsNewCollectionOpen(false);
+                    setEditingCollection(null);
+                  }}
+                  className="text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isSubmittingCollection || !newCollectionName.trim()}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs gap-1.5"
+                >
+                  {isSubmittingCollection ? (
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  ) : editingCollection ? (
+                    <span>Rename</span>
+                  ) : (
+                    <span>Create Collection</span>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================================ */}
+      {/* MODAL 5: MANAGE COLLECTIONS FOR SPECIFIC PAPER                                */}
+      {/* ============================================================================ */}
+      {managingCollectionsPaper && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full border border-slate-200 p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Tag className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Manage Collections
+                  </h3>
+                  <p className="text-xs text-slate-500 line-clamp-1 max-w-[200px]">
+                    {managingCollectionsPaper.title}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setManagingCollectionsPaper(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              {collections.length === 0 ? (
+                <div className="text-center py-4 text-slate-500">
+                  <p>You haven't created any collections yet.</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setManagingCollectionsPaper(null);
+                      setIsNewCollectionOpen(true);
+                    }}
+                    className="mt-2 text-xs gap-1"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>Create a Collection First</span>
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {collections.map((col) => {
+                    const isChecked = paperSelectedCols.includes(col.name);
+                    return (
+                      <label
+                        key={col.id}
+                        className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setPaperSelectedCols((prev) => [
+                                ...prev,
+                                col.name,
+                              ]);
+                            } else {
+                              setPaperSelectedCols((prev) =>
+                                prev.filter((c) => c !== col.name)
+                              );
+                            }
+                          }}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: col.color }}
+                        />
+                        <span className="font-medium text-slate-800">
+                          {col.name}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setManagingCollectionsPaper(null)}
+                  disabled={isUpdatingPaperCols}
+                  className="text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSavePaperCollections}
+                  disabled={isUpdatingPaperCols}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs gap-1.5"
+                >
+                  {isUpdatingPaperCols ? (
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <span>Save Collections</span>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================================ */}
+      {/* MODAL 6: DELETE CONFIRMATION                                                  */}
+      {/* ============================================================================ */}
       {itemToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full border border-slate-200 p-6 space-y-4">
@@ -781,7 +2208,7 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                 <p className="text-xs text-slate-600 leading-relaxed">
                   {itemToDelete.isPrivate
                     ? `Are you sure you want to permanently delete "${itemToDelete.title}"? The PDF file in storage, text chunks, and Q&A history will be deleted.`
-                    : `Remove "${itemToDelete.title}" from your personal library? The public scholarly record and citations will remain intact.`}
+                    : `Remove "${itemToDelete.title}" from your personal library? The public scholarly record, collections, and citations will remain intact.`}
                 </p>
               </div>
             </div>
@@ -811,7 +2238,9 @@ export function LibraryView({ initialItems, user }: LibraryViewProps) {
                   <>
                     <Trash2 className="h-3.5 w-3.5" />
                     <span>
-                      {itemToDelete.isPrivate ? "Delete Document" : "Remove Bookmark"}
+                      {itemToDelete.isPrivate
+                        ? "Delete Document"
+                        : "Remove Bookmark"}
                     </span>
                   </>
                 )}

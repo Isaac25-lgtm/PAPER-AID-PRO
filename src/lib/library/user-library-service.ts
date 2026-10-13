@@ -46,6 +46,7 @@ export interface UserLibraryItem {
   publicationDate?: string | null;
   journal?: string | null;
   categories: string[];
+  collections: string[];
   createdAt: string;
 }
 
@@ -435,6 +436,20 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
           categories: {
             include: { category: true },
           },
+          collections: {
+            where: {
+              collection: {
+                userId,
+              },
+            },
+            include: {
+              collection: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          },
           processingJobs: {
             orderBy: { createdAt: "desc" },
             take: 1,
@@ -464,6 +479,20 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
       categories: {
         include: { category: true },
       },
+      collections: {
+        where: {
+          collection: {
+            userId,
+          },
+        },
+        include: {
+          collection: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
       processingJobs: {
         orderBy: { createdAt: "desc" },
         take: 1,
@@ -487,6 +516,8 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
 
     const authorsList = paper.authors?.map((a: any) => a.author.name) || [];
     const categoriesList = paper.categories?.map((c: any) => c.category.name) || [];
+    const collectionNames: string[] =
+      paper.collections?.map((cp: any) => cp.collection.name) || [];
 
     const item: UserLibraryItem = {
       id: paper.id,
@@ -513,6 +544,7 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
         : null,
       journal: paper.journal || null,
       categories: categoriesList,
+      collections: collectionNames,
       createdAt: paper.createdAt.toISOString(),
     };
 
