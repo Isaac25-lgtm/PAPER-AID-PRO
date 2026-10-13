@@ -1,5 +1,7 @@
 import { prisma } from "../prisma";
 import { getOpenAIClient, AI_CONFIG } from "../ai/config";
+import { generateEmbedding } from "../ai/embeddings";
+import { authorizePaperAccess, UserContext } from "../auth/paper-authorization";
 import { discoverRelevantPapers, DEFAULT_MAX_SELECTED_PAPERS } from "./discover-papers";
 import { retrieveMultiPaperEvidence } from "./retrieve-multipaper-evidence";
 import { validateMultiPaperSynthesis } from "./validate-multipaper-citations";
@@ -10,7 +12,7 @@ import {
   LIBRARY_SCOPE_DISCLOSURE,
 } from "./prompts";
 import { MultiPaperSynthesisSchema, MultiPaperSynthesisOutput } from "./schemas";
-import { ResearchSynthesisRequest, MultiPaperSynthesisResult } from "./types";
+import { ResearchSynthesisRequest, MultiPaperSynthesisResult, DiscoveredPaper, PaperEvidenceSet } from "./types";
 import { zodTextFormat } from "openai/helpers/zod";
 import { AIMessageRole } from "@prisma/client";
 
@@ -111,98 +113,249 @@ export async function synthesizeResearchQuestion(
     },
   });
 
-  // 3. Check Library Papers & Run Discovery
-  const totalCompletedPapers = await prisma.paper.count({
-    where: { status: "COMPLETED" },
+  // 3. Resolve Selected Papers:
+  // a) Explicit selectedPaperIds in request
+  // b) Persistent selectedPaperIds from prior conversation turn
+  // c) Semantic/lexical library discovery across authorized papers
+  const userRecord = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true },
   });
+  const userContext: UserContext = {
+    id: userId,
+    role: userRecord?.role || "USER",
+  };
 
-  if (totalCompletedPapers === 0) {
-    const emptyMsg = "No research papers are currently available in the library for synthesis.";
-    const assistantMessage = await prisma.aIMessage.create({
-      data: {
+  let candidatePaperIds: string[] = [];
+  if (Array.isArray(params.selectedPaperIds) && params.selectedPaperIds.length > 0) {
+    candidatePaperIds = Array.from(new Set(params.selectedPaperIds.map((id) => id.trim()).filter(Boolean)));
+  } else if (conversation) {
+    // Check if the previous assistant message in this conversation had persistent selected papers
+    const lastAssistantMessage = await prisma.aIMessage.findFirst({
+      where: {
         conversationId: conversation.id,
         role: AIMessageRole.ASSISTANT,
-        content: emptyMsg,
-        citations: {
-          claims: [],
-          disagreements: [],
-          limitations: [],
-          selectedPapers: [],
-          libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
-          insufficientEvidence: true,
+      },
+      orderBy: { createdAt: "desc" },
+      select: { citations: true },
+    });
+    const priorCitations = lastAssistantMessage?.citations as any;
+    if (Array.isArray(priorCitations?.selectedPapers) && priorCitations.selectedPapers.length > 0) {
+      candidatePaperIds = priorCitations.selectedPapers.map((p: any) => p.paperId).filter(Boolean);
+    }
+  }
+
+  let evidenceResult: { evidenceSets: PaperEvidenceSet[]; totalChunks: number };
+  let omittedSourcesNotice: string | undefined = undefined;
+
+  if (candidatePaperIds.length > 0) {
+    // Explicit or inherited multi-paper selection: Authorize every paper on server
+    const fetchedCandidatePapers = await prisma.paper.findMany({
+      where: { id: { in: candidatePaperIds } },
+      select: {
+        id: true,
+        title: true,
+        abstract: true,
+        doi: true,
+        arxivId: true,
+        pmid: true,
+        pmcid: true,
+        semanticScholarId: true,
+        storagePath: true,
+        sourceProvenance: true,
+        status: true,
+        publicationDate: true,
+        journal: true,
+        citationCount: true,
+        authors: {
+          include: { author: { select: { name: true } } },
+          orderBy: { orderIndex: "asc" },
+        },
+        _count: {
+          select: { chunks: true },
         },
       },
     });
 
-    return {
-      success: true,
-      conversationId: conversation.id,
-      userMessageId: userMessage.id,
-      assistantMessageId: assistantMessage.id,
-      question: cleanQuestion,
-      claims: [],
-      disagreements: [],
-      limitations: [],
-      selectedPapers: [],
-      totalEvidenceChunks: 0,
-      insufficientEvidence: true,
-      libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
-      rejectedCitationCount: 0,
-      rejectedClaimsCount: 0,
-    };
-  }
+    const authorizedCandidatePapers: typeof fetchedCandidatePapers = [];
+    for (const cp of fetchedCandidatePapers) {
+      const auth = await authorizePaperAccess(cp, userContext, "VIEW_METADATA");
+      if (auth.allowed) {
+        authorizedCandidatePapers.push(cp);
+      }
+    }
 
-  // Discover candidate papers using pgvector semantic search & lexical fusion
-  const discovery = await discoverRelevantPapers(cleanQuestion, {
-    maxSelected: maxPapers || DEFAULT_MAX_SELECTED_PAPERS,
-  });
+    const omittedCount = Math.max(0, candidatePaperIds.length - authorizedCandidatePapers.length);
+    if (omittedCount > 0) {
+      omittedSourcesNotice = `${omittedCount} requested source${omittedCount > 1 ? "s" : ""} could not be included in this synthesis (unauthorized or inaccessible).`;
+    }
 
-  const selectedPapers = discovery.selectedPapers;
-
-  if (selectedPapers.length === 0) {
-    const fallbackMsg = "The available library does not contain enough relevant evidence to answer this research question.";
-    const assistantMessage = await prisma.aIMessage.create({
-      data: {
-        conversationId: conversation.id,
-        role: AIMessageRole.ASSISTANT,
-        content: fallbackMsg,
-        citations: {
-          claims: [],
-          disagreements: [],
-          limitations: [],
-          selectedPapers: [],
-          libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
-          insufficientEvidence: true,
+    if (authorizedCandidatePapers.length === 0) {
+      const unauthorizedFallbackMsg = omittedSourcesNotice
+        ? `${omittedSourcesNotice} None of the accessible documents could be reviewed for evidence.`
+        : "None of the selected documents could be accessed or contain evidence for synthesis.";
+      const assistantMessage = await prisma.aIMessage.create({
+        data: {
+          conversationId: conversation.id,
+          role: AIMessageRole.ASSISTANT,
+          content: unauthorizedFallbackMsg,
+          citations: {
+            claims: [],
+            disagreements: [],
+            limitations: [],
+            selectedPapers: [],
+            libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
+            insufficientEvidence: true,
+            omittedSourcesNotice,
+          },
         },
-      },
+      });
+
+      return {
+        success: true,
+        conversationId: conversation.id,
+        userMessageId: userMessage.id,
+        assistantMessageId: assistantMessage.id,
+        question: cleanQuestion,
+        claims: [],
+        disagreements: [],
+        limitations: [],
+        selectedPapers: [],
+        totalEvidenceChunks: 0,
+        insufficientEvidence: true,
+        libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
+        rejectedCitationCount: 0,
+        rejectedClaimsCount: 0,
+        omittedSourcesNotice,
+      };
+    }
+
+    const fullTextPapers = authorizedCandidatePapers.filter(
+      (p) => p.status === "COMPLETED" && p._count.chunks > 0
+    );
+    const metadataOnlyPapers = authorizedCandidatePapers.filter(
+      (p) => p.status === "METADATA_ONLY" || p._count.chunks === 0
+    );
+
+    const queryVector = await generateEmbedding(cleanQuestion);
+
+    const fullTextDiscovered: DiscoveredPaper[] = fullTextPapers.map((p) => ({
+      paperId: p.id,
+      title: p.title,
+      authors: p.authors.map((a) => a.author.name),
+      publicationDate: p.publicationDate ? p.publicationDate.toISOString() : null,
+      doi: p.doi,
+      journal: p.journal,
+      citationCount: p.citationCount,
+      relevanceScore: 1.0,
+      bestChunkSimilarity: 1.0,
+      matchingChunksCount: p._count.chunks,
+      bestChunkSnippet: "",
+      bestChunkPage: null,
+      bestChunkSection: null,
+    }));
+
+    let fullTextResult = { evidenceSets: [] as PaperEvidenceSet[], totalChunks: 0 };
+    if (fullTextDiscovered.length > 0) {
+      fullTextResult = await retrieveMultiPaperEvidence(fullTextDiscovered, cleanQuestion, {
+        queryVector,
+        chunksPerPaper: 4,
+        maxTotalChunks: 20,
+      });
+    }
+
+    const combinedEvidenceSets: PaperEvidenceSet[] = [...fullTextResult.evidenceSets];
+
+    for (const mp of metadataOnlyPapers) {
+      const metaEvidenceSet: PaperEvidenceSet = {
+        paperId: mp.id,
+        paperTitle: mp.title,
+        authors: mp.authors.map((a) => a.author.name),
+        doi: mp.doi,
+        publicationDate: mp.publicationDate ? mp.publicationDate.toISOString() : null,
+        journal: mp.journal,
+        citationCount: mp.citationCount,
+        abstract: mp.abstract || "No abstract available.",
+        isMetadataOnly: true,
+        chunks: mp.abstract
+          ? [
+              {
+                id: `meta-abstract-${mp.id}`,
+                paperId: mp.id,
+                chunkIndex: 0,
+                section: "Abstract (Metadata Only)",
+                pageNumber: 1,
+                text: mp.abstract,
+                similarity: 0.8,
+              },
+            ]
+          : [],
+      };
+      combinedEvidenceSets.push(metaEvidenceSet);
+    }
+
+    evidenceResult = {
+      evidenceSets: combinedEvidenceSets,
+      totalChunks: fullTextResult.totalChunks,
+    };
+  } else {
+    // Default mode: Semantic & lexical library discovery across authorized papers
+    const discovery = await discoverRelevantPapers(cleanQuestion, {
+      maxSelected: maxPapers || DEFAULT_MAX_SELECTED_PAPERS,
+      userId: userContext.id,
+      userRole: userContext.role,
     });
 
-    return {
-      success: true,
-      conversationId: conversation.id,
-      userMessageId: userMessage.id,
-      assistantMessageId: assistantMessage.id,
-      question: cleanQuestion,
-      claims: [],
-      disagreements: [],
-      limitations: [],
-      selectedPapers: [],
-      totalEvidenceChunks: 0,
-      insufficientEvidence: true,
-      libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
-      rejectedCitationCount: 0,
-      rejectedClaimsCount: 0,
-    };
+    const selectedPapers = discovery.selectedPapers;
+
+    if (selectedPapers.length === 0) {
+      const fallbackMsg =
+        "The available library does not contain enough relevant evidence to answer this research question.";
+      const assistantMessage = await prisma.aIMessage.create({
+        data: {
+          conversationId: conversation.id,
+          role: AIMessageRole.ASSISTANT,
+          content: fallbackMsg,
+          citations: {
+            claims: [],
+            disagreements: [],
+            limitations: [],
+            selectedPapers: [],
+            libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
+            insufficientEvidence: true,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        conversationId: conversation.id,
+        userMessageId: userMessage.id,
+        assistantMessageId: assistantMessage.id,
+        question: cleanQuestion,
+        claims: [],
+        disagreements: [],
+        limitations: [],
+        selectedPapers: [],
+        totalEvidenceChunks: 0,
+        insufficientEvidence: true,
+        libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
+        rejectedCitationCount: 0,
+        rejectedClaimsCount: 0,
+      };
+    }
+
+    evidenceResult = await retrieveMultiPaperEvidence(selectedPapers, cleanQuestion, {
+      queryVector: discovery.queryVector,
+      chunksPerPaper: 4,
+      maxTotalChunks: 20,
+    });
   }
 
-  // 4. Retrieve evidence independently from EACH selected paper (with anti-dominance caps)
-  const evidenceResult = await retrieveMultiPaperEvidence(selectedPapers, cleanQuestion, {
-    queryVector: discovery.queryVector,
-    chunksPerPaper: 4,
-    maxTotalChunks: 20,
-  });
-
-  if (evidenceResult.totalChunks === 0) {
+  if (
+    evidenceResult.totalChunks === 0 &&
+    !evidenceResult.evidenceSets.some((e) => e.isMetadataOnly && Boolean(e.abstract))
+  ) {
     const assistantMessage = await prisma.aIMessage.create({
       data: {
         conversationId: conversation.id,
@@ -212,14 +365,15 @@ export async function synthesizeResearchQuestion(
           claims: [],
           disagreements: [],
           limitations: [],
-          selectedPapers: selectedPapers.map((p) => ({
-            paperId: p.paperId,
-            paperTitle: p.title,
-            authors: p.authors,
-            doi: p.doi,
-            publicationDate: p.publicationDate,
-            journal: p.journal,
+          selectedPapers: evidenceResult.evidenceSets.map((s) => ({
+            paperId: s.paperId,
+            paperTitle: s.paperTitle,
+            authors: s.authors,
+            doi: s.doi,
+            publicationDate: s.publicationDate,
+            journal: s.journal,
             chunksContributed: 0,
+            isMetadataOnly: Boolean(s.isMetadataOnly),
           })),
           libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
           insufficientEvidence: true,
@@ -236,14 +390,15 @@ export async function synthesizeResearchQuestion(
       claims: [],
       disagreements: [],
       limitations: [],
-      selectedPapers: selectedPapers.map((p) => ({
-        paperId: p.paperId,
-        paperTitle: p.title,
-        authors: p.authors,
-        doi: p.doi,
-        publicationDate: p.publicationDate,
-        journal: p.journal,
+      selectedPapers: evidenceResult.evidenceSets.map((s) => ({
+        paperId: s.paperId,
+        paperTitle: s.paperTitle,
+        authors: s.authors,
+        doi: s.doi,
+        publicationDate: s.publicationDate,
+        journal: s.journal,
         chunksContributed: 0,
+        isMetadataOnly: Boolean(s.isMetadataOnly),
       })),
       totalEvidenceChunks: 0,
       insufficientEvidence: true,
@@ -328,7 +483,8 @@ export async function synthesizeResearchQuestion(
     doi: s.doi,
     publicationDate: s.publicationDate,
     journal: s.journal,
-    chunksContributed: s.chunks.length,
+    chunksContributed: s.isMetadataOnly ? 0 : s.chunks.length,
+    isMetadataOnly: Boolean(s.isMetadataOnly),
   }));
 
   // Assemble human-readable content string for fallback/search display
@@ -351,6 +507,7 @@ export async function synthesizeResearchQuestion(
     selectedPapers: selectedPapersMeta,
     libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
     insufficientEvidence: validation.insufficientEvidence,
+    omittedSourcesNotice,
   };
 
   const assistantMessage = await prisma.aIMessage.create({
@@ -383,5 +540,6 @@ export async function synthesizeResearchQuestion(
     libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
     rejectedCitationCount: validation.rejectedCitationCount,
     rejectedClaimsCount: validation.rejectedClaimsCount,
+    omittedSourcesNotice,
   };
 }

@@ -17,18 +17,25 @@ import {
   Info,
   Clock,
   PlusCircle,
+  Plus,
+  X,
   MessageSquare,
   CheckCircle2,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   synthesizeResearchAction,
   getResearchThreadsAction,
   getResearchThreadMessagesAction,
   getChunkPassageAction,
+  getSelectedPapersDetailsAction,
+  getUserLibraryPaperSummariesAction,
+  SelectedPaperSummary,
 } from "@/app/research/actions";
 import { MultiPaperSynthesisResult, ValidatedMultiPaperClaim, HydratedMultiPaperAnchor } from "@/lib/synthesis/types";
 
@@ -118,25 +125,31 @@ function SupportingExcerptCard({ citation, variant = "indigo", conversationId }:
               View Paper
             </Button>
           </Link>
-          <a
-            href={`/api/papers/${citation.paperId}/pdf`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button
-              size="sm"
-              variant="secondary"
-              className={`text-[10px] h-6 px-2 ${
-                isAmber
-                  ? "bg-amber-50 text-amber-800 hover:bg-amber-100"
-                  : isSlate
-                  ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-              }`}
+          {citation.chunkId?.startsWith("meta-abstract-") ? (
+            <Badge variant="outline" className="text-[10px] bg-amber-50 border-amber-300 text-amber-800 font-semibold">
+              Metadata Abstract (No Full Text)
+            </Badge>
+          ) : (
+            <a
+              href={`/api/papers/${citation.paperId}/pdf${citation.pageNumber ? `#page=${citation.pageNumber}` : ""}`}
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              Original PDF
-            </Button>
-          </a>
+              <Button
+                size="sm"
+                variant="secondary"
+                className={`text-[10px] h-6 px-2 ${
+                  isAmber
+                    ? "bg-amber-50 text-amber-800 hover:bg-amber-100"
+                    : isSlate
+                    ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                }`}
+              >
+                {citation.pageNumber ? `PDF (p. ${citation.pageNumber})` : "Original PDF"}
+              </Button>
+            </a>
+          )}
         </div>
       </div>
 
@@ -211,9 +224,10 @@ function SupportingExcerptCard({ citation, variant = "indigo", conversationId }:
 
 interface ResearchInterfaceProps {
   initialThreadId?: string;
+  initialPaperIds?: string[];
 }
 
-export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
+export function ResearchInterface({ initialThreadId, initialPaperIds }: ResearchInterfaceProps) {
   const [question, setQuestion] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [currentResult, setCurrentResult] = React.useState<MultiPaperSynthesisResult | null>(null);
@@ -226,10 +240,45 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
   const [threads, setThreads] = React.useState<Array<{ id: string; title: string; updatedAt: string }>>([]);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
+  // Phase 6 Multi-Paper Selection and Context State
+  const [selectedPapers, setSelectedPapers] = React.useState<SelectedPaperSummary[]>([]);
+  const [isLoadingPapers, setIsLoadingPapers] = React.useState(false);
+  const [contextMode, setContextMode] = React.useState<"SELECTED_PAPERS" | "ALL_LIBRARY" | "LIBRARY_AND_SCHOLARLY">(
+    "SELECTED_PAPERS"
+  );
+  const [isAddPapersModalOpen, setIsAddPapersModalOpen] = React.useState(false);
+  const [availableLibraryPapers, setAvailableLibraryPapers] = React.useState<SelectedPaperSummary[]>([]);
+  const [isLoadingLibraryPapers, setIsLoadingLibraryPapers] = React.useState(false);
+  const [libraryModalSearch, setLibraryModalSearch] = React.useState("");
+  const [conversationHistory, setConversationHistory] = React.useState<
+    Array<{ id: string; role: string; content: string; citations?: any }>
+  >([]);
+
   // Load threads on mount
   React.useEffect(() => {
     loadThreads();
   }, []);
+
+  // Hydrate initial selected papers from query params if supplied
+  React.useEffect(() => {
+    if (initialPaperIds && initialPaperIds.length > 0) {
+      loadInitialPapers(initialPaperIds);
+    }
+  }, [initialPaperIds]);
+
+  const loadInitialPapers = async (paperIds: string[]) => {
+    setIsLoadingPapers(true);
+    try {
+      const res = await getSelectedPapersDetailsAction(paperIds);
+      if (res.success && res.papers) {
+        setSelectedPapers(res.papers);
+      }
+    } catch (e) {
+      console.error("Failed to load selected papers:", e);
+    } finally {
+      setIsLoadingPapers(false);
+    }
+  };
 
   const loadThreads = async () => {
     try {
@@ -248,6 +297,7 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
     setExpandedLimitationIndices(new Set());
     try {
       const res = await getResearchThreadMessagesAction(threadId);
+      setConversationHistory(res.messages || []);
       // Find latest assistant message with citations
       const lastAsst = [...res.messages].reverse().find((m) => m.role === "ASSISTANT" && m.citations);
       if (lastAsst && lastAsst.citations) {
@@ -269,6 +319,14 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
           rejectedCitationCount: 0,
           rejectedClaimsCount: 0,
         });
+
+        // Restore persistent selected papers context from the thread if currently empty
+        if (Array.isArray(cit.selectedPapers) && cit.selectedPapers.length > 0) {
+          const ids = cit.selectedPapers.map((p: any) => p.paperId).filter(Boolean);
+          if (ids.length > 0 && selectedPapers.length === 0) {
+            loadInitialPapers(ids);
+          }
+        }
       }
     } catch (err: any) {
       setErrorMessage(err?.message || "Failed to load thread.");
@@ -283,6 +341,39 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
     setExpandedClaimIndices(new Set());
     setExpandedDisagreementIndices(new Set());
     setExpandedLimitationIndices(new Set());
+    setConversationHistory([]);
+  };
+
+  const handleRemovePaper = (paperId: string) => {
+    setSelectedPapers((prev) => prev.filter((p) => p.id !== paperId));
+  };
+
+  const handleOpenAddPapersModal = async () => {
+    setIsAddPapersModalOpen(true);
+    if (availableLibraryPapers.length === 0) {
+      setIsLoadingLibraryPapers(true);
+      try {
+        const res = await getUserLibraryPaperSummariesAction();
+        if (res.success && res.papers) {
+          setAvailableLibraryPapers(res.papers);
+        }
+      } catch (e) {
+        console.error("Failed to load library papers:", e);
+      } finally {
+        setIsLoadingLibraryPapers(false);
+      }
+    }
+  };
+
+  const handleToggleModalPaper = (paper: SelectedPaperSummary) => {
+    setSelectedPapers((prev) => {
+      const exists = prev.some((p) => p.id === paper.id);
+      if (exists) {
+        return prev.filter((p) => p.id !== paper.id);
+      } else {
+        return [...prev, paper];
+      }
+    });
   };
 
   const handleSubmit = async (e?: React.FormEvent, presetQuestion?: string) => {
@@ -298,6 +389,8 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
         question: queryToSubmit.trim(),
         conversationId: activeConversationId,
         isNewThread: !activeConversationId,
+        selectedPaperIds: contextMode === "SELECTED_PAPERS" ? selectedPapers.map((p) => p.id) : undefined,
+        contextMode,
       });
 
       if (!response.success || !response.data) {
@@ -306,6 +399,29 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
         setCurrentResult(response.data);
         setActiveConversationId(response.data.conversationId);
         loadThreads();
+        setQuestion("");
+        setConversationHistory((prev) => [
+          ...prev,
+          {
+            id: response.data!.userMessageId || `user-${Date.now()}`,
+            role: "USER",
+            content: queryToSubmit.trim(),
+          },
+          {
+            id: response.data!.assistantMessageId || `asst-${Date.now()}`,
+            role: "ASSISTANT",
+            content: "Synthesized evidence across selected papers.",
+            citations: {
+              claims: response.data!.claims,
+              disagreements: response.data!.disagreements,
+              limitations: response.data!.limitations,
+              selectedPapers: response.data!.selectedPapers,
+              libraryScopeNote: response.data!.libraryScopeNote,
+              insufficientEvidence: response.data!.insufficientEvidence,
+              omittedSourcesNotice: response.data!.omittedSourcesNotice,
+            },
+          },
+        ]);
         // Expand first claim by default
         setExpandedClaimIndices(new Set([0]));
         setExpandedDisagreementIndices(new Set());
@@ -345,10 +461,12 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
     });
   };
 
-  const STARTER_QUESTIONS = [
-    "What does the available literature say about AI-assisted breast ultrasound classification?",
-    "What methodology and datasets were used in ultrasound diagnostic studies?",
-    "What limitations or constraints were reported across the studies?",
+  const COMPARATIVE_QUESTIONS = [
+    "Compare the main empirical findings across these studies.",
+    "Which papers agree or disagree in their reported outcomes?",
+    "Compare reported sample sizes, patient cohorts, and methodologies.",
+    "Compare reported sensitivity, specificity, accuracy, or AUC metrics.",
+    "What limitations or constraints were reported by the authors?",
   ];
 
   return (
@@ -367,6 +485,153 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         {/* Main Research Workspace (3 cols) */}
         <div className="lg:col-span-3 space-y-6">
+          {/* Phase 6: Selected Paper Context Panel */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-indigo-600" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                  Active Research Context ({selectedPapers.length} {selectedPapers.length === 1 ? "Paper" : "Papers"})
+                </h3>
+                {selectedPapers.length > 0 && (
+                  <span className="text-[11px] text-slate-500 hidden sm:inline">
+                    • Multi-Paper Grounded Chat
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleOpenAddPapersModal}
+                  className="text-xs h-7 gap-1 border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>Add Papers from Library</span>
+                </Button>
+                {selectedPapers.length > 0 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setSelectedPapers([])}
+                    className="text-[11px] h-7 px-2 text-slate-400 hover:text-slate-600"
+                  >
+                    Clear Context
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Selected Paper Chips */}
+            {selectedPapers.length === 0 ? (
+              <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center space-y-1">
+                <p className="text-xs text-slate-600 font-medium">
+                  No specific papers currently pinned to this chat.
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Select papers from your library to compare methodologies, or ask across your library.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {selectedPapers.map((paper) => (
+                  <div
+                    key={paper.id}
+                    className="bg-slate-50/80 border border-slate-200 rounded-xl p-3 flex flex-col justify-between space-y-2 hover:bg-slate-100/70 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-0.5 flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-900 line-clamp-2" title={paper.title}>
+                          {paper.title}
+                        </p>
+                        <p className="text-[10px] text-slate-500 truncate">
+                          {paper.authors.slice(0, 2).join(", ")}
+                          {paper.authors.length > 2 ? " et al." : ""}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePaper(paper.id)}
+                        className="text-slate-400 hover:text-rose-600 p-0.5 rounded-sm transition-colors shrink-0"
+                        title="Remove paper from context"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-[10px]">
+                      {paper.isMetadataOnly ? (
+                        <span className="inline-flex items-center gap-1 font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                          Metadata Only
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                          Full Text ({paper.chunkCount} chunks)
+                        </span>
+                      )}
+                      <Link
+                        href={`/papers/${paper.id}`}
+                        target="_blank"
+                        className="text-indigo-600 hover:text-indigo-800 font-medium hover:underline inline-flex items-center gap-0.5"
+                      >
+                        View <ExternalLink className="h-2.5 w-2.5" />
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Researcher-Controlled Context Selector */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs border-t border-slate-100">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-slate-600 text-[11px] uppercase tracking-wider">
+                  Context Scope:
+                </span>
+                <div className="inline-flex p-0.5 bg-slate-100 rounded-lg text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setContextMode("SELECTED_PAPERS")}
+                    className={`px-2.5 py-1 rounded-md text-xs transition-all ${
+                      contextMode === "SELECTED_PAPERS"
+                        ? "bg-white text-indigo-700 shadow-2xs font-bold"
+                        : "text-slate-600 hover:text-slate-900 font-medium"
+                    }`}
+                  >
+                    Selected Papers Only ({selectedPapers.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setContextMode("ALL_LIBRARY")}
+                    className={`px-2.5 py-1 rounded-md text-xs transition-all ${
+                      contextMode === "ALL_LIBRARY"
+                        ? "bg-white text-indigo-700 shadow-2xs font-bold"
+                        : "text-slate-600 hover:text-slate-900 font-medium"
+                    }`}
+                  >
+                    Include My Library
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setContextMode("LIBRARY_AND_SCHOLARLY")}
+                    className={`px-2.5 py-1 rounded-md text-xs transition-all ${
+                      contextMode === "LIBRARY_AND_SCHOLARLY"
+                        ? "bg-white text-indigo-700 shadow-2xs font-bold"
+                        : "text-slate-600 hover:text-slate-900 font-medium"
+                    }`}
+                  >
+                    Include Scholarly Search
+                  </button>
+                </div>
+              </div>
+              <span className="text-[10px] text-slate-400">
+                Private documents remain isolated to your account.
+              </span>
+            </div>
+          </div>
+
           {/* Question Input Card */}
           <Card className="bg-white border-slate-200 p-6 shadow-xs rounded-2xl space-y-4">
             <form onSubmit={(e) => handleSubmit(e)} className="space-y-3">
@@ -375,7 +640,11 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                 <textarea
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="Ask a research question across your library (e.g., 'What does the available literature say about...')"
+                  placeholder={
+                    selectedPapers.length > 0
+                      ? `Ask a comparative question across ${selectedPapers.length} selected papers (e.g. 'Compare the methodologies and sample sizes...')...`
+                      : "Ask a research question across your library (e.g., 'What does the available literature say about...')..."
+                  }
                   rows={3}
                   className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/50 pl-11 pr-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600 transition-all"
                   onKeyDown={(e) => {
@@ -406,7 +675,7 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                   <Button
                     type="submit"
                     disabled={isSubmitting || !question.trim()}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 shadow-xs text-xs px-5 py-2"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 shadow-xs text-xs px-5 py-2 font-semibold"
                   >
                     {isSubmitting ? (
                       <>
@@ -424,29 +693,27 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
               </div>
             </form>
 
-            {/* Quick Prompts */}
-            {!currentResult && (
-              <div className="pt-2 border-t border-slate-100 space-y-2">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                  Suggested Research Questions:
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {STARTER_QUESTIONS.map((q, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        setQuestion(q);
-                        handleSubmit(undefined, q);
-                      }}
-                      className="text-left text-xs bg-slate-50 hover:bg-indigo-50/70 hover:text-indigo-700 border border-slate-200 hover:border-indigo-200 rounded-lg px-3 py-1.5 text-slate-700 transition-colors"
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
+            {/* Quick Prompts / Scientific Comparison Starters */}
+            <div className="pt-2 border-t border-slate-100 space-y-2">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                {selectedPapers.length > 0 ? "Comparative Research Starters:" : "Suggested Research Questions:"}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {COMPARATIVE_QUESTIONS.map((q, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setQuestion(q);
+                      handleSubmit(undefined, q);
+                    }}
+                    className="text-left text-xs bg-slate-50 hover:bg-indigo-50/70 hover:text-indigo-700 border border-slate-200 hover:border-indigo-200 rounded-lg px-3 py-1.5 text-slate-700 transition-colors"
+                  >
+                    {q}
+                  </button>
+                ))}
               </div>
-            )}
+            </div>
           </Card>
 
           {/* Error Banner */}
@@ -499,6 +766,14 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
                   ))}
                 </div>
               </div>
+
+              {/* Omitted / Inaccessible Sources Notice */}
+              {currentResult.omittedSourcesNotice && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-4 py-3 rounded-xl flex items-center gap-2.5">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                  <span>{currentResult.omittedSourcesNotice}</span>
+                </div>
+              )}
 
               {/* Insufficient Evidence Fallback Card */}
               {currentResult.insufficientEvidence || currentResult.claims.length === 0 ? (
@@ -863,6 +1138,113 @@ export function ResearchInterface({ initialThreadId }: ResearchInterfaceProps) {
           )}
         </div>
       </div>
+
+      {/* Add Papers from Library Modal */}
+      {isAddPapersModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5 text-indigo-600" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  Select Papers from My Library
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddPapersModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Input
+                placeholder="Search by title or author..."
+                value={libraryModalSearch}
+                onChange={(e) => setLibraryModalSearch(e.target.value)}
+                className="pl-9 text-xs h-9"
+              />
+            </div>
+
+            <div className="max-h-[340px] overflow-y-auto space-y-2 pr-1">
+              {isLoadingLibraryPapers ? (
+                <div className="p-8 text-center text-xs text-slate-400 space-y-2">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto text-indigo-600" />
+                  <p>Loading library papers...</p>
+                </div>
+              ) : availableLibraryPapers.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400">
+                  No documents found in your library. Add documents via My Library first.
+                </div>
+              ) : (
+                availableLibraryPapers
+                  .filter((p) => {
+                    if (!libraryModalSearch.trim()) return true;
+                    const q = libraryModalSearch.toLowerCase();
+                    return (
+                      p.title.toLowerCase().includes(q) ||
+                      p.authors.some((a) => a.toLowerCase().includes(q))
+                    );
+                  })
+                  .map((p) => {
+                    const isSelected = selectedPapers.some((sp) => sp.id === p.id);
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => handleToggleModalPaper(p)}
+                        className={`p-3 rounded-xl border text-xs cursor-pointer flex items-start gap-3 transition-colors ${
+                          isSelected
+                            ? "bg-indigo-50/70 border-indigo-300"
+                            : "bg-white border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}} // handled by parent onClick
+                          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none"
+                        />
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <p className="font-semibold text-slate-900 leading-snug line-clamp-2">
+                            {p.title}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                            <span>{p.authors.slice(0, 2).join(", ")}</span>
+                            {p.isMetadataOnly ? (
+                              <span className="font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                                Metadata Only
+                              </span>
+                            ) : (
+                              <span className="font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                Full Text ({p.chunkCount} chunks)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+              <span className="text-xs text-slate-500">
+                {selectedPapers.length} {selectedPapers.length === 1 ? "paper" : "papers"} selected for context
+              </span>
+              <Button
+                size="sm"
+                onClick={() => setIsAddPapersModalOpen(false)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4"
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

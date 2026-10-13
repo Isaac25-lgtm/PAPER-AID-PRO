@@ -876,6 +876,53 @@ PHASE 10: Evidence-Grounded Research Agent Orchestrator ✅ COMPLETED & FROZEN
 - **Comprehensive Automated Test Coverage (`tests/phase11.1a-privacy-access.test.ts`)**:
   - 25/25 automated tests passed covering scenarios A through N (Responses `store: false` verification across all call sites, invited email registration, uninvited email rejection, case/whitespace normalization, fail-closed empty allowlist, existing user login preservation, USER admin isolation, allowlist secrecy, and zero client bundle exposure).
 
+### Phase 5A: User-Owned My Library & Private PDF Uploads (Completed & Committed: `950e660d`)
+- **Private Document Ownership**:
+  - Enabled authenticated researchers to upload private manuscripts without polluting the public discovery catalog.
+  - Strict privacy isolation: User A's private documents return 404 to User B.
+  - Fail-closed storage isolation in testing (`assertIsolatedTestEnvironment()`).
+
+### Phase 5B: Advanced My Library & Relational Collections Architecture (Completed & Committed: `f2c104da`)
+- **Relational Collections Schema**:
+  - Replaced temporary JSON/thread storage with first-class Prisma models `Collection` and `CollectionPaper`.
+  - Cascading deletion guarantees: deleting a collection removes junction records while leaving source `Paper` records 100% intact.
+- **Scholarly Identifier Import**:
+  - Implemented DOI, PMID, and arXiv classifier and lookup engine.
+  - Supported BibTeX and RIS batch reference import with preview, catalog duplicate detection, and `METADATA_ONLY` preservation.
+- **Quarantine Security**:
+  - 10 benchmark administrative fixtures strictly quarantined from regular user access.
+  - 69/69 automated tests passed.
+
+### Phase 6: Context-Aware Multi-Paper Chat & Direct Multi-SDK Foundation (Completed & Committed: `80183b25`)
+- **Multi-Paper Selection & Navigation**:
+  - Added checkboxes, item counters, select-all controls, and sticky selection action bar in My Library (`src/app/library/library-view.tsx`).
+  - Seamless navigation to `/research?papers=<id1>,<id2>` with pre-loaded active research context.
+- **Context-Aware Multi-Paper Research Chat**:
+  - Context Controls: "Selected Papers Only" vs. "Include My Library" vs. "Include Scholarly Search".
+  - Selected Papers Context Panel with individual paper remove triggers, "Add Papers from Library" modal, and starter comparative prompts.
+  - Direct clickable PDF evidence anchors (`/api/papers/${paperId}/pdf#page=${pageNumber}`).
+- **Server-Side Authorization & Anti-Dominance Quota**:
+  - Fail-closed server-side authorization check (`authorizePaperAccess`) re-verified on every turn.
+  - Cross-study balance guarantee: maximum 4 chunks per selected paper, capped at 20 chunks total, ensuring balanced comparative synthesis.
+  - Metadata-only papers cleanly segregated with abstract evidence and `[METADATA ONLY - FULL TEXT NOT ACCESSIBLE]` indicators.
+- **Direct Multi-SDK Foundation Installed & Tested**:
+  - Installed `@anthropic-ai/sdk` and `@google/genai` alongside existing `openai`.
+  - Configured `getAnthropicClient()` and `getGeminiClient()` in `src/lib/ai/config.ts` with server-side API keys and graceful fallbacks.
+  - Verified Anthropic client authenticated and accessible (13 Claude models).
+- **Test & Build Verification**:
+  - 59/59 Phase 6 tests passed (`scratch/test-phase6-multi-paper-chat.ts`).
+  - 69/69 Phase 5B tests passed (0 regressions).
+  - TypeScript validation (`tsc --noEmit`) passed with 0 errors.
+  - Production build (`next build`) compiled all 30 routes successfully.
+
+### Phase 7: AI Research Editor Parity (Next Target)
+- **Editor Workspace**: Tiptap / ProseMirror rich-text academic writing surface.
+- **Multi-Tier Model Routing**:
+  - **Fast Tier (Inline Ghost-Text Autocomplete)**: Google Gemini 2.0 Flash (`@google/genai`) for <250ms TTFT streaming completions on debounced typing pauses.
+  - **Smart Tier (Academic Drafting & Evidence Synthesis)**: Anthropic Claude 3.5 Sonnet (`@anthropic-ai/sdk`) for section generation, paraphrasing, tone elevation, and structured citation grounding.
+  - **Vector & Embeddings Tier**: OpenAI `text-embedding-3-small` in PostgreSQL `pgvector`.
+- **Academic Writing Parity**: Real-time citation insertion, automatic bibliography generation (APA, MLA, IEEE, Chicago, Harvard, BibTeX), version history, and DOCX export.
+
 ---
 
 ## 7. Developer & Operational Playbook

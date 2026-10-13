@@ -26,6 +26,8 @@ export interface PaperEvidenceSet {
   journal: string | null;
   citationCount: number;
   chunks: RetrievedEvidenceChunk[];
+  abstract?: string;
+  isMetadataOnly?: boolean;
 }
 
 export interface HydratedMultiPaperAnchor extends GroundedCitationAnchor {
@@ -73,12 +75,14 @@ export interface MultiPaperSynthesisResult {
     publicationDate: string | null;
     journal: string | null;
     chunksContributed: number;
+    isMetadataOnly?: boolean;
   }>;
   totalEvidenceChunks: number;
   insufficientEvidence: boolean;
   libraryScopeNote: string;
   rejectedCitationCount: number;
   rejectedClaimsCount: number;
+  omittedSourcesNotice?: string;
   error?: string;
 }
 
@@ -88,4 +92,6 @@ export interface ResearchSynthesisRequest {
   conversationId?: string;
   isNewThread?: boolean;
   maxPapers?: number;
+  selectedPaperIds?: string[];
+  contextMode?: "SELECTED_PAPERS" | "ALL_LIBRARY" | "LIBRARY_AND_SCHOLARLY";
 }

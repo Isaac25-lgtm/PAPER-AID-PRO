@@ -180,6 +180,32 @@ export function LibraryView({
   const [paperSelectedCols, setPaperSelectedCols] = React.useState<string[]>([]);
   const [isUpdatingPaperCols, setIsUpdatingPaperCols] = React.useState(false);
 
+  // Multi-paper selection state for Phase 6 Multi-Paper Chat
+  const [selectedPaperIds, setSelectedPaperIds] = React.useState<string[]>([]);
+
+  const togglePaperSelection = (id: string) => {
+    setSelectedPaperIds((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    );
+  };
+
+  const selectAllFiltered = () => {
+    const allFilteredIds = filteredItems.map((i) => i.id);
+    const allSelected = allFilteredIds.every((id) => selectedPaperIds.includes(id));
+    if (allSelected) {
+      setSelectedPaperIds((prev) => prev.filter((id) => !allFilteredIds.includes(id)));
+    } else {
+      setSelectedPaperIds((prev) => Array.from(new Set([...prev, ...allFilteredIds])));
+    }
+  };
+
+  const clearSelection = () => setSelectedPaperIds([]);
+
+  const handleStartMultiPaperChat = () => {
+    if (selectedPaperIds.length === 0) return;
+    router.push(`/research?papers=${encodeURIComponent(selectedPaperIds.join(","))}`);
+  };
+
   // Sync state if initialItems change
   React.useEffect(() => {
     setItems(initialItems);
@@ -944,6 +970,78 @@ export function LibraryView({
         </div>
       )}
 
+      {/* Phase 6 Multi-Paper Selection Banner */}
+      {selectedPaperIds.length > 0 && (
+        <div className="sticky top-20 z-30 p-4 bg-indigo-900 text-white rounded-xl shadow-xl flex flex-wrap items-center justify-between gap-4 border border-indigo-700 animate-in fade-in slide-in-from-top duration-200">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-bold text-sm">
+              {selectedPaperIds.length}
+            </span>
+            <div>
+              <p className="text-sm font-bold text-white">
+                {selectedPaperIds.length === 1 ? "1 Paper Selected" : `${selectedPaperIds.length} Papers Selected for Research Chat`}
+              </p>
+              <p className="text-xs text-indigo-200">
+                Ask cross-document comparative questions, contrast sample sizes, methodologies, and findings.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={clearSelection}
+              className="bg-transparent text-indigo-200 hover:text-white hover:bg-indigo-800 border-indigo-700 text-xs"
+            >
+              Clear Selection
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleStartMultiPaperChat}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-sm"
+            >
+              <MessageSquare className="h-4 w-4" />
+              <span>Chat with Selected Papers</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Select All Quick Bar */}
+      {filteredItems.length > 0 && (
+        <div className="flex items-center justify-between px-1 text-xs text-slate-500">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={
+                  filteredItems.length > 0 &&
+                  filteredItems.every((i) => selectedPaperIds.includes(i.id))
+                }
+                onChange={selectAllFiltered}
+                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              />
+              <span className="font-medium text-slate-700">Select All Filtered ({filteredItems.length})</span>
+            </label>
+            {selectedPaperIds.length > 0 && (
+              <span className="text-indigo-600 font-semibold">
+                ({selectedPaperIds.length} currently selected)
+              </span>
+            )}
+          </div>
+          {selectedPaperIds.length > 0 && (
+            <Button
+              size="sm"
+              onClick={handleStartMultiPaperChat}
+              className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold gap-1.5"
+            >
+              <MessageSquare className="h-3 w-3" />
+              <span>Chat with {selectedPaperIds.length} Selected</span>
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Main Library List */}
       {filteredItems.length === 0 ? (
         <Card className="bg-white border-dashed border-2 border-slate-300 p-12 text-center space-y-4">
@@ -1007,9 +1105,45 @@ export function LibraryView({
           {filteredItems.map((item) => (
             <Card
               key={item.id}
-              className="flex flex-col justify-between hover:shadow-md hover:border-indigo-200 transition-all bg-white relative group"
+              className={`flex flex-col justify-between hover:shadow-md transition-all bg-white relative group ${
+                selectedPaperIds.includes(item.id)
+                  ? "border-indigo-500 ring-2 ring-indigo-200 shadow-sm"
+                  : "hover:border-indigo-200"
+              }`}
             >
               <CardHeader className="p-5 pb-3 space-y-2">
+                {/* Multi-Paper Selection Checkbox Header */}
+                <div className="flex items-center justify-between pb-2 mb-1 border-b border-slate-100">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={selectedPaperIds.includes(item.id)}
+                      onChange={() => togglePaperSelection(item.id)}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <span
+                      className={`text-xs font-semibold ${
+                        selectedPaperIds.includes(item.id)
+                          ? "text-indigo-700 font-bold"
+                          : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      {selectedPaperIds.includes(item.id)
+                        ? "Selected for Chat"
+                        : "Select for Chat"}
+                    </span>
+                  </label>
+                  {selectedPaperIds.includes(item.id) ? (
+                    <Badge className="bg-indigo-600 text-white text-[10px] font-bold">
+                      In Context
+                    </Badge>
+                  ) : item.status === "METADATA_ONLY" || item.chunkCount === 0 ? (
+                    <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                      Metadata Only
+                    </span>
+                  ) : null}
+                </div>
+
                 {/* Badges Header */}
                 <div className="flex flex-wrap items-center justify-between gap-1.5">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -1161,6 +1295,36 @@ export function LibraryView({
                         <span>PDF</span>
                       </a>
                     )}
+
+                    {/* Quick Select for Multi-Paper Chat */}
+                    <Button
+                      size="sm"
+                      type="button"
+                      variant={selectedPaperIds.includes(item.id) ? "default" : "outline"}
+                      onClick={() => togglePaperSelection(item.id)}
+                      className={`h-7 px-2 text-xs font-medium gap-1 ${
+                        selectedPaperIds.includes(item.id)
+                          ? "bg-indigo-600 hover:bg-indigo-700 text-white"
+                          : "text-slate-600 hover:text-indigo-600 border-slate-200"
+                      }`}
+                      title={
+                        selectedPaperIds.includes(item.id)
+                          ? "Remove from multi-paper chat context"
+                          : "Add to multi-paper chat context"
+                      }
+                    >
+                      {selectedPaperIds.includes(item.id) ? (
+                        <>
+                          <Check className="h-3 w-3" />
+                          <span>Selected</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="h-3 w-3" />
+                          <span>Select</span>
+                        </>
+                      )}
+                    </Button>
                   </div>
 
                   {/* Right: Actions */}

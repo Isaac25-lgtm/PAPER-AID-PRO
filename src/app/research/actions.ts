@@ -6,16 +6,32 @@ import { prisma } from "@/lib/prisma";
 import { synthesizeResearchQuestion } from "@/lib/synthesis/synthesis-orchestrator";
 import { MultiPaperSynthesisResult } from "@/lib/synthesis/types";
 
+import { authorizePaperAccess } from "@/lib/auth/paper-authorization";
+import { getUserLibraryItems } from "@/lib/library/user-library-service";
+
 export interface ResearchActionResult {
   success: boolean;
   data?: MultiPaperSynthesisResult;
   error?: string;
 }
 
+export interface SelectedPaperSummary {
+  id: string;
+  title: string;
+  authors: string[];
+  doi?: string | null;
+  status: string;
+  isMetadataOnly: boolean;
+  chunkCount: number;
+  hasPdf: boolean;
+}
+
 export async function synthesizeResearchAction(params: {
   question: string;
   conversationId?: string;
   isNewThread?: boolean;
+  selectedPaperIds?: string[];
+  contextMode?: "SELECTED_PAPERS" | "ALL_LIBRARY" | "LIBRARY_AND_SCHOLARLY";
 }): Promise<ResearchActionResult> {
   let session = null;
   try {
@@ -37,6 +53,8 @@ export async function synthesizeResearchAction(params: {
       userId: session.user.id,
       conversationId: params.conversationId,
       isNewThread: params.isNewThread,
+      selectedPaperIds: params.selectedPaperIds,
+      contextMode: params.contextMode,
     });
 
     return {
@@ -49,6 +67,95 @@ export async function synthesizeResearchAction(params: {
       success: false,
       error: error?.message || "An unexpected error occurred during literature synthesis.",
     };
+  }
+}
+
+export async function getSelectedPapersDetailsAction(
+  paperIds: string[]
+): Promise<{
+  success: boolean;
+  papers: SelectedPaperSummary[];
+  error?: string;
+}> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, papers: [], error: "Authentication required." };
+  }
+
+  if (!Array.isArray(paperIds) || paperIds.length === 0) {
+    return { success: true, papers: [] };
+  }
+
+  const userContext = { id: session.user.id, role: session.user.role || "USER" };
+  const cleanIds = Array.from(new Set(paperIds.map((id) => id.trim()).filter(Boolean)));
+
+  const candidates = await prisma.paper.findMany({
+    where: { id: { in: cleanIds } },
+    select: {
+      id: true,
+      title: true,
+      doi: true,
+      arxivId: true,
+      pmid: true,
+      pmcid: true,
+      semanticScholarId: true,
+      storagePath: true,
+      sourceProvenance: true,
+      status: true,
+      authors: {
+        include: { author: { select: { name: true } } },
+        orderBy: { orderIndex: "asc" },
+      },
+      _count: {
+        select: { chunks: true },
+      },
+    },
+  });
+
+  const papers: SelectedPaperSummary[] = [];
+  for (const c of candidates) {
+    const auth = await authorizePaperAccess(c, userContext, "VIEW_METADATA");
+    if (auth.allowed) {
+      papers.push({
+        id: c.id,
+        title: c.title,
+        authors: c.authors.map((a) => a.author.name),
+        doi: c.doi,
+        status: c.status,
+        isMetadataOnly: c.status === "METADATA_ONLY" || c._count.chunks === 0,
+        chunkCount: c._count.chunks,
+        hasPdf: Boolean(c.storagePath),
+      });
+    }
+  }
+
+  return { success: true, papers };
+}
+
+export async function getUserLibraryPaperSummariesAction(): Promise<{
+  success: boolean;
+  papers: SelectedPaperSummary[];
+  error?: string;
+}> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return { success: false, papers: [], error: "Authentication required." };
+  }
+
+  try {
+    const items = await getUserLibraryItems(session.user.id);
+    const papers: SelectedPaperSummary[] = items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      authors: item.authors,
+      status: item.status,
+      isMetadataOnly: item.status === "METADATA_ONLY" || item.chunkCount === 0,
+      chunkCount: item.chunkCount,
+      hasPdf: item.hasPdf,
+    }));
+    return { success: true, papers };
+  } catch (err: any) {
+    return { success: false, papers: [], error: err?.message || "Failed to fetch library papers." };
   }
 }
 

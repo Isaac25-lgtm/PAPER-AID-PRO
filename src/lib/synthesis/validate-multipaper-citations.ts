@@ -1177,7 +1177,7 @@ export function validateMultiPaperSynthesis(
 
   // 3. Validate Limitations
   for (const rawLimitation of modelOutput.limitations || []) {
-    const text = rawLimitation.text?.trim();
+    const text = (rawLimitation.text || (rawLimitation as any).description)?.trim();
     if (!text) continue;
 
     const anchors: HydratedMultiPaperAnchor[] = [];

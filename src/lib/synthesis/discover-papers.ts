@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "../prisma";
 import { generateEmbedding } from "../ai/embeddings";
 import { DiscoveredPaper } from "./types";
+import { authorizePaperAccess } from "../auth/paper-authorization";
 
 export interface DiscoverPapersOptions {
   candidateLimit?: number; // Maximum candidate papers to discover (default: 20)
@@ -9,6 +10,8 @@ export interface DiscoverPapersOptions {
   minSimilarity?: number;  // Minimum cosine similarity threshold (default: 0.25)
   categorySlug?: string;
   precomputedVector?: number[];
+  userId?: string;
+  userRole?: string;
 }
 
 export const DEFAULT_CANDIDATE_LIMIT = 20;
@@ -178,7 +181,36 @@ export async function discoverRelevantPapers(
     }
   }
 
-  // 4. Fetch authors for all discovered papers
+  // 4. Authorize candidate papers and filter out unauthorized records (fixtures, other users' private docs)
+  const initialPaperIds = Array.from(paperMap.keys());
+  const userContext = options.userId
+    ? { id: options.userId, role: options.userRole || "USER" }
+    : null;
+
+  if (initialPaperIds.length > 0) {
+    const candidateRecords = await prisma.paper.findMany({
+      where: { id: { in: initialPaperIds } },
+      select: {
+        id: true,
+        title: true,
+        doi: true,
+        arxivId: true,
+        pmid: true,
+        pmcid: true,
+        semanticScholarId: true,
+        storagePath: true,
+        sourceProvenance: true,
+      },
+    });
+
+    for (const record of candidateRecords) {
+      const auth = await authorizePaperAccess(record, userContext, "VIEW_METADATA");
+      if (!auth.allowed) {
+        paperMap.delete(record.id);
+      }
+    }
+  }
+
   const paperIds = Array.from(paperMap.keys());
   const authorsByPaper = new Map<string, string[]>();
 

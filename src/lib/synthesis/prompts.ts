@@ -68,7 +68,16 @@ CRITICAL INTEGRITY AND ARCHITECTURAL DIRECTIVES:
    - Limitations must describe actual constraints acknowledged by the authors (e.g., small single-center cohort, reliance on classical ML rather than deep learning), not imported from other papers.
 18. PRESERVE CLINICAL SUBGROUP CONTEXT:
    - When citing clinical observations (such as Li et al.'s finding that multimodal CEUS and SWE increased costs with limited PPV impact), you MUST explicitly state the clinical subgroup context: it applied specifically to low-risk BI-RADS 3 lesions, not all breast lesions.
-   - Never generalize a subgroup-specific clinical finding beyond its studied cohort, and never attribute clinical imaging examination costs to AI.`;
+   - Never generalize a subgroup-specific clinical finding beyond its studied cohort, and never attribute clinical imaging examination costs to AI.
+19. SCIENTIFIC COMPARISON & METRIC EXTRACTION:
+   - When comparing findings across papers (e.g. sample sizes, cohorts, models, sensitivity, specificity, AUC, BLEU, F1 score, or limitations):
+   - Extract and state exact metrics and numbers reported in the evidence.
+   - NEVER invent or extrapolate missing sample sizes or quantitative performance numbers.
+   - If a specific metric or sample size is not stated in the evidence for a given paper, state clearly: "[Metric/sample size] not reported in the provided evidence for [Paper Title]".
+   - Do NOT claim comprehensive literature coverage; frame conclusions strictly around the provided papers.
+20. METADATA-ONLY SOURCES:
+   - When a paper is marked as [METADATA ONLY - FULL TEXT NOT ACCESSIBLE], evaluate it strictly from its title and abstract.
+   - Explicitly disclose that full manuscript text was not accessible in the library if a question inquires about deeper methodology, tables, or sub-group results.`;
 
 export const MULTI_PAPER_INSUFFICIENT_EVIDENCE_FALLBACK =
   "The available literature in your library does not contain sufficient empirical evidence to answer this research question.";
@@ -99,12 +108,17 @@ export function buildMultiPaperPrompt(
       const chunkIdSet = new Set<string>();
       const authorList = set.authors.length > 0 ? set.authors.join(", ") : "Unspecified authors";
       const dateStr = set.publicationDate ? ` (${new Date(set.publicationDate).getFullYear()})` : "";
+      const metaTag = set.isMetadataOnly ? " [METADATA ONLY - FULL TEXT NOT ACCESSIBLE]" : "";
 
       sections.push(
-        `=== PAPER [${paperIdx + 1}] ===\nPaper ID: ${set.paperId}\nTitle: "${set.paperTitle}"\nAuthors: ${authorList}${dateStr}\nDOI: ${set.doi || "N/A"}`
+        `=== PAPER [${paperIdx + 1}]${metaTag} ===\nPaper ID: ${set.paperId}\nTitle: "${set.paperTitle}"\nAuthors: ${authorList}${dateStr}\nDOI: ${set.doi || "N/A"}`
       );
 
-      if (set.chunks.length === 0) {
+      if (set.isMetadataOnly && set.abstract) {
+        sections.push(
+          `  [METADATA ABSTRACT]\n  "${set.abstract.trim()}"\n  (Note: Full manuscript PDF text is not accessible in the library for this reference. Rely strictly on the abstract text above.)`
+        );
+      } else if (set.chunks.length === 0) {
         sections.push("  (No relevant chunks retrieved from this paper)");
       } else {
         set.chunks.forEach((chunk, chunkIdx) => {

@@ -18,9 +18,15 @@ export const metadata = {
 export default async function ResearchPage({
   searchParams,
 }: {
-  searchParams?: { thread?: string; tab?: string };
+  searchParams?: { thread?: string; tab?: string; papers?: string };
 }) {
   const session = await getServerSession(authOptions);
+  const initialPaperIds = searchParams?.papers
+    ? searchParams.papers
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : undefined;
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 space-y-8">
@@ -55,6 +61,7 @@ export default async function ResearchPage({
       ) : (
         <UnifiedResearchWorkspace
           initialThreadId={searchParams?.thread}
+          initialPaperIds={initialPaperIds}
           defaultTab={searchParams?.tab === "deep" ? "deep" : "quick"}
         />
       )}

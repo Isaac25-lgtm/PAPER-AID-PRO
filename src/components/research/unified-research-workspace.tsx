@@ -8,11 +8,13 @@ import { AgentWorkspace } from "@/components/agent/agent-workspace";
 
 interface UnifiedResearchWorkspaceProps {
   initialThreadId?: string;
+  initialPaperIds?: string[];
   defaultTab?: "quick" | "deep";
 }
 
 export function UnifiedResearchWorkspace({
   initialThreadId,
+  initialPaperIds,
   defaultTab = "quick",
 }: UnifiedResearchWorkspaceProps) {
   const router = useRouter();
@@ -81,7 +83,10 @@ export function UnifiedResearchWorkspace({
 
       {/* Tab Content */}
       {activeTab === "quick" ? (
-        <ResearchInterface initialThreadId={initialThreadId} />
+        <ResearchInterface
+          initialThreadId={initialThreadId}
+          initialPaperIds={initialPaperIds}
+        />
       ) : (
         <AgentWorkspace initialConversationId={initialThreadId} />
       )}
