@@ -34,7 +34,9 @@ export function Navbar() {
   const navLinks = [
     { title: "Home", href: "/" },
     { title: "Discover", href: "/discover" },
-    { title: "Library", href: "/papers" },
+    ...(session?.user
+      ? [{ title: "My Library", href: "/library" }]
+      : [{ title: "Catalog", href: "/papers" }]),
     { title: "Research", href: "/research" },
     { title: "History", href: "/history" },
   ];

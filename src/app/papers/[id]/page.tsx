@@ -19,6 +19,7 @@ import {
   AlertCircle,
   Upload,
   Compass,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -121,16 +122,21 @@ export default async function PaperDetailPage({
   const statusBadge = getPaperStatusBadge(paper.status);
   const isMetadataOnly = paper.status === "METADATA_ONLY";
 
+  const prov = paper.sourceProvenance as any;
+  const isPrivateDoc = prov?.uploadedByUserId === session?.user?.id || prov?.ownerId === session?.user?.id;
+  const docType = prov?.documentType;
+  const institution = prov?.institution;
+
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Navigation Breadcrumb */}
       <div>
         <Link
-          href="/papers"
+          href={isPrivateDoc ? "/library" : "/papers"}
           className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-indigo-600 transition-colors mb-4"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to research library
+          {isPrivateDoc ? "Back to My Library" : "Back to research library"}
         </Link>
       </div>
 
@@ -140,6 +146,17 @@ export default async function PaperDetailPage({
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-1.5">
+              {isPrivateDoc && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                  <Lock className="h-3 w-3" />
+                  <span>Private Document</span>
+                </span>
+              )}
+              {docType && (
+                <Badge variant="secondary" className="text-xs">
+                  {docType}
+                </Badge>
+              )}
               {paper.categories.map((pc) => (
                 <Link key={pc.categoryId} href={`/categories/${pc.category.slug}`}>
                   <Badge variant="academic" className="hover:bg-indigo-100 transition-colors">

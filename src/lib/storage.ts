@@ -84,16 +84,27 @@ export function normalizeStorageRelativePath(path: string): string {
   return path;
 }
 
+export interface UploadPaperOptions {
+  userId?: string;
+  customRelativePath?: string;
+}
+
 /**
  * Uploads a research manuscript PDF to Supabase Storage.
- * Structured as: research-papers/<paperId>/original.pdf
+ * Default structured as: research-papers/<paperId>/original.pdf
+ * User-scoped structured as: research-papers/users/<userId>/papers/<paperId>/original.pdf
  */
 export async function uploadPaperPdf(
   paperId: string,
   fileBuffer: Buffer | Uint8Array,
-  contentType: string = "application/pdf"
+  contentType: string = "application/pdf",
+  options?: UploadPaperOptions
 ): Promise<UploadResult> {
-  const relativePath = `${paperId}/original.pdf`;
+  const relativePath = options?.customRelativePath
+    ? options.customRelativePath
+    : options?.userId
+    ? `users/${options.userId}/papers/${paperId}/original.pdf`
+    : `${paperId}/original.pdf`;
   const storagePath = `${BUCKET_NAME}/${relativePath}`;
 
   const { data, error } = await supabaseStorage.storage
@@ -107,7 +118,7 @@ export async function uploadPaperPdf(
     throw new Error(`Supabase Storage upload failed: ${error.message}`);
   }
 
-  // Phase 4B: Always route PDF requests through the authenticated endpoint
+  // Phase 4B / 5A: Always route PDF requests through the authenticated endpoint
   // Do not expose direct unauthenticated public CDN URLs
   return {
     storagePath,
@@ -140,10 +151,13 @@ export async function downloadPaperPdf(storagePath: string): Promise<Buffer> {
  * Retrieves the canonical access URL for a stored PDF.
  * Routes to the authenticated Next.js streaming endpoint.
  */
-export function getPaperPdfUrl(storagePath: string): string {
+export function getPaperPdfUrl(storagePath: string, paperId?: string): string {
+  if (paperId) return `/api/papers/${paperId}/pdf`;
   const relativePath = normalizeStorageRelativePath(storagePath);
-  const paperId = relativePath.split("/")[0];
-  return `/api/papers/${paperId}/pdf`;
+  const parts = relativePath.split("/");
+  const papersIdx = parts.indexOf("papers");
+  const extractedPaperId = papersIdx !== -1 && parts[papersIdx + 1] ? parts[papersIdx + 1] : parts[0];
+  return `/api/papers/${extractedPaperId}/pdf`;
 }
 
 /**

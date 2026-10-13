@@ -49,13 +49,14 @@ export const siteConfig = {
   navItems: [
     { title: "Home", href: "/" },
     { title: "Discover", href: "/discover" },
-    { title: "Library", href: "/papers" },
+    { title: "Catalog", href: "/papers" },
     { title: "Research", href: "/research" },
     { title: "History", href: "/history" },
   ] as NavItem[],
 
   userNavItems: [
-    { title: "Library", href: "/papers" },
+    { title: "My Library", href: "/library" },
+    { title: "Research", href: "/research" },
     { title: "History", href: "/history" },
     { title: "Admin Portal", href: "/admin" },
   ] as NavItem[],
