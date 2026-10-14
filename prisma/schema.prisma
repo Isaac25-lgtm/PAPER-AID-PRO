@@ -50,6 +50,18 @@ enum AIMessageRole {
   SYSTEM
 }
 
+enum DocumentType {
+  DRAFT
+  MANUSCRIPT
+  PROPOSAL
+  LITERATURE_REVIEW
+}
+
+enum CitationType {
+  BIBLIOGRAPHIC
+  PASSAGE_VERIFIED
+}
+
 // ==========================================
 // CORE ENTITIES
 // ==========================================
@@ -65,9 +77,10 @@ model User {
   updatedAt     DateTime        @updatedAt
 
   // Relationships
-  conversations AIConversation[]
-  bookmarks     Bookmark[]
-  collections   Collection[]
+  conversations     AIConversation[]
+  bookmarks         Bookmark[]
+  collections       Collection[]
+  researchDocuments ResearchDocument[]
 
   // Note: @@index([email]) omitted because @unique already provisions a PostgreSQL unique B-tree index
   @@map("users")
@@ -116,6 +129,8 @@ model Paper {
   bookmarks        Bookmark[]
   conversations    AIConversation[]
   collections      CollectionPaper[]
+  documentCitations DocumentCitation[]
+  documentPapers   DocumentPaper[]
 
   @@index([status])
   @@index([publicationDate])
@@ -214,7 +229,8 @@ model PaperChunk {
   createdAt           DateTime                     @default(now())
 
   // Foreign keys
-  paper          Paper                        @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  paper             Paper                        @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  documentCitations DocumentCitation[]
 
   @@unique([paperId, chunkIndex])
   @@index([paperId])
@@ -353,5 +369,67 @@ model CollectionPaper {
   @@index([collectionId])
   @@index([paperId])
   @@map("collection_papers")
+}
+
+model ResearchDocument {
+  id          String       @id @default(cuid())
+  userId      String
+  title       String       @default("Untitled Research Document")
+  content     Json?
+  textContent String?      @db.Text
+  docType     DocumentType @default(DRAFT)
+  version     Int          @default(1)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relationships
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  citations    DocumentCitation[]
+  linkedPapers DocumentPaper[]
+
+  @@index([userId])
+  @@index([updatedAt])
+  @@map("research_documents")
+}
+
+model DocumentCitation {
+  id           String       @id @default(cuid())
+  documentId   String
+  paperId      String
+  chunkId      String?
+  citationKey  String?
+  citationText String
+  citationType CitationType @default(BIBLIOGRAPHIC)
+  pageNumber   Int?
+  section      String?
+  prefix       String?
+  suffix       String?
+  createdAt    DateTime     @default(now())
+
+  // Foreign keys
+  document     ResearchDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  paper        Paper            @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  chunk        PaperChunk?      @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+
+  @@index([documentId])
+  @@index([paperId])
+  @@index([chunkId])
+  @@map("document_citations")
+}
+
+model DocumentPaper {
+  id         String   @id @default(cuid())
+  documentId String
+  paperId    String
+  addedAt    DateTime @default(now())
+
+  // Foreign keys
+  document   ResearchDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  paper      Paper            @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, paperId])
+  @@index([documentId])
+  @@index([paperId])
+  @@map("document_papers")
 }
 

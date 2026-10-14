@@ -51,11 +51,13 @@ export const siteConfig = {
     { title: "Discover", href: "/discover" },
     { title: "Catalog", href: "/papers" },
     { title: "Research", href: "/research" },
+    { title: "AI Editor", href: "/editor" },
     { title: "History", href: "/history" },
   ] as NavItem[],
 
   userNavItems: [
     { title: "My Library", href: "/library" },
+    { title: "AI Editor", href: "/editor" },
     { title: "Research", href: "/research" },
     { title: "History", href: "/history" },
     { title: "Admin Portal", href: "/admin" },
@@ -121,10 +123,10 @@ export const siteConfig = {
     {
       id: "ai-editor",
       title: "Academic AI Editor",
-      description: "Refine prose for high-impact journal standards with clarity and formal phrasing.",
+      description: "Compose research papers with inline ghost-text autocomplete, verified literature citations, and private multi-model routing.",
       category: "writing",
-      href: "/papers",
-      badge: "Roadmap",
+      href: "/editor",
+      badge: "Beta",
       iconName: "PenTool",
     },
     {

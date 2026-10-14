@@ -43,10 +43,17 @@ export interface TaskRouteDefinition {
 export class ModelRouter {
   private adapters: Map<ProviderName, ProviderAdapter> = new Map();
 
-  constructor() {
-    this.adapters.set("google", new GoogleAdapter());
-    this.adapters.set("anthropic", new AnthropicAdapter());
-    this.adapters.set("openai", new OpenAIAdapter());
+  constructor(customAdapters?: Partial<Record<ProviderName, ProviderAdapter>>) {
+    this.adapters.set("google", customAdapters?.google || new GoogleAdapter());
+    this.adapters.set("anthropic", customAdapters?.anthropic || new AnthropicAdapter());
+    this.adapters.set("openai", customAdapters?.openai || new OpenAIAdapter());
+  }
+
+  /**
+   * Registers or overrides a provider adapter (useful for testing and extensions).
+   */
+  public registerAdapter(provider: ProviderName, adapter: ProviderAdapter): void {
+    this.adapters.set(provider, adapter);
   }
 
   /**

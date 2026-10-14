@@ -18,6 +18,49 @@ export function setStorageClientOverride(client: any): void {
   storageClientOverride = client;
 }
 
+let mockStorageBuckets = new Map<string, Map<string, Buffer>>();
+
+function getOrCreateMockStorageClient() {
+  return {
+    storage: {
+      from(bucketName: string) {
+        if (!mockStorageBuckets.has(bucketName)) {
+          mockStorageBuckets.set(bucketName, new Map<string, Buffer>());
+        }
+        const bucket = mockStorageBuckets.get(bucketName)!;
+        return {
+          upload: async (filePath: string, fileBody: Buffer | Uint8Array) => {
+            const buf = Buffer.isBuffer(fileBody) ? fileBody : Buffer.from(fileBody);
+            bucket.set(filePath, buf);
+            return { data: { path: filePath }, error: null };
+          },
+          download: async (filePath: string) => {
+            if (!bucket.has(filePath)) {
+              return { data: null, error: { message: `Object not found in mock storage: ${filePath}` } };
+            }
+            const buf = bucket.get(filePath)!;
+            return {
+              data: {
+                arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
+              },
+              error: null,
+            };
+          },
+          remove: async (filePaths: string[]) => {
+            for (const p of filePaths) {
+              bucket.delete(p);
+            }
+            return { data: filePaths, error: null };
+          },
+          createSignedUrl: async (filePath: string) => {
+            return { data: { signedUrl: `/mock-storage/${filePath}` }, error: null };
+          },
+        };
+      },
+    },
+  };
+}
+
 /**
  * Returns a server-authorized Supabase storage client.
  * Strictly requires SUPABASE_SECRET_KEY (supporting newer sb_secret_... format)
@@ -25,8 +68,20 @@ export function setStorageClientOverride(client: any): void {
  * Fails closed without any silent fallback to NEXT_PUBLIC_SUPABASE_ANON_KEY.
  */
 export function getStorageClient() {
-  if (process.env.NODE_ENV !== "production" && storageClientOverride) {
-    return storageClientOverride;
+  if (process.env.NODE_ENV === "production") {
+    if (process.env.USE_MOCK_STORAGE === "true") {
+      throw new Error(
+        "Security violation: USE_MOCK_STORAGE is strictly prohibited in production environments."
+      );
+    }
+  } else {
+    if (storageClientOverride) {
+      return storageClientOverride;
+    }
+    if (process.env.USE_MOCK_STORAGE === "true") {
+      storageClientOverride = getOrCreateMockStorageClient();
+      return storageClientOverride;
+    }
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

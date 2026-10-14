@@ -34,6 +34,7 @@ export default withAuth(
 export const config = {
   matcher: [
     "/library/:path*",
+    "/editor/:path*",
     "/saved/:path*",
     "/conversations/:path*",
     "/history/:path*",

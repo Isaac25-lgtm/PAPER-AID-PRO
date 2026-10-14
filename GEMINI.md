@@ -927,9 +927,16 @@ PHASE 10: Evidence-Grounded Research Agent Orchestrator ✅ COMPLETED & FROZEN
 
 ## 7. Developer & Operational Playbook
 
-### 7.1 Common CLI Commands
+### 7.1 Common CLI Commands & Migration Safety Rules
+
+> [!CAUTION]
+> **STRICT MIGRATION SAFETY MANDATE**:
+> Running raw `npx prisma migrate deploy`, `npx prisma db push`, or `npx prisma migrate dev` is **STRICTLY PROHIBITED**.
+> Raw Prisma commands bypass environment guards and can cause accidental schema destruction on remote/production databases.
+> **All migrations, schema updates, and studio sessions MUST use the guarded npm scripts** backed by `scripts/safe-migrate.cjs`, which enforce local Docker loopback (127.0.0.1:5432) preflight checks and fail closed. Never execute production migrations locally.
+
 ```bash
-# Run local Next.js development server
+# Run local Next.js development server (isolated with local Docker & mock storage)
 npm run dev
 
 # Run TypeScript type validation
@@ -938,16 +945,22 @@ npm run type-check
 # Run ESLint validation
 npm run lint
 
-# Generate Prisma Client after schema changes
+# Generate Prisma Client after schema changes (safe)
 npm run db:generate
 
-# Create and apply new Prisma migration
+# Create and apply new Prisma migration (guarded via scripts/safe-migrate.cjs)
 npm run db:migrate
 
-# Push schema directly to database (rapid prototyping)
+# Push schema directly to local database (guarded via scripts/safe-migrate.cjs)
 npm run db:push
 
-# Open interactive visual Prisma Studio
+# View migration status on local database (guarded via scripts/safe-migrate.cjs)
+npm run db:status
+
+# Apply migrations on local database (guarded via scripts/safe-migrate.cjs)
+npm run db:deploy
+
+# Open interactive visual Prisma Studio on local database (guarded)
 npm run db:studio
 
 # Validate Prisma schema syntax

@@ -1,6 +1,20 @@
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
+
+// Mock server-only package for standalone tsx test runners
+try {
+  const serverOnlyPath = require.resolve("server-only");
+  require.cache[serverOnlyPath] = {
+    id: serverOnlyPath,
+    filename: serverOnlyPath,
+    loaded: true,
+    exports: {},
+  } as any;
+} catch (e) {
+  // ignore
+}
+
 import { setStorageClientOverride } from "./storage";
 
 /**
