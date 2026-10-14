@@ -15,8 +15,9 @@
     "db:status": "node scripts/safe-migrate.cjs status",
     "db:push": "node scripts/safe-migrate.cjs push",
     "db:studio": "node scripts/safe-migrate.cjs studio",
+    "db:run": "node scripts/run-isolated-db.cjs",
     "db:validate": "prisma validate",
-    "db:seed": "node prisma/seed.js"
+    "db:seed": "node scripts/run-isolated-db.cjs prisma/seed.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

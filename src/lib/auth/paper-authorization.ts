@@ -92,18 +92,41 @@ export function classifyPaper(paper: MinimalPaperRecord): PaperClassification {
   }
 
   // 2. Private User Document (Uploaded or owned by a researcher)
-  const ownerId = prov?.uploadedByUserId || prov?.ownerId;
-  if (ownerId && typeof ownerId === "string") {
+  const ownerId =
+    prov?.uploadedByUserId ||
+    prov?.ownerId ||
+    (paper as any).uploadedByUserId;
+  if (
+    prov?.isPrivate === true ||
+    (ownerId && typeof ownerId === "string" && ownerId.trim().length > 0)
+  ) {
     return "PRIVATE_USER_DOCUMENT";
   }
 
-  // 3. Historical records with attached storage files:
-  // Pre-Phase 4 files in Supabase Storage without ownerId are quarantined.
+  // 3. Public Open Access Papers (Lawfully acquired open-access manuscripts with academic identifiers)
+  const isLawfulOaPaper =
+    (prov?.isPublicOpenAccess === true ||
+      prov?.isLawfulOpenAccess === true ||
+      (paper as any).isOpenAccess === true) &&
+    Boolean(
+      paper.doi ||
+        paper.arxivId ||
+        paper.pmid ||
+        paper.pmcid ||
+        paper.semanticScholarId
+    );
+
+  if (isLawfulOaPaper) {
+    return "PUBLIC_SCHOLARLY_METADATA";
+  }
+
+  // 4. Historical benchmark fixtures with attached storage files:
+  // Pre-Phase 4 files in Supabase Storage without ownerId or OA provenance are quarantined.
   if (paper.storagePath && paper.storagePath.trim().length > 0) {
     return "ADMIN_TEST_FIXTURE";
   }
 
-  // 4. Public Scholarly Metadata:
+  // 5. Public Scholarly Metadata:
   // Canonical academic records without proprietary stored manuscripts.
   const hasAcademicIdentifier = Boolean(
     paper.doi ||
@@ -113,12 +136,45 @@ export function classifyPaper(paper: MinimalPaperRecord): PaperClassification {
       paper.semanticScholarId
   );
 
-  if (hasAcademicIdentifier && !paper.storagePath) {
+  if (hasAcademicIdentifier) {
     return "PUBLIC_SCHOLARLY_METADATA";
   }
 
-  // 5. Fail closed for ambiguous historical records
+  // 6. Fail closed for ambiguous historical records
   return "AMBIGUOUS_HISTORICAL";
+}
+
+/**
+ * Evaluates whether a manuscript is permitted for public scholarly views,
+ * search indexing, browsing, and discovery previews.
+ */
+export function isPublicScholarlyPaper(paper: MinimalPaperRecord): boolean {
+  return classifyPaper(paper) === "PUBLIC_SCHOLARLY_METADATA";
+}
+
+/**
+ * Canonical Prisma WHERE clause for public scholarly search, browsing and counts.
+ * Excludes administrator benchmark fixtures and non-open-access stored files at DB query time.
+ */
+export function getPublicPaperWhereInput(): any {
+  return {
+    id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
+    OR: [
+      { doi: { not: null } },
+      { arxivId: { not: null } },
+      { pmid: { not: null } },
+      { pmcid: { not: null } },
+      { semanticScholarId: { not: null } },
+    ],
+    NOT: [
+      {
+        AND: [
+          { storagePath: { not: null } },
+          { isOpenAccess: false },
+        ],
+      },
+    ],
+  };
 }
 
 /**

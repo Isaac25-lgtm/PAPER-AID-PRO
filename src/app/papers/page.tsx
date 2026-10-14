@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { PaperCard } from "@/components/shared/paper-card";
 import { searchPapersHybrid } from "@/lib/search/hybrid-search";
-import { ADMIN_TEST_FIXTURE_IDS } from "@/lib/auth/paper-authorization";
+import { ADMIN_TEST_FIXTURE_IDS, isPublicScholarlyPaper, getPublicPaperWhereInput } from "@/lib/auth/paper-authorization";
 
 export const metadata = {
   title: "Research Library | AI Research Hub",
@@ -68,7 +68,8 @@ export default async function PapersPage({
   let loadError: string | null = null;
 
   try {
-    const [sr, cats, count] = await Promise.all([
+    const publicWhere = getPublicPaperWhereInput();
+    const [sr, cats, candidatePapers] = await Promise.all([
       searchPapersHybrid({
         query,
         categorySlug,
@@ -85,17 +86,27 @@ export default async function PapersPage({
         orderBy: { name: "asc" },
       }),
       excludeFixtures
-        ? prisma.paper.count({
-            where: {
-              id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
-              storagePath: null,
+        ? prisma.paper.findMany({
+            where: publicWhere,
+            select: {
+              id: true,
+              doi: true,
+              arxivId: true,
+              pmid: true,
+              pmcid: true,
+              semanticScholarId: true,
+              isOpenAccess: true,
+              storagePath: true,
+              sourceProvenance: true,
             },
           })
-        : prisma.paper.count(),
+        : null,
     ]);
     searchResult = sr;
     categories = cats;
-    totalPaperCount = count;
+    totalPaperCount = excludeFixtures && candidatePapers
+      ? candidatePapers.filter(isPublicScholarlyPaper).length
+      : await prisma.paper.count();
   } catch (err: any) {
     console.error("[PapersPage] Database query error:", err?.message || err);
     loadError = "The database connection was temporarily busy. Showing cached or fallback state.";

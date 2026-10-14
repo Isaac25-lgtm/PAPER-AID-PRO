@@ -40,5 +40,7 @@ export const config = {
     "/history/:path*",
     "/account/:path*",
     "/admin/:path*",
+    "/research/:path*",
+    "/agent/:path*",
   ],
 };

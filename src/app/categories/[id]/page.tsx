@@ -36,7 +36,7 @@ export async function generateMetadata({ params }: { params: { id: string } }) {
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { ADMIN_TEST_FIXTURE_IDS } from "@/lib/auth/paper-authorization";
+import { ADMIN_TEST_FIXTURE_IDS, isPublicScholarlyPaper, getPublicPaperWhereInput } from "@/lib/auth/paper-authorization";
 
 export default async function CategoryDetailPage({
   params,
@@ -52,14 +52,7 @@ export default async function CategoryDetailPage({
     },
     include: {
       papers: {
-        where: isAdmin
-          ? {}
-          : {
-              paper: {
-                id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
-                storagePath: null,
-              },
-            },
+        where: isAdmin ? {} : { paper: getPublicPaperWhereInput() },
         include: {
           paper: {
             include: {
@@ -84,7 +77,11 @@ export default async function CategoryDetailPage({
 
   const IconComponent = (category.iconName && iconMap[category.iconName]) || Layers;
 
-  const papers: Paper[] = category.papers.map(({ paper: p }) => ({
+  const validCategoryPapers = isAdmin
+    ? category.papers
+    : category.papers.filter(({ paper }) => isPublicScholarlyPaper(paper));
+
+  const papers: Paper[] = validCategoryPapers.map(({ paper: p }) => ({
     id: p.id,
     title: p.title,
     abstract: p.abstract,

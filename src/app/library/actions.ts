@@ -23,6 +23,7 @@ import {
 import {
   lookupPaperByIdentifier,
   importPaperByIdentifier,
+  discoverAndProcessPaperOpenAccess,
   LookupPaperMetadata,
 } from "@/lib/library/identifier-lookup-service";
 import {
@@ -401,6 +402,39 @@ export async function importPaperByIdentifierAction(
   } catch (err: any) {
     console.error("[importPaperByIdentifierAction] Error:", err);
     return { success: false, error: err?.message || "Failed to import paper." };
+  }
+}
+
+export async function discoverPaperOpenAccessAction(paperId: string): Promise<{
+  success: boolean;
+  status: string;
+  message: string;
+  hasFullText: boolean;
+  error?: string;
+}> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return {
+      success: false,
+      status: "NO_OPEN_ACCESS_LOCATED",
+      message: "Authentication required to discover open-access full text.",
+      hasFullText: false,
+      error: "Authentication required.",
+    };
+  }
+
+  try {
+    const result = await discoverAndProcessPaperOpenAccess(paperId, session.user.id);
+    return result;
+  } catch (err: any) {
+    console.error("[discoverPaperOpenAccessAction] Error:", err);
+    return {
+      success: false,
+      status: "IMPORT_FAILED",
+      message: err?.message || "Open-access discovery failed.",
+      hasFullText: false,
+      error: err?.message,
+    };
   }
 }
 

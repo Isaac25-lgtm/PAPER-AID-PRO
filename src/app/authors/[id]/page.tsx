@@ -34,7 +34,7 @@ export async function generateMetadata({ params }: { params: { id: string } }) {
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { ADMIN_TEST_FIXTURE_IDS } from "@/lib/auth/paper-authorization";
+import { ADMIN_TEST_FIXTURE_IDS, isPublicScholarlyPaper, getPublicPaperWhereInput } from "@/lib/auth/paper-authorization";
 
 export default async function AuthorProfilePage({
   params,
@@ -48,14 +48,7 @@ export default async function AuthorProfilePage({
     where: { id: params.id },
     include: {
       papers: {
-        where: isAdmin
-          ? {}
-          : {
-              paper: {
-                id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
-                storagePath: null,
-              },
-            },
+        where: isAdmin ? {} : { paper: getPublicPaperWhereInput() },
         include: {
           paper: {
             include: {
@@ -78,7 +71,11 @@ export default async function AuthorProfilePage({
     notFound();
   }
 
-  const papers: Paper[] = author.papers.map(({ paper: p }) => ({
+  const validAuthorPapers = isAdmin
+    ? author.papers
+    : author.papers.filter(({ paper }) => isPublicScholarlyPaper(paper));
+
+  const papers: Paper[] = validAuthorPapers.map(({ paper: p }) => ({
     id: p.id,
     title: p.title,
     abstract: p.abstract,

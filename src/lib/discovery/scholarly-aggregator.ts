@@ -148,7 +148,7 @@ export class ScholarlyAggregator {
     const { papers: deduplicatedPapers } = deduplicateExternalPapers(rawPapers);
 
     // Hydrate local library status
-    const finalPapers = await matchPapersAgainstLocalLibrary(deduplicatedPapers);
+    const finalPapers = await matchPapersAgainstLocalLibrary(deduplicatedPapers, options.userId);
 
     const searchResult: DiscoverySearchResult = {
       query: trimmedQuery,

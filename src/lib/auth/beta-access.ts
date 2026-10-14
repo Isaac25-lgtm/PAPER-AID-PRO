@@ -23,10 +23,8 @@ export const BETA_INVITE_ONLY_MESSAGE =
  */
 export function isRegistrationAllowed(email: string): BetaAccessCheckResult {
   const rawMode = process.env.BETA_REGISTRATION_MODE;
-  const isProduction = process.env.NODE_ENV === "production";
-  // Default to "allowlist" in production so private beta never accidentally becomes open.
-  // Defaults to "open" in development for convenience unless explicitly set.
-  const mode = (rawMode || (isProduction ? "allowlist" : "open")).toLowerCase().trim();
+  // Default to "open" for unrestricted registration (personal and university emails accepted equally)
+  const mode = (rawMode || "open").toLowerCase().trim();
 
   // If registration is open
   if (mode !== "allowlist") {

@@ -930,10 +930,9 @@ PHASE 10: Evidence-Grounded Research Agent Orchestrator ✅ COMPLETED & FROZEN
 ### 7.1 Common CLI Commands & Migration Safety Rules
 
 > [!CAUTION]
-> **STRICT MIGRATION SAFETY MANDATE**:
-> Running raw `npx prisma migrate deploy`, `npx prisma db push`, or `npx prisma migrate dev` is **STRICTLY PROHIBITED**.
-> Raw Prisma commands bypass environment guards and can cause accidental schema destruction on remote/production databases.
-> **All migrations, schema updates, and studio sessions MUST use the guarded npm scripts** backed by `scripts/safe-migrate.cjs`, which enforce local Docker loopback (127.0.0.1:5432) preflight checks and fail closed. Never execute production migrations locally.
+> **STRICT MIGRATION & DATABASE SCRIPT SAFETY MANDATE**:
+> 1. Running raw `npx prisma migrate deploy`, `npx prisma db push`, or `npx prisma migrate dev` is **STRICTLY PROHIBITED**. Raw Prisma commands bypass environment guards and can cause accidental schema destruction on remote/production databases. All migrations, schema updates, and studio sessions MUST use the guarded npm scripts (`npm run db:migrate`, `npm run db:deploy`, `npm run db:push`, `npm run db:studio`) backed by `scripts/safe-migrate.cjs`.
+> 2. Running ad-hoc `node -e` or standalone scripts with `new PrismaClient()` without preflight isolation is **STRICTLY PROHIBITED**. Standalone `new PrismaClient()` defaults to loading `.env` (which targets production Supabase), bypassing application guards. **All standalone database scripts, one-liners, inspections, and seed adjustments MUST run through `node scripts/run-isolated-db.cjs` or `npm run db:run`**, which enforce local Docker loopback (`127.0.0.1:5432`), neutralize production keys, enable mock storage, and fail closed.
 
 ```bash
 # Run local Next.js development server (isolated with local Docker & mock storage)
@@ -962,6 +961,12 @@ npm run db:deploy
 
 # Open interactive visual Prisma Studio on local database (guarded)
 npm run db:studio
+
+# Run standalone database script safely isolated to local Docker PostgreSQL
+npm run db:run <path-to-script>
+
+# Seed database safely isolated to local Docker PostgreSQL
+npm run db:seed
 
 # Validate Prisma schema syntax
 npm run db:validate

@@ -53,7 +53,11 @@ export async function searchScholarlyAction(
   query: string,
   options: DiscoverySearchOptions = {}
 ): Promise<DiscoverySearchResult> {
-  return aggregator.search(query, options);
+  const session = await getServerSession(authOptions);
+  return aggregator.search(query, {
+    ...options,
+    userId: session?.user?.id,
+  });
 }
 
 /**

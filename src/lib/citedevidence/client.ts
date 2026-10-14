@@ -343,3 +343,4 @@ export class CitedEvidenceClient {
 
 // Global Singleton for Server-Side Usage
 export const citedEvidenceClient = new CitedEvidenceClient();
+export const reconstructAbstract = CitedEvidenceClient.reconstructAbstract;

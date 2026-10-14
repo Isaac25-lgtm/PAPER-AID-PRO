@@ -38,6 +38,11 @@ export interface UserLibraryItem {
   status: PaperProcessingStatus;
   hasPdf: boolean;
   storagePath?: string | null;
+  pdfUrl?: string | null;
+  doi?: string | null;
+  isOpenAccess?: boolean;
+  isPreprint?: boolean;
+  sourceProvenance?: any;
   chunkCount: number;
   canChat: boolean;
   latestJobStage?: string | null;
@@ -532,6 +537,11 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
       status: paper.status,
       hasPdf: Boolean(paper.storagePath || paper.pdfUrl),
       storagePath: paper.storagePath,
+      pdfUrl: paper.pdfUrl || null,
+      doi: paper.doi || null,
+      isOpenAccess: Boolean(paper.isOpenAccess),
+      isPreprint: prov?.version === "submittedVersion" || prov?.isPreprint === true,
+      sourceProvenance: prov || null,
       chunkCount: paper._count?.chunks || 0,
       canChat:
         paper.status === "COMPLETED" ||

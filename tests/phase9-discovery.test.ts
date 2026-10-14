@@ -379,7 +379,20 @@ async function runPhase9Tests() {
     console.log("\n--- Database Integration & Idempotency Tests ---");
 
     // Test G: Existing local DOI -> Already in Library
-    // In our DB, Magnuska et al. has DOI 10.3390/cancers14020277
+    // Ensure test paper with target DOI exists in library
+    const existingDocG = await prisma.paper.upsert({
+      where: { doi: "10.3390/cancers14020277" },
+      create: {
+        title: "Influence of CAD Design on Ultrasound Breast Cancer",
+        abstract: "Breast cancer ultrasound study.",
+        doi: "10.3390/cancers14020277",
+        status: "COMPLETED",
+        isOpenAccess: true,
+      },
+      update: {},
+    });
+    testPaperIdsToClean.push(existingDocG.id);
+
     const queryWithExisting: NormalizedExternalPaper = {
       id: "doi:10.3390/cancers14020277",
       title: "Influence of CAD Design on Ultrasound Breast Cancer",
@@ -496,19 +509,28 @@ async function runPhase9Tests() {
 
     // Test T: Duplicate full-text import does not duplicate processing
     // If paper status is already COMPLETED, acquireAndIngestLawfulFullText returns early
-    const existingCompleted = await prisma.paper.findFirst({
-      where: { status: "COMPLETED", storagePath: { not: null } },
+    const testDocT = await prisma.paper.create({
+      data: {
+        title: "Completed Ingestion Test Paper " + Date.now(),
+        abstract: "Test abstract for completed paper.",
+        status: "COMPLETED",
+        storagePath: "test/completed.pdf",
+        isOpenAccess: true,
+        sourceProvenance: {
+          isLawfulOpenAccess: true,
+        },
+      },
     });
-    if (existingCompleted) {
-      const duplicateAcq = await acquireAndIngestLawfulFullText(
-        existingCompleted.id,
-        "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1000/pdf/"
-      );
-      assert(
-        duplicateAcq.success && duplicateAcq.storagePath === existingCompleted.storagePath,
-        "Test T: Duplicate full-text acquisition skips reprocessing for already completed papers"
-      );
-    }
+    testPaperIdsToClean.push(testDocT.id);
+
+    const duplicateAcq = await acquireAndIngestLawfulFullText(
+      testDocT.id,
+      "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1000/pdf/"
+    );
+    assert(
+      duplicateAcq.success && duplicateAcq.storagePath === testDocT.storagePath,
+      "Test T: Duplicate full-text acquisition skips reprocessing for already completed papers"
+    );
   } finally {
     // Cleanup synthetic test records
     console.log("\nCleaning up synthetic test records...");

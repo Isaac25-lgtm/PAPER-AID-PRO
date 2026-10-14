@@ -96,6 +96,80 @@ async function runSecurityTestSuite() {
       },
     });
 
+    await prisma.user.upsert({
+      where: { id: userA.id },
+      create: {
+        id: userA.id,
+        email: "test-user-a-phase4b@university.test",
+        passwordHash: "test_hash",
+        role: "USER",
+      },
+      update: {},
+    });
+
+    await prisma.paper.upsert({
+      where: { id: FIXTURE_ID },
+      create: {
+        id: FIXTURE_ID,
+        title: "Kim et al. (BUSI) - Administrator Fixture",
+        abstract: "Breast ultrasound benchmark dataset.",
+        storagePath: `${FIXTURE_ID}/original.pdf`,
+        sourceProvenance: {
+          isSystemFixture: true,
+        },
+      },
+      update: {
+        storagePath: `${FIXTURE_ID}/original.pdf`,
+        sourceProvenance: {
+          isSystemFixture: true,
+        },
+      },
+    });
+
+    await prisma.paper.upsert({
+      where: { id: POINTPILLARS_ID },
+      create: {
+        id: POINTPILLARS_ID,
+        title: "PointPillars - Administrator Fixture",
+        abstract: "PointPillars fast 3D object detection.",
+        storagePath: `${POINTPILLARS_ID}/original.pdf`,
+        sourceProvenance: {
+          isSystemFixture: true,
+        },
+      },
+      update: {
+        storagePath: `${POINTPILLARS_ID}/original.pdf`,
+        sourceProvenance: {
+          isSystemFixture: true,
+        },
+      },
+    });
+
+    await prisma.paper.upsert({
+      where: { id: PUBLIC_PAPER_ID },
+      create: {
+        id: PUBLIC_PAPER_ID,
+        title: "Attention Is All You Need (Public Test)",
+        abstract: "Self-attention mechanisms alone suffice for sequence transduction.",
+        doi: "10.48550/arxiv.phase4b.test",
+        arxivId: "1706.03762",
+        isOpenAccess: true,
+        pdfUrl: "https://arxiv.org/pdf/1706.03762.pdf",
+        sourceProvenance: {
+          isLawfulOpenAccess: true,
+        },
+      },
+      update: {
+        doi: "10.48550/arxiv.phase4b.test",
+        arxivId: "1706.03762",
+        isOpenAccess: true,
+        pdfUrl: "https://arxiv.org/pdf/1706.03762.pdf",
+        sourceProvenance: {
+          isLawfulOpenAccess: true,
+        },
+      },
+    });
+
     // ========================================================================
     // 1. ANONYMOUS PDF DOWNLOAD HARDENING
     // ========================================================================
@@ -308,7 +382,7 @@ async function runSecurityTestSuite() {
       await askPaperQuestion({
         paperId: FIXTURE_ID,
         question: "What is the primary contribution?",
-        userId: "cmugpapqq0017vrlg3zo0a0k4", // Real DB user with role USER
+        userId: userA.id, // Real DB user with role USER
       });
     } catch (err: any) {
       qaNonAdminThrew = true;
@@ -522,7 +596,7 @@ async function runSecurityTestSuite() {
     console.log("\n--- TEST GROUP 6: Bookmarking & Storage Bypass Mitigation ---");
 
     // Non-admin user attempting to bookmark an admin fixture
-    setMockSession({ user: { id: "cmugpapqq0017vrlg3zo0a0k4", role: "USER" } });
+    setMockSession({ user: { id: userA.id, role: "USER" } });
     const bookmarkRes = await toggleBookmarkAction(FIXTURE_ID);
     assert(
       bookmarkRes.success === false &&

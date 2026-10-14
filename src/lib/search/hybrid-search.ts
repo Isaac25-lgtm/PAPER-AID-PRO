@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "../prisma";
 import { generateEmbedding } from "../ai/embeddings";
 import { Paper } from "../types/paper";
-import { ADMIN_TEST_FIXTURE_IDS } from "../auth/paper-authorization";
+import { ADMIN_TEST_FIXTURE_IDS, isPublicScholarlyPaper, getPublicPaperWhereInput } from "../auth/paper-authorization";
 
 export interface MatchedEvidenceSnippet {
   chunkId: string;
@@ -50,6 +50,19 @@ function formatSnippet(text: string, maxLength: number = 280): string {
   const truncated = cleaned.slice(0, maxLength);
   const lastSpace = truncated.lastIndexOf(" ");
   return (lastSpace > 50 ? truncated.slice(0, lastSpace) : truncated) + "...";
+}
+
+/**
+ * Validates that a paper record is safe and lawful for public scholarly search.
+ * Centrally delegates to paper-authorization engine to strictly exclude:
+ * - Administrator benchmark fixtures
+ * - Private user-uploaded documents and personal notes
+ * - Unpublished manuscripts
+ * - Non-open-access stored PDFs
+ */
+export function isPaperPermittedForPublicSearch(p: any): boolean {
+  if (!p) return false;
+  return isPublicScholarlyPaper(p);
 }
 
 /**
@@ -193,8 +206,16 @@ export async function searchPapersHybrid(
     }
   });
 
+  // Filter by privacy and fixture quarantine when excludeFixtures is true
+  const eligibleScores = Array.from(paperScores.values()).filter((item) => {
+    if (excludeFixtures && !isPaperPermittedForPublicSearch(item.paper)) {
+      return false;
+    }
+    return true;
+  });
+
   // Sort by combined RRF score descending
-  const sortedResults = Array.from(paperScores.values()).sort(
+  const sortedResults = eligibleScores.sort(
     (a, b) => b.rrfScore - a.rrfScore
   );
 
@@ -246,8 +267,7 @@ async function fetchLexicalCandidates(
   };
 
   if (excludeFixtures) {
-    where.id = { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) };
-    where.storagePath = null;
+    Object.assign(where, getPublicPaperWhereInput());
   }
 
   if (categorySlug) {
@@ -260,7 +280,7 @@ async function fetchLexicalCandidates(
     };
   }
 
-  return prisma.paper.findMany({
+  const rawPapers = await prisma.paper.findMany({
     where,
     include: {
       authors: {
@@ -275,6 +295,12 @@ async function fetchLexicalCandidates(
     orderBy: [{ citationCount: "desc" }, { createdAt: "desc" }],
     take: 50,
   });
+
+  if (excludeFixtures) {
+    return rawPapers.filter(isPaperPermittedForPublicSearch);
+  }
+
+  return rawPapers;
 }
 
 /**
@@ -398,8 +424,7 @@ async function browsePapers(options: {
   const where: any = {};
 
   if (options.excludeFixtures !== false) {
-    where.id = { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) };
-    where.storagePath = null;
+    Object.assign(where, getPublicPaperWhereInput());
   }
 
   if (options.categorySlug) {
@@ -434,10 +459,14 @@ async function browsePapers(options: {
       aiSummary: true,
     },
     orderBy,
-    take: options.limit,
+    take: options.limit * 2,
   });
 
-  const papers: RankedPaperResult[] = dbPapers.map((p, idx) => ({
+  const filteredPapers = options.excludeFixtures !== false
+    ? dbPapers.filter(isPaperPermittedForPublicSearch).slice(0, options.limit)
+    : dbPapers.slice(0, options.limit);
+
+  const papers: RankedPaperResult[] = filteredPapers.map((p, idx) => ({
     paper: formatToDomainPaper(p),
     rrfScore: 1.0 / (RRF_K + idx + 1),
     lexicalRank: idx + 1,
@@ -447,7 +476,7 @@ async function browsePapers(options: {
 
   return {
     papers,
-    total: dbPapers.length,
+    total: filteredPapers.length,
     isFallback: false,
     query: "",
     executionTimeMs: Date.now() - startTime,

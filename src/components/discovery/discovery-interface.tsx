@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Search,
   Globe,
@@ -38,6 +40,8 @@ const EXAMPLE_QUERIES = [
 ];
 
 export function DiscoveryInterface() {
+  const router = useRouter();
+  const { data: session } = useSession();
   const [query, setQuery] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [searchResult, setSearchResult] = React.useState<DiscoverySearchResult | null>(null);
@@ -95,6 +99,11 @@ export function DiscoveryInterface() {
     paper: NormalizedExternalPaper,
     attemptFullTextFetch: boolean = false
   ) => {
+    if (!session?.user) {
+      router.push(`/login?callbackUrl=/discover`);
+      return;
+    }
+
     setImportingPaperId(paper.id);
     try {
       const res = await importPaperMetadataAction(paper, { attemptFullTextFetch });
@@ -129,6 +138,10 @@ export function DiscoveryInterface() {
           });
         }
       } else {
+        if (res.error?.includes("Authentication required") || res.error?.includes("sign in")) {
+          router.push(`/login?callbackUrl=/discover`);
+          return;
+        }
         alert(res.error || "Failed to import paper.");
       }
     } catch (err: any) {

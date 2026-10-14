@@ -8,11 +8,12 @@ import { GraduationCap, ArrowRight, ShieldCheck, AlertCircle, Loader2 } from "lu
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card";
+import { getSafeCallbackUrl } from "@/lib/auth/safe-redirect";
 
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/";
+  const safeCallbackUrl = getSafeCallbackUrl(searchParams.get("callbackUrl"), "/");
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -42,7 +43,7 @@ export default function LoginPage() {
       if (result?.error) {
         setError("Invalid email or password. Please try again.");
       } else {
-        router.push(callbackUrl);
+        router.push(safeCallbackUrl);
         router.refresh();
       }
     } catch {
@@ -142,7 +143,10 @@ export default function LoginPage() {
 
         <CardFooter className="justify-center border-t border-slate-100 p-4 text-xs text-slate-500">
           <span>Don&apos;t have an account? </span>
-          <Link href="/register" className="font-semibold text-indigo-600 hover:underline ml-1">
+          <Link
+            href={`/register${safeCallbackUrl !== "/" ? `?callbackUrl=${encodeURIComponent(safeCallbackUrl)}` : ""}`}
+            className="font-semibold text-indigo-600 hover:underline ml-1"
+          >
             Create account
           </Link>
         </CardFooter>

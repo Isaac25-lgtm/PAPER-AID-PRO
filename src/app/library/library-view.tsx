@@ -34,6 +34,7 @@ import {
   Plus,
   Edit3,
   Filter,
+  Quote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,7 @@ import {
   setPaperCollectionsAction,
   lookupIdentifierAction,
   importPaperByIdentifierAction,
+  discoverPaperOpenAccessAction,
   previewReferenceImportAction,
   executeReferenceImportAction,
 } from "./actions";
@@ -139,6 +141,12 @@ export function LibraryView({
   const [doiImportSuccess, setDoiImportSuccess] = React.useState<string | null>(
     null
   );
+  const [discoveringOaId, setDiscoveringOaId] = React.useState<string | null>(null);
+  const [oaActionFeedback, setOaActionFeedback] = React.useState<{
+    paperId: string;
+    type: "success" | "error" | "info";
+    message: string;
+  } | null>(null);
 
   // BibTeX / RIS Import state
   const [importMode, setImportMode] = React.useState<"paste" | "file">("file");
@@ -563,6 +571,44 @@ export function LibraryView({
       setDoiLookupError(err.message || "Error importing paper.");
     } finally {
       setIsImportingDoi(false);
+    }
+  };
+
+  const handleDiscoverOpenAccess = async (paperId: string) => {
+    setDiscoveringOaId(paperId);
+    setOaActionFeedback(null);
+
+    try {
+      const res = await discoverPaperOpenAccessAction(paperId);
+      if (res.success && res.hasFullText) {
+        setOaActionFeedback({
+          paperId,
+          type: "success",
+          message: res.message || "Open-access PDF discovered and full text processed for AI analysis!",
+        });
+        router.refresh();
+      } else if (res.success) {
+        setOaActionFeedback({
+          paperId,
+          type: "info",
+          message: res.message || "External open-access reading link preserved. Manual PDF upload is available.",
+        });
+        router.refresh();
+      } else {
+        setOaActionFeedback({
+          paperId,
+          type: "error",
+          message: res.message || "No legally accessible open-access PDF located.",
+        });
+      }
+    } catch (err: any) {
+      setOaActionFeedback({
+        paperId,
+        type: "error",
+        message: err.message || "Discovery service error.",
+      });
+    } finally {
+      setDiscoveringOaId(null);
     }
   };
 
@@ -1165,25 +1211,49 @@ export function LibraryView({
                     >
                       {formatDocTypeLabel(item.documentType)}
                     </Badge>
+
+                    {item.isPreprint && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                        Preprint
+                      </span>
+                    )}
+
+                    {item.isOpenAccess && item.pdfUrl && !item.storagePath && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200">
+                        <Globe className="h-2.5 w-2.5" />
+                        <span>External OA</span>
+                      </span>
+                    )}
                   </div>
 
                   {/* Processing Status Badge */}
                   <div>
-                    {item.status === "COMPLETED" ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                        <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                        <span>Ready</span>
-                      </span>
-                    ) : item.status === "PROCESSING" ||
-                      item.status === "EMBEDDING" ? (
+                    {discoveringOaId === item.id ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200 animate-pulse">
                         <RefreshCw className="h-3 w-3 animate-spin text-indigo-600" />
-                        <span>Processing</span>
+                        <span>Searching for Open Access</span>
+                      </span>
+                    ) : item.status === "COMPLETED" && item.chunkCount > 0 ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                        <span>Ready for AI Analysis</span>
+                      </span>
+                    ) : item.status === "PROCESSING" ||
+                      item.status === "EMBEDDING" ||
+                      item.status === "TEXT_EXTRACTED" ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 animate-pulse">
+                        <RefreshCw className="h-3 w-3 animate-spin text-blue-600" />
+                        <span>Processing Full Text</span>
                       </span>
                     ) : item.status === "FAILED" ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
                         <AlertCircle className="h-3 w-3 text-rose-600" />
-                        <span>Failed</span>
+                        <span>Import Failed</span>
+                      </span>
+                    ) : item.status === "METADATA_ONLY" ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                        <AlertCircle className="h-3 w-3 text-amber-600" />
+                        <span>Reference Saved — Full Text Needed</span>
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
@@ -1255,7 +1325,7 @@ export function LibraryView({
                 {/* Footer Toolbar */}
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
                   {/* Left: Chat & PDF Actions */}
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {item.canChat ? (
                       <Link href={`/papers/${item.id}#ask-paper`}>
                         <Button
@@ -1281,6 +1351,67 @@ export function LibraryView({
                         />
                         <span>Retry</span>
                       </Button>
+                    ) : item.status === "METADATA_ONLY" ? (
+                      <>
+                        {item.doi && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            type="button"
+                            onClick={() => handleDiscoverOpenAccess(item.id)}
+                            disabled={discoveringOaId === item.id}
+                            className="h-7 px-2 text-xs text-indigo-700 bg-indigo-50/50 border-indigo-200 hover:bg-indigo-100 gap-1 font-semibold"
+                            title="Search for open-access PDF to process for AI analysis"
+                          >
+                            {discoveringOaId === item.id ? (
+                              <RefreshCw className="h-3 w-3 animate-spin text-indigo-600" />
+                            ) : (
+                              <Sparkles className="h-3 w-3 text-indigo-600" />
+                            )}
+                            <span>Find OA</span>
+                          </Button>
+                        )}
+
+                        {item.pdfUrl && (
+                          <a
+                            href={item.pdfUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 h-7 px-2 text-xs text-slate-700 hover:text-indigo-600 hover:bg-slate-50 rounded-md border border-slate-200 transition-colors font-medium"
+                            title="Open external publisher or repository full text"
+                          >
+                            <ExternalLink className="h-3 w-3 text-slate-500" />
+                            <span>Open Full Text</span>
+                          </a>
+                        )}
+
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          type="button"
+                          onClick={() => {
+                            setTitle(item.title);
+                            setIsUploadOpen(true);
+                          }}
+                          className="h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-100 gap-1"
+                          title="Upload manuscript PDF copy"
+                        >
+                          <FileUp className="h-3 w-3" />
+                          <span>Upload</span>
+                        </Button>
+
+                        <Link href={`/tools/citation-generator?query=${encodeURIComponent(item.doi || item.title)}`}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-100 gap-1"
+                            title="Cite this paper"
+                          >
+                            <Quote className="h-3 w-3" />
+                            <span>Cite</span>
+                          </Button>
+                        </Link>
+                      </>
                     ) : null}
 
                     {item.hasPdf && (
@@ -1375,6 +1506,27 @@ export function LibraryView({
                     </Button>
                   </div>
                 </div>
+
+                {oaActionFeedback && oaActionFeedback.paperId === item.id && (
+                  <div
+                    className={`mt-2.5 p-2 rounded-lg text-[11px] flex items-start gap-1.5 border animate-in fade-in ${
+                      oaActionFeedback.type === "success"
+                        ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                        : oaActionFeedback.type === "error"
+                        ? "bg-rose-50 text-rose-800 border-rose-200"
+                        : "bg-amber-50 text-amber-900 border-amber-200"
+                    }`}
+                  >
+                    {oaActionFeedback.type === "success" ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : oaActionFeedback.type === "error" ? (
+                      <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+                    )}
+                    <span className="leading-relaxed">{oaActionFeedback.message}</span>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -1743,6 +1895,55 @@ export function LibraryView({
                     </p>
                   )}
 
+                  {/* Open-Access Full-Text Discovery Indicator */}
+                  <div className="pt-2 border-t border-slate-200">
+                    {doiLookupResult.openAccessStatus === "OPEN_ACCESS_PDF_FOUND" ? (
+                      <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
+                        <div className="flex flex-wrap items-center gap-1.5 font-bold text-xs text-emerald-800">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                          <span>Open-Access PDF Found</span>
+                          {doiLookupResult.openAccessVersion && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-medium">
+                              {doiLookupResult.openAccessVersion === "publishedVersion"
+                                ? "Publisher Version"
+                                : doiLookupResult.openAccessVersion === "acceptedVersion"
+                                ? "Accepted Manuscript"
+                                : "Submitted Preprint"}
+                            </span>
+                          )}
+                          {doiLookupResult.openAccessLicense && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-medium uppercase">
+                              {doiLookupResult.openAccessLicense}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-emerald-700 leading-snug">
+                          {doiLookupResult.openAccessExplanation || "Full text will be automatically imported and processed for AI analysis."}
+                        </p>
+                      </div>
+                    ) : doiLookupResult.openAccessStatus === "OPEN_ACCESS_EXTERNAL_LINK_ONLY" ? (
+                      <div className="p-2.5 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-xs text-sky-800">
+                          <Globe className="h-3.5 w-3.5 text-sky-600 shrink-0" />
+                          <span>External Reading Link Available</span>
+                        </div>
+                        <p className="text-[11px] text-sky-700 leading-snug">
+                          {doiLookupResult.openAccessExplanation || "Reference and external reading link will be preserved in your library."}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800">
+                          <BookOpen className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                          <span>Bibliographic Reference Only</span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-snug">
+                          No open-access copy was located. Reference will be saved to your library; you can upload a private manuscript PDF anytime.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Assign to Collection */}
                   {collections.length > 0 && (
                     <div className="pt-2 border-t border-slate-200">
@@ -1769,17 +1970,25 @@ export function LibraryView({
                       type="button"
                       onClick={handleDoiImportSubmit}
                       disabled={isImportingDoi}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs gap-1.5"
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs gap-1.5 font-semibold"
                     >
                       {isImportingDoi ? (
                         <>
                           <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                          <span>Saving...</span>
+                          <span>
+                            {doiLookupResult.canAutoDownload
+                              ? "Importing & Processing Full Text..."
+                              : "Saving Reference..."}
+                          </span>
                         </>
                       ) : (
                         <>
                           <Plus className="h-3.5 w-3.5" />
-                          <span>Add to My Library</span>
+                          <span>
+                            {doiLookupResult.canAutoDownload
+                              ? "Add to Library & Process Full Text"
+                              : "Add to My Library"}
+                          </span>
                         </>
                       )}
                     </Button>

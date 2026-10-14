@@ -15,9 +15,11 @@ import { prisma } from "@/lib/prisma";
 import { NormalizedExternalPaper, LocalPaperStatus } from "./types";
 import { normalizeDoi } from "@/lib/identifiers";
 import { conservativeNormalizeTitle } from "./deduplicate";
+import { ADMIN_TEST_FIXTURE_IDS, classifyPaper } from "@/lib/auth/paper-authorization";
 
 export async function matchPapersAgainstLocalLibrary(
-  externalPapers: NormalizedExternalPaper[]
+  externalPapers: NormalizedExternalPaper[],
+  userId?: string
 ): Promise<NormalizedExternalPaper[]> {
   if (externalPapers.length === 0) return [];
 
@@ -34,9 +36,10 @@ export async function matchPapersAgainstLocalLibrary(
     .map((p) => p.pmcid)
     .filter((id): id is string => Boolean(id));
 
-  // Query existing papers from local PostgreSQL library
+  // Query existing papers from local PostgreSQL library, excluding administrator fixtures
   const matchedPapers = await prisma.paper.findMany({
     where: {
+      id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
       OR: [
         ...(dois.length > 0 ? [{ doi: { in: dois } }] : []),
         ...(pmids.length > 0 ? [{ pmid: { in: pmids } }] : []),
@@ -51,7 +54,22 @@ export async function matchPapersAgainstLocalLibrary(
       pmcid: true,
       status: true,
       storagePath: true,
+      sourceProvenance: true,
     },
+  });
+
+  // Filter out any private user uploads or system fixtures from public matching
+  const safeMatchedPapers = matchedPapers.filter((p) => {
+    const cls = classifyPaper(p);
+    if (cls === "ADMIN_TEST_FIXTURE" || cls === "AMBIGUOUS_HISTORICAL") return false;
+    if (cls === "PRIVATE_USER_DOCUMENT") {
+      const prov = p.sourceProvenance as any;
+      const ownerId = prov?.uploadedByUserId || prov?.ownerId || (p as any).uploadedByUserId;
+      if (!userId || ownerId !== userId) {
+        return false;
+      }
+    }
+    return true;
   });
 
   // Build lookup indexes
@@ -59,7 +77,7 @@ export async function matchPapersAgainstLocalLibrary(
   const pmidIndex = new Map<string, typeof matchedPapers[0]>();
   const pmcidIndex = new Map<string, typeof matchedPapers[0]>();
 
-  for (const p of matchedPapers) {
+  for (const p of safeMatchedPapers) {
     if (p.doi) doiIndex.set(p.doi.toLowerCase(), p);
     if (p.pmid) pmidIndex.set(p.pmid, p);
     if (p.pmcid) pmcidIndex.set(p.pmcid.toUpperCase(), p);
@@ -71,6 +89,9 @@ export async function matchPapersAgainstLocalLibrary(
 
   if (hasUnidentified) {
     const allTitles = await prisma.paper.findMany({
+      where: {
+        id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
+      },
       select: {
         id: true,
         title: true,
@@ -79,10 +100,18 @@ export async function matchPapersAgainstLocalLibrary(
         pmcid: true,
         status: true,
         storagePath: true,
+        sourceProvenance: true,
       },
     });
     localTitleMap = new Map();
     for (const p of allTitles) {
+      const cls = classifyPaper(p);
+      if (cls === "ADMIN_TEST_FIXTURE" || cls === "AMBIGUOUS_HISTORICAL") continue;
+      if (cls === "PRIVATE_USER_DOCUMENT") {
+        const prov = p.sourceProvenance as any;
+        const ownerId = prov?.uploadedByUserId || prov?.ownerId || (p as any).uploadedByUserId;
+        if (!userId || ownerId !== userId) continue;
+      }
       const norm = conservativeNormalizeTitle(p.title);
       if (norm.length >= 20) {
         localTitleMap.set(norm, p);

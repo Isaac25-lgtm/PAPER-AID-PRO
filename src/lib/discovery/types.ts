@@ -79,6 +79,7 @@ export interface DiscoverySearchOptions {
   yearEnd?: number;
   openAccessOnly?: boolean;
   enabledProviders?: SourceProvider[];
+  userId?: string;
 }
 
 export interface ScholarlyProvider {

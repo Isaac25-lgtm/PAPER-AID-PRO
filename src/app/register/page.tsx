@@ -8,9 +8,13 @@ import { GraduationCap, ArrowRight, ShieldCheck, AlertCircle, Loader2, CheckCirc
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card";
+import { useSearchParams } from "next/navigation";
+import { getSafeCallbackUrl } from "@/lib/auth/safe-redirect";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const safeCallbackUrl = getSafeCallbackUrl(searchParams.get("callbackUrl"), "/");
 
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
@@ -53,11 +57,11 @@ export default function RegisterPage() {
       });
 
       if (signInRes?.ok) {
-        router.push("/");
+        router.push(safeCallbackUrl);
         router.refresh();
       } else {
         // Fallback to login page if auto-signin didn't redirect
-        router.push("/login");
+        router.push(`/login${safeCallbackUrl !== "/" ? `?callbackUrl=${encodeURIComponent(safeCallbackUrl)}` : ""}`);
       }
     } catch {
       setError("An unexpected error occurred. Please try again.");
@@ -73,12 +77,12 @@ export default function RegisterPage() {
           <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white">
             <GraduationCap className="h-5 w-5" />
           </div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 mx-auto">
-            Private Beta
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 mx-auto">
+            Open Access
           </div>
           <h1 className="text-xl font-bold text-slate-900">Create Your Account</h1>
           <p className="text-xs text-slate-500">
-            Invite-only scientific research workspace. Enter your invited email address to continue.
+            Open academic research workspace. Personal or university email addresses welcome.
           </p>
         </CardHeader>
 
@@ -178,7 +182,10 @@ export default function RegisterPage() {
 
         <CardFooter className="justify-center border-t border-slate-100 p-4 text-xs text-slate-500">
           <span>Already registered? </span>
-          <Link href="/login" className="font-semibold text-indigo-600 hover:underline ml-1">
+          <Link
+            href={`/login${safeCallbackUrl !== "/" ? `?callbackUrl=${encodeURIComponent(safeCallbackUrl)}` : ""}`}
+            className="font-semibold text-indigo-600 hover:underline ml-1"
+          >
             Sign in
           </Link>
         </CardFooter>
