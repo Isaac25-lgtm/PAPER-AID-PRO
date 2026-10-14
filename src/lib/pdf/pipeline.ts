@@ -26,7 +26,7 @@ export async function processPaperDocument(
     where: { id: paperId },
     include: {
       processingJobs: {
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ attempt: "desc" }, { createdAt: "desc" }],
         take: 1,
       },
     },

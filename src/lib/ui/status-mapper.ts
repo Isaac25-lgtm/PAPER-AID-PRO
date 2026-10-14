@@ -134,3 +134,73 @@ export function isPaperReadyForAI(status: PaperProcessingStatus | string | null 
 export function isPaperFullTextNeeded(status: PaperProcessingStatus | string | null | undefined): boolean {
   return status === "METADATA_ONLY";
 }
+
+export type OpenAccessDisplayStatus =
+  | "SEARCHING_FOR_OPEN_ACCESS"
+  | "OPEN_ACCESS_PDF_FOUND"
+  | "PROCESSING_FULL_TEXT"
+  | "READY_FOR_AI_ANALYSIS"
+  | "REFERENCE_SAVED_FULL_TEXT_NEEDED"
+  | "IMPORT_FAILED";
+
+export function getOpenAccessDisplayState(params: {
+  status: PaperProcessingStatus | string | null | undefined;
+  hasPdf?: boolean;
+  chunkCount?: number;
+  isOpenAccess?: boolean;
+  isSearching?: boolean;
+  importError?: string | null;
+}): {
+  key: OpenAccessDisplayStatus;
+  label: string;
+  className: string;
+  description: string;
+} {
+  if (params.isSearching) {
+    return {
+      key: "SEARCHING_FOR_OPEN_ACCESS",
+      label: "Searching for Open Access",
+      className: "bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse",
+      description: "Querying Unpaywall, OpenAlex, and verified repositories for open-access copies.",
+    };
+  }
+
+  if (params.importError || params.status === "FAILED") {
+    return {
+      key: "IMPORT_FAILED",
+      label: "Import Failed",
+      className: "bg-rose-50 text-rose-800 border-rose-200",
+      description: params.importError || "Document acquisition or extraction could not be completed.",
+    };
+  }
+
+  if (params.status === "COMPLETED" && (params.chunkCount ?? 0) > 0) {
+    return {
+      key: "READY_FOR_AI_ANALYSIS",
+      label: "Ready for AI Analysis",
+      className: "bg-emerald-50 text-emerald-800 border-emerald-200",
+      description: "Full manuscript is indexed with verifiable evidence chunks.",
+    };
+  }
+
+  if (
+    params.status === "PROCESSING" ||
+    params.status === "TEXT_EXTRACTED" ||
+    params.status === "EMBEDDING" ||
+    params.status === "UPLOADED"
+  ) {
+    return {
+      key: "PROCESSING_FULL_TEXT",
+      label: "Processing Full Text",
+      className: "bg-blue-50 text-blue-700 border-blue-200 animate-pulse",
+      description: "Reading manuscript, parsing sections, and computing neural embeddings.",
+    };
+  }
+
+  return {
+    key: "REFERENCE_SAVED_FULL_TEXT_NEEDED",
+    label: "Reference Saved — Full Text Needed",
+    className: "bg-amber-50 text-amber-800 border-amber-200",
+    description: "Bibliographic metadata is saved in library. Full-text manuscript needed for AI features.",
+  };
+}

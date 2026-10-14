@@ -3,6 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { normalizeDoi, normalizePmid, normalizeArxivId } from "@/lib/identifiers";
 import { CrossrefProvider } from "@/lib/discovery/providers/crossref";
 import { PubMedProvider } from "@/lib/discovery/providers/pubmed";
+import {
+  discoverOpenAccessForDoi,
+  OpenAccessDiscoveryStatus,
+  OpenAccessVersion,
+} from "@/lib/discovery/open-access-service";
+import { acquireAndIngestLawfulFullText } from "@/lib/discovery/full-text-service";
 import { addPaperToCollection } from "./collections-service";
 import { revalidatePath } from "next/cache";
 
@@ -25,16 +31,67 @@ export interface LookupPaperMetadata {
   arxivId?: string | null;
   citationCount?: number;
   provider: "DATABASE" | "CROSSREF" | "PUBMED" | "ARXIV";
+  // Open-access discovery enhancements
+  openAccessStatus?: OpenAccessDiscoveryStatus;
+  openAccessPdfUrl?: string | null;
+  openAccessLandingPage?: string | null;
+  openAccessLicense?: string | null;
+  openAccessVersion?: OpenAccessVersion;
+  canAutoDownload?: boolean;
+  openAccessExplanation?: string;
+  isPreprint?: boolean;
+}
+
+/**
+ * Normalizes and cleans scientific abstract text.
+ * Strictly distinguishes an actual scientific abstract from an indexing note.
+ * If no genuine abstract is available, returns "No abstract available."
+ */
+export function sanitizeScientificAbstract(rawAbstract: string | null | undefined): string {
+  if (!rawAbstract || typeof rawAbstract !== "string") {
+    return "No abstract available.";
+  }
+
+  const cleaned = rawAbstract
+    .replace(/<jats:title>[^<]*<\/jats:title>/gi, "")
+    .replace(/<jats:[^>]+>/gi, "")
+    .replace(/<\/jats:[^>]+>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/^abstract\s*[:\.\-]?\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (cleaned.length < 20) {
+    return "No abstract available.";
+  }
+
+  const lower = cleaned.toLowerCase();
+  // Filter out artificial placeholder notes or indexing stubs
+  if (
+    lower.includes("indexed via crossref") ||
+    lower.includes("indexed via pubmed") ||
+    lower.includes("no abstract provided") ||
+    lower.includes("abstract unavailable") ||
+    lower === "no abstract available." ||
+    lower === "abstract not available."
+  ) {
+    return "No abstract available.";
+  }
+
+  return cleaned;
 }
 
 /**
  * Normalizes and classifies an arbitrary academic identifier string.
  */
 export function classifyAndNormalizeIdentifier(rawInput: string): NormalizedLookupResult {
+  if (!rawInput || typeof rawInput !== "string") {
+    return { type: "UNKNOWN", normalizedValue: "", displayValue: "" };
+  }
   const clean = rawInput.trim();
 
-  // 1. DOI detection: matches 10.xxxx/...
-  if (clean.includes("10.") || clean.toLowerCase().includes("doi.org/")) {
+  // 1. DOI detection: matches 10.xxxx/... or doi.org/... or doi:...
+  if (clean.includes("10.") || clean.toLowerCase().includes("doi.org/") || /^doi\s*:/i.test(clean)) {
     const doi = normalizeDoi(clean);
     if (doi) {
       return { type: "DOI", normalizedValue: doi, displayValue: doi };
@@ -63,6 +120,7 @@ export function classifyAndNormalizeIdentifier(rawInput: string): NormalizedLook
 /**
  * Looks up paper metadata by DOI, PMID, or arXiv ID.
  * First checks local database; falls back to live scholarly providers.
+ * For DOIs, automatically executes open-access full-text discovery.
  */
 export async function lookupPaperByIdentifier(
   rawInput: string
@@ -92,16 +150,38 @@ export async function lookupPaperByIdentifier(
     },
     include: {
       authors: { include: { author: true }, orderBy: { orderIndex: "asc" } },
+      _count: { select: { chunks: true } },
     },
   });
 
   if (existingPaper) {
+    const hasFullText = Boolean(existingPaper.storagePath && existingPaper._count.chunks > 0);
+    const prov = (existingPaper.sourceProvenance as any) || {};
+
+    // For DOI in database, also check if OA full-text could be discovered if it's currently METADATA_ONLY
+    let oaMetadata: Partial<LookupPaperMetadata> = {};
+    if (existingPaper.doi && existingPaper.status === "METADATA_ONLY" && !hasFullText) {
+      try {
+        const oa = await discoverOpenAccessForDoi(existingPaper.doi);
+        oaMetadata = {
+          openAccessStatus: oa.status,
+          openAccessPdfUrl: oa.bestLocation?.pdfUrl || null,
+          openAccessLandingPage: oa.bestLocation?.landingPageUrl || null,
+          openAccessLicense: oa.bestLocation?.license || null,
+          openAccessVersion: oa.bestLocation?.version,
+          canAutoDownload: Boolean(oa.bestLocation?.isLawfullyAcquirable && oa.bestLocation?.pdfUrl),
+          openAccessExplanation: oa.explanation,
+          isPreprint: oa.bestLocation?.isPreprint || false,
+        };
+      } catch {}
+    }
+
     return {
       success: true,
       existingPaperId: existingPaper.id,
       metadata: {
         title: existingPaper.title,
-        abstract: existingPaper.abstract,
+        abstract: sanitizeScientificAbstract(existingPaper.abstract),
         authors: existingPaper.authors.map((a) => a.author.name),
         journal: existingPaper.journal,
         publicationDate: existingPaper.publicationDate
@@ -112,6 +192,15 @@ export async function lookupPaperByIdentifier(
         arxivId: existingPaper.arxivId,
         citationCount: existingPaper.citationCount,
         provider: "DATABASE",
+        openAccessStatus: hasFullText ? "READY_FOR_AI" : oaMetadata.openAccessStatus || "REFERENCE_SAVED_FULL_TEXT_NEEDED",
+        openAccessPdfUrl: existingPaper.pdfUrl || oaMetadata.openAccessPdfUrl || null,
+        openAccessVersion: prov?.version || oaMetadata.openAccessVersion,
+        openAccessLicense: prov?.license || oaMetadata.openAccessLicense,
+        canAutoDownload: oaMetadata.canAutoDownload || false,
+        openAccessExplanation: hasFullText
+          ? "Full text already processed and ready for AI analysis."
+          : oaMetadata.openAccessExplanation || "Paper is in catalog as bibliographic reference.",
+        isPreprint: prov?.version === "submittedVersion" || oaMetadata.isPreprint || false,
       },
     };
   }
@@ -120,32 +209,72 @@ export async function lookupPaperByIdentifier(
   try {
     if (classified.type === "DOI") {
       const crossref = new CrossrefProvider();
-      const results = await crossref.search(classified.normalizedValue, {
-        limitPerProvider: 1,
-        timeoutMs: 7000,
-      });
+      const [crossrefResults, oaResult] = await Promise.all([
+        crossref.search(classified.normalizedValue, {
+          limitPerProvider: 1,
+          timeoutMs: 7000,
+        }).catch(() => []),
+        discoverOpenAccessForDoi(classified.normalizedValue, { timeoutMs: 7000 }),
+      ]);
 
-      const paper = results.find(
-        (p) => normalizeDoi(p.doi) === classified.normalizedValue
-      ) || results[0];
+      const paper =
+        crossrefResults.find(
+          (p) => normalizeDoi(p.doi) === classified.normalizedValue
+        ) || crossrefResults[0];
 
-      if (paper) {
+      // Title determination: Crossref > OA discovery result
+      const title = paper?.title || oaResult.title;
+      if (!title) {
         return {
-          success: true,
-          metadata: {
-            title: paper.title,
-            abstract: paper.abstract || "Abstract indexed via Crossref.",
-            authors: (paper.authors || []).map((a: any) =>
-              typeof a === "string" ? a : a.name
-            ),
-            journal: paper.journal,
-            publicationDate: paper.publicationDate || null,
-            doi: paper.doi,
-            citationCount: paper.citationCount ?? undefined,
-            provider: "CROSSREF",
-          },
+          success: false,
+          error: `Could not resolve metadata for DOI "${classified.displayValue}". Please verify the DOI.`,
         };
       }
+
+      // Abstract: Crossref > OA discovery > "No abstract available."
+      let abstract = sanitizeScientificAbstract(paper?.abstract);
+      if (abstract === "No abstract available." && oaResult.abstract) {
+        abstract = sanitizeScientificAbstract(oaResult.abstract);
+      }
+
+      // Authors: Crossref > OA discovery > []
+      let authors: string[] = [];
+      if (paper?.authors && paper.authors.length > 0) {
+        authors = paper.authors.map((a: any) =>
+          typeof a === "string" ? a : a.name
+        );
+      } else if (oaResult.authors && oaResult.authors.length > 0) {
+        authors = oaResult.authors;
+      }
+
+      const journal = paper?.journal || oaResult.journal || null;
+      const publicationDate = paper?.publicationDate || oaResult.publicationDate || null;
+
+      const canAutoDownload = Boolean(
+        oaResult.bestLocation?.isLawfullyAcquirable && oaResult.bestLocation?.pdfUrl
+      );
+
+      return {
+        success: true,
+        metadata: {
+          title,
+          abstract,
+          authors,
+          journal,
+          publicationDate,
+          doi: classified.normalizedValue,
+          citationCount: paper?.citationCount ?? undefined,
+          provider: "CROSSREF",
+          openAccessStatus: oaResult.status,
+          openAccessPdfUrl: oaResult.bestLocation?.pdfUrl || null,
+          openAccessLandingPage: oaResult.bestLocation?.landingPageUrl || null,
+          openAccessLicense: oaResult.bestLocation?.license || null,
+          openAccessVersion: oaResult.bestLocation?.version,
+          canAutoDownload,
+          openAccessExplanation: oaResult.explanation,
+          isPreprint: oaResult.bestLocation?.isPreprint || false,
+        },
+      };
     } else if (classified.type === "PMID") {
       const pubmed = new PubMedProvider();
       const results = await pubmed.search(classified.normalizedValue, {
@@ -158,11 +287,31 @@ export async function lookupPaperByIdentifier(
       ) || results[0];
 
       if (paper) {
+        const abstract = sanitizeScientificAbstract(paper.abstract);
+
+        // Check if paper has a DOI for open-access lookup
+        let oaData: Partial<LookupPaperMetadata> = {};
+        if (paper.doi) {
+          try {
+            const oa = await discoverOpenAccessForDoi(paper.doi);
+            oaData = {
+              openAccessStatus: oa.status,
+              openAccessPdfUrl: oa.bestLocation?.pdfUrl || null,
+              openAccessLandingPage: oa.bestLocation?.landingPageUrl || null,
+              openAccessLicense: oa.bestLocation?.license || null,
+              openAccessVersion: oa.bestLocation?.version,
+              canAutoDownload: Boolean(oa.bestLocation?.isLawfullyAcquirable && oa.bestLocation?.pdfUrl),
+              openAccessExplanation: oa.explanation,
+              isPreprint: oa.bestLocation?.isPreprint || false,
+            };
+          } catch {}
+        }
+
         return {
           success: true,
           metadata: {
             title: paper.title,
-            abstract: paper.abstract || "Abstract indexed via PubMed.",
+            abstract,
             authors: (paper.authors || []).map((a: any) =>
               typeof a === "string" ? a : a.name
             ),
@@ -171,6 +320,7 @@ export async function lookupPaperByIdentifier(
             doi: paper.doi || null,
             pmid: paper.pmid,
             provider: "PUBMED",
+            ...oaData,
           },
         };
       }
@@ -190,8 +340,13 @@ export async function lookupPaperByIdentifier(
 
 /**
  * Imports a paper into the user's library by DOI or PMID.
- * If the paper is already in the database, bookmarks it directly.
- * If external, creates a METADATA_ONLY record with provenance tracking.
+ * If the paper is already in the database:
+ * - Creates a Bookmark for the user if not already present.
+ * - If currently METADATA_ONLY and an eligible OA PDF is discovered, triggers acquisition.
+ * If external:
+ * - Creates Paper record with genuine abstract and metadata.
+ * - Discovers open access: If permitted, automatically acquires and processes full-text PDF.
+ * - Preserves reference and external reading links when automatic copy is not permitted.
  */
 export async function importPaperByIdentifier(params: {
   userId: string;
@@ -202,6 +357,8 @@ export async function importPaperByIdentifier(params: {
   paperId: string;
   isDuplicate: boolean;
   message: string;
+  status?: string;
+  hasFullText?: boolean;
 }> {
   const { userId, identifier, collectionName } = params;
 
@@ -213,46 +370,85 @@ export async function importPaperByIdentifier(params: {
   const meta = lookup.metadata;
   let paperId = lookup.existingPaperId;
 
-  // 1. If paper exists in database, check for duplicate bookmark
+  // 1. If paper exists in database:
   if (paperId) {
     const existingBookmark = await prisma.bookmark.findUnique({
       where: { userId_paperId: { userId, paperId } },
     });
 
-    if (existingBookmark) {
-      if (collectionName) {
-        await addPaperToCollection(userId, paperId, collectionName);
-      }
-      return {
-        success: true,
-        paperId,
-        isDuplicate: true,
-        message: `Paper "${meta.title}" is already in your library.`,
-      };
+    if (!existingBookmark) {
+      await prisma.bookmark.create({
+        data: { userId, paperId },
+      });
     }
-
-    // Add bookmark for user
-    await prisma.bookmark.create({
-      data: { userId, paperId },
-    });
 
     if (collectionName) {
       await addPaperToCollection(userId, paperId, collectionName);
     }
 
+    // Check if existing paper is METADATA_ONLY and can be upgraded via OA acquisition
+    const existingPaper = await prisma.paper.findUnique({
+      where: { id: paperId },
+      select: { status: true, storagePath: true, doi: true, sourceProvenance: true },
+    });
+
+    let autoDownloaded = false;
+    if (
+      existingPaper &&
+      existingPaper.status === "METADATA_ONLY" &&
+      !existingPaper.storagePath &&
+      meta.canAutoDownload &&
+      meta.openAccessPdfUrl
+    ) {
+      try {
+        const acq = await acquireAndIngestLawfulFullText(paperId, meta.openAccessPdfUrl, {
+          license: meta.openAccessLicense,
+          version: meta.openAccessVersion,
+          sourceName: `Lawful OA (${meta.openAccessVersion || "open access"})`,
+          userId,
+        });
+        autoDownloaded = acq.success;
+      } catch (acqErr) {
+        console.warn(`[importPaperByIdentifier] OA acquisition error for existing paper ${paperId}:`, acqErr);
+      }
+    }
+
     try {
       revalidatePath("/library");
+      revalidatePath("/saved");
+      revalidatePath(`/papers/${paperId}`);
     } catch {}
+
+    const fullTextMessage = autoDownloaded
+      ? " Open-access full text was successfully acquired and processed for AI analysis."
+      : "";
 
     return {
       success: true,
       paperId,
-      isDuplicate: false,
-      message: `Paper "${meta.title}" added to your library from database catalog.`,
+      isDuplicate: Boolean(existingBookmark),
+      hasFullText: autoDownloaded || Boolean(existingPaper?.storagePath),
+      message: existingBookmark
+        ? `Paper "${meta.title}" is already in your library.${fullTextMessage}`
+        : `Paper "${meta.title}" added to your library.${fullTextMessage}`,
     };
   }
 
-  // 2. Paper does not exist in DB: Create METADATA_ONLY record with provenance
+  // 2. Paper does not exist in DB: Create Paper record
+  const initialProvenance: Record<string, any> = {
+    provider: meta.provider,
+    importedByUserId: userId,
+    importedAt: new Date().toISOString(),
+    isMetadataOnly: true,
+    openAccessStatus: meta.openAccessStatus || "NO_OPEN_ACCESS_LOCATED",
+    openAccessVersion: meta.openAccessVersion || null,
+    openAccessLicense: meta.openAccessLicense || null,
+    license: meta.openAccessLicense || null,
+    isPreprint: meta.isPreprint || false,
+    openAccessLandingPage: meta.openAccessLandingPage || null,
+    isLawfulOpenAccess: false,
+  };
+
   const createdPaper = await prisma.paper.create({
     data: {
       title: meta.title,
@@ -264,14 +460,14 @@ export async function importPaperByIdentifier(params: {
       arxivId: meta.arxivId,
       citationCount: meta.citationCount || 0,
       status: "METADATA_ONLY",
-      isOpenAccess: false,
+      isOpenAccess: Boolean(
+        meta.openAccessStatus === "OPEN_ACCESS_PDF_FOUND" ||
+        meta.openAccessLandingPage ||
+        meta.openAccessPdfUrl
+      ),
+      pdfUrl: meta.openAccessPdfUrl || meta.openAccessLandingPage || null,
       storagePath: null,
-      sourceProvenance: {
-        provider: meta.provider,
-        importedByUserId: userId,
-        importedAt: new Date().toISOString(),
-        isMetadataOnly: true,
-      },
+      sourceProvenance: initialProvenance,
     },
   });
 
@@ -303,7 +499,30 @@ export async function importPaperByIdentifier(params: {
     }
   }
 
-  // Create bookmark
+  // 3. Automatic Open-Access PDF Acquisition & Processing Pipeline
+  let acquisitionSuccess = false;
+  let acquisitionError: string | undefined;
+
+  if (meta.canAutoDownload && meta.openAccessPdfUrl) {
+    try {
+      const acqResult = await acquireAndIngestLawfulFullText(paperId, meta.openAccessPdfUrl, {
+        license: meta.openAccessLicense,
+        version: meta.openAccessVersion,
+        sourceName: `Lawful OA (${meta.openAccessVersion || "open access"})`,
+        userId,
+      });
+
+      acquisitionSuccess = acqResult.success;
+      if (!acqResult.success) {
+        acquisitionError = acqResult.error;
+      }
+    } catch (acqErr: any) {
+      acquisitionError = acqErr.message || "Failed downloading open-access PDF";
+      console.warn(`[importPaperByIdentifier] Acquisition exception for ${paperId}:`, acqErr);
+    }
+  }
+
+  // Create bookmark for the user
   await prisma.bookmark.create({
     data: { userId, paperId },
   });
@@ -314,12 +533,167 @@ export async function importPaperByIdentifier(params: {
 
   try {
     revalidatePath("/library");
+    revalidatePath("/saved");
+    revalidatePath(`/papers/${paperId}`);
   } catch {}
+
+  let userMessage = `Paper "${meta.title}" added to your library.`;
+  if (acquisitionSuccess) {
+    const versionLabel =
+      meta.openAccessVersion === "publishedVersion"
+        ? "Publisher Version"
+        : meta.openAccessVersion === "acceptedVersion"
+        ? "Accepted Manuscript"
+        : meta.openAccessVersion === "submittedVersion"
+        ? "Preprint Version"
+        : "Open Access";
+    userMessage = `Paper "${meta.title}" imported (${versionLabel}) and full text processed for AI analysis.`;
+  } else if (meta.canAutoDownload && acquisitionError) {
+    userMessage = `Paper "${meta.title}" reference saved. Full-text download could not be completed (${acquisitionError}). Manual PDF upload is available.`;
+  } else if (meta.openAccessLandingPage || meta.openAccessPdfUrl) {
+    userMessage = `Paper "${meta.title}" saved. Open-access reading link preserved (direct server copy restricted by license).`;
+  } else {
+    userMessage = `Paper "${meta.title}" saved as bibliographic reference. No open-access PDF located.`;
+  }
 
   return {
     success: true,
     paperId,
     isDuplicate: false,
-    message: `Paper "${meta.title}" imported from ${meta.provider} into your library.`,
+    hasFullText: acquisitionSuccess,
+    message: userMessage,
+  };
+}
+
+/**
+ * On-demand discovery and acquisition for an existing paper in the library.
+ * Invoked when researcher clicks "Find Open-Access Version" on a paper detail page or library card.
+ */
+export async function discoverAndProcessPaperOpenAccess(
+  paperId: string,
+  userId: string
+): Promise<{
+  success: boolean;
+  status: OpenAccessDiscoveryStatus;
+  message: string;
+  hasFullText: boolean;
+}> {
+  const paper = await prisma.paper.findUnique({
+    where: { id: paperId },
+    select: {
+      id: true,
+      title: true,
+      doi: true,
+      status: true,
+      storagePath: true,
+      sourceProvenance: true,
+      _count: { select: { chunks: true } },
+    },
+  });
+
+  if (!paper) {
+    return {
+      success: false,
+      status: "NO_OPEN_ACCESS_LOCATED",
+      message: "Paper not found.",
+      hasFullText: false,
+    };
+  }
+
+  // If already processed with chunks, return immediately
+  if (paper.status === "COMPLETED" && paper.storagePath && paper._count.chunks > 0) {
+    return {
+      success: true,
+      status: "READY_FOR_AI",
+      message: "Full text is already indexed and ready for AI analysis.",
+      hasFullText: true,
+    };
+  }
+
+  if (!paper.doi) {
+    return {
+      success: false,
+      status: "REFERENCE_SAVED_FULL_TEXT_NEEDED",
+      message: "Paper does not have a DOI registered for automated open-access discovery. Manual PDF upload is required.",
+      hasFullText: false,
+    };
+  }
+
+  // Execute open-access discovery
+  const discovery = await discoverOpenAccessForDoi(paper.doi, { forceRefresh: true });
+
+  if (!discovery.isFound || !discovery.bestLocation) {
+    return {
+      success: false,
+      status: "NO_OPEN_ACCESS_LOCATED",
+      message: "No open-access copy located across Unpaywall and OpenAlex.",
+      hasFullText: false,
+    };
+  }
+
+  const loc = discovery.bestLocation;
+
+  // Case A: Directly acquirable permitted PDF
+  if (loc.isLawfullyAcquirable && loc.pdfUrl) {
+    const acq = await acquireAndIngestLawfulFullText(paper.id, loc.pdfUrl, {
+      license: loc.license,
+      version: loc.version,
+      sourceName: loc.sourceName,
+      userId,
+    });
+
+    try {
+      revalidatePath("/library");
+      revalidatePath("/saved");
+      revalidatePath(`/papers/${paperId}`);
+    } catch {}
+
+    if (acq.success) {
+      return {
+        success: true,
+        status: "READY_FOR_AI",
+        message: `Open-access PDF discovered (${loc.version === "submittedVersion" ? "Preprint" : "Version of Record"}) and processed successfully!`,
+        hasFullText: true,
+      };
+    } else {
+      return {
+        success: false,
+        status: "IMPORT_FAILED",
+        message: `Open-access PDF located, but processing could not complete: ${acq.error || "Extraction failed"}.`,
+        hasFullText: false,
+      };
+    }
+  }
+
+  // Case B: External link only (unclear/restrictive license or landing page only)
+  const extUrl = loc.landingPageUrl || loc.pdfUrl;
+  if (extUrl) {
+    await prisma.paper.update({
+      where: { id: paperId },
+      data: {
+        pdfUrl: extUrl,
+        isOpenAccess: true,
+      },
+    });
+
+    try {
+      revalidatePath("/library");
+      revalidatePath("/saved");
+      revalidatePath(`/papers/${paperId}`);
+    } catch {}
+
+    return {
+      success: true,
+      status: "OPEN_ACCESS_EXTERNAL_LINK_ONLY",
+      message: `Open-access external reading link preserved (${loc.license || "unspecified license"}). Automated server ingestion is restricted by publisher terms; you may view the external full text or upload a personal PDF copy.`,
+      hasFullText: false,
+    };
+  }
+
+  return {
+    success: false,
+    status: "REFERENCE_SAVED_FULL_TEXT_NEEDED",
+    message: "No legally accessible PDF found for automated import.",
+    hasFullText: false,
   };
 }

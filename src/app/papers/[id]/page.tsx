@@ -32,6 +32,7 @@ import { SavePaperButton } from "@/components/papers/save-paper-button";
 import { PaperQA } from "@/components/papers/paper-qa";
 import { getPaperStatusBadge } from "@/lib/ui/status-mapper";
 import { authorizePaperAccess } from "@/lib/auth/paper-authorization";
+import { OpenAccessDiscoveryButton } from "@/components/papers/open-access-discovery-button";
 
 export async function generateMetadata({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -126,6 +127,7 @@ export default async function PaperDetailPage({
   const isPrivateDoc = prov?.uploadedByUserId === session?.user?.id || prov?.ownerId === session?.user?.id;
   const docType = prov?.documentType;
   const institution = prov?.institution;
+  const isPreprint = prov?.version === "submittedVersion" || prov?.isPreprint === true;
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-10 space-y-8">
@@ -150,6 +152,11 @@ export default async function PaperDetailPage({
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
                   <Lock className="h-3 w-3" />
                   <span>Private Document</span>
+                </span>
+              )}
+              {isPreprint && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                  <span>Preprint (Submitted Version)</span>
                 </span>
               )}
               {docType && (
@@ -296,37 +303,59 @@ export default async function PaperDetailPage({
 
       {/* METADATA_ONLY Guidance Banner (Section 7) */}
       {isMetadataOnly && (
-        <Card className="rounded-2xl border border-amber-200 bg-amber-50/70 p-6 sm:p-7 space-y-4">
+        <Card className="rounded-2xl border border-amber-200 bg-amber-50/70 p-6 sm:p-7 space-y-4 shadow-2xs">
           <div className="flex items-start gap-3">
-            <div className="h-10 w-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+            <div className="h-10 w-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
               <AlertCircle className="h-5 w-5" />
             </div>
             <div className="space-y-1">
               <h3 className="text-base font-bold text-amber-950">
-                Full text needed for AI analysis
+                Reference Saved — Full Text Needed for AI Analysis
               </h3>
               <p className="text-xs sm:text-sm text-amber-900 leading-relaxed">
-                The paper has been discovered and saved, but the full manuscript is not available in the research library yet.
-                Full text is required before extracting evidence findings, running structured analysis, or asking grounded questions.
+                {paper.pdfUrl
+                  ? "An open-access reading link is available for this manuscript, but direct server processing is restricted by publisher terms. You may open the external publication or upload a personal PDF copy."
+                  : "This paper is saved as a bibliographic reference in your research library. Grounded paragraph evidence, interactive RAG Q&A, and structured summaries require full-text ingestion."}
               </p>
+              {isPreprint && (
+                <p className="text-xs text-amber-800 font-medium">
+                  Note: This manuscript is an author-submitted preprint and has not completed journal peer review.
+                </p>
+              )}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-amber-200/60">
+          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-amber-200/60">
+            <OpenAccessDiscoveryButton
+              paperId={paper.id}
+              hasDoi={Boolean(paper.doi)}
+              doi={paper.doi}
+              currentStatus={paper.status}
+              externalPdfUrl={paper.pdfUrl}
+            />
+
+            <Link href="/library">
+              <Button size="sm" variant="outline" className="border-amber-300 text-amber-900 bg-white hover:bg-amber-50 text-xs gap-1.5 shadow-2xs">
+                <Upload className="h-3.5 w-3.5 text-amber-700" />
+                <span>Upload PDF to My Library</span>
+              </Button>
+            </Link>
+
+            <Link href="/tools/citation-generator">
+              <Button size="sm" variant="outline" className="border-amber-300 text-amber-900 bg-white hover:bg-amber-50 text-xs gap-1.5 shadow-2xs">
+                <Quote className="h-3.5 w-3.5 text-amber-700" />
+                <span>Cite Paper</span>
+              </Button>
+            </Link>
+
             {session?.user?.role === "ADMIN" && (
               <Link href={`/admin/papers/${paper.id}/edit`}>
                 <Button size="sm" className="bg-amber-800 hover:bg-amber-900 text-white text-xs gap-1.5 shadow-xs">
                   <Upload className="h-3.5 w-3.5" />
-                  <span>Upload Manuscript PDF</span>
+                  <span>Admin Edit / Upload</span>
                 </Button>
               </Link>
             )}
-            <Link href="/discover">
-              <Button size="sm" variant="outline" className="border-amber-300 text-amber-900 bg-white hover:bg-amber-50 text-xs gap-1.5">
-                <Compass className="h-3.5 w-3.5 text-amber-700" />
-                <span>Discover Open-Access Papers</span>
-              </Button>
-            </Link>
           </div>
         </Card>
       )}

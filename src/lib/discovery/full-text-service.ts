@@ -27,8 +27,9 @@ import { prisma } from "@/lib/prisma";
 const MAX_PDF_SIZE = 30 * 1024 * 1024; // 30 MB
 const MAX_REDIRECTS = 3;
 
-// Strictly allowlisted trusted scholarly repositories for primary acquisition
+// Strictly allowlisted trusted scholarly repositories and publishers for primary acquisition
 export const TRUSTED_PDF_DOMAINS = [
+  // Primary repositories & preprints
   "ncbi.nlm.nih.gov",
   "pmc.ncbi.nlm.nih.gov",
   "europepmc.org",
@@ -39,6 +40,31 @@ export const TRUSTED_PDF_DOMAINS = [
   "biorxiv.org",
   "medrxiv.org",
   "zenodo.org",
+  "osf.io",
+  "figshare.com",
+  "hal.science",
+  "citeseerx.ist.psu.edu",
+  "core.ac.uk",
+  "scielo.org",
+  "nih.gov",
+  // Major open-access publishers
+  "nature.com",
+  "springer.com",
+  "biomedcentral.com",
+  "frontiersin.org",
+  "plos.org",
+  "mdpi.com",
+  "wiley.com",
+  "sciencedirect.com",
+  "elsevier.com",
+  "oup.com",
+  "royalsocietypublishing.org",
+  "cell.com",
+  "ieee.org",
+  "acm.org",
+  "pnas.org",
+  "tandfonline.com",
+  "sagepub.com",
 ];
 
 // Permitted CDN/object storage domains ONLY when redirected from an allowlisted repository
@@ -46,7 +72,9 @@ export const TRUSTED_REDIRECT_CDN_DOMAINS = [
   "cloudfront.net",
   "s3.amazonaws.com",
   "storage.googleapis.com",
+  "blob.core.windows.net",
   "osf.io",
+  "fastly.net",
 ];
 
 // Disallowed private/loopback/internal host patterns
@@ -128,9 +156,16 @@ export function validateSafePdfUrl(
       }
     }
 
-    const isTrustedRepo = TRUSTED_PDF_DOMAINS.some(
-      (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
-    );
+    const isAcademicInstitution =
+      hostname.endsWith(".edu") ||
+      hostname.endsWith(".ac.uk") ||
+      hostname.endsWith(".edu.au");
+
+    const isTrustedRepo =
+      isAcademicInstitution ||
+      TRUSTED_PDF_DOMAINS.some(
+        (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+      );
 
     const isTrustedCdn =
       isRedirectHop &&
@@ -230,13 +265,22 @@ export function resolveFullTextAvailability(
   };
 }
 
+export interface LawfulIngestionOptions {
+  license?: string | null;
+  version?: string | null;
+  sourceName?: string | null;
+  provenance?: string | null;
+  userId?: string | null;
+}
+
 /**
  * Downloads, validates, and ingests an authentic open-access PDF into the local library.
  * Implements manual redirect handling, per-hop DNS validation, and secret header hygiene.
  */
 export async function acquireAndIngestLawfulFullText(
   paperId: string,
-  targetPdfUrl: string
+  targetPdfUrl: string,
+  options: LawfulIngestionOptions = {}
 ): Promise<AcquisitionResult> {
   const paper = await prisma.paper.findUnique({
     where: { id: paperId },
@@ -247,6 +291,18 @@ export async function acquireAndIngestLawfulFullText(
       success: false,
       status: "FAILED",
       error: `Paper with ID "${paperId}" not found in database.`,
+    };
+  }
+
+  const prov = (paper.sourceProvenance as any) || {};
+  const isPrivateDoc = Boolean(prov.uploadedByUserId || prov.ownerId);
+
+  // If paper is a private user document, NEVER overwrite its manuscript!
+  if (isPrivateDoc && paper.storagePath) {
+    return {
+      success: false,
+      status: "FAILED",
+      error: "Cannot overwrite private user-owned research document with external full text.",
     };
   }
 
@@ -441,13 +497,26 @@ export async function acquireAndIngestLawfulFullText(
     const uploadRes = await uploadPaperPdf(paperId, pdfBuffer!);
     storagePath = uploadRes.storagePath;
 
-    // Update paper with storage path
+    const updatedProv = {
+      ...prov,
+      acquisitionSource: options.sourceName || "LAWFULLY_ACQUIRED_OPEN_ACCESS",
+      acquiredAt: new Date().toISOString(),
+      license: options.license || null,
+      version: options.version || null,
+      isLawfulOpenAccess: true,
+      isPublicOpenAccess: true,
+      originalPdfUrl: targetPdfUrl,
+    };
+
+    // Update paper with storage path, open-access flag, and structured provenance
     await prisma.paper.update({
       where: { id: paperId },
       data: {
         storagePath,
         pdfUrl: uploadRes.publicUrl,
         status: "UPLOADED",
+        isOpenAccess: true,
+        sourceProvenance: updatedProv,
       },
     });
   } catch (storageErr: any) {
@@ -466,6 +535,20 @@ export async function acquireAndIngestLawfulFullText(
       status: "FAILED",
       storagePath,
       error: `Ingestion pipeline failed: ${pipelineRes.error}`,
+    };
+  }
+
+  // Verify that usable extracted content exists before marking ready
+  if (!pipelineRes.chunkCount || pipelineRes.chunkCount === 0) {
+    await prisma.paper.update({
+      where: { id: paperId },
+      data: { status: "FAILED" },
+    });
+    return {
+      success: false,
+      status: "FAILED",
+      storagePath,
+      error: "PDF text extraction produced 0 usable chunks. Document may be scanned or empty.",
     };
   }
 
