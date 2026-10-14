@@ -13,17 +13,28 @@ import {
   Compass,
   CheckCircle2,
   Sparkles,
+  PenTool,
+  Globe,
+  Upload,
+  MessageSquare,
+  Library,
+  FileEdit,
+  ExternalLink,
+  GraduationCap,
+  ChevronRight,
+  Database,
+  Quote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { SectionHeader } from "@/components/shared/section-header";
 import { PaperCard } from "@/components/shared/paper-card";
 import { Paper } from "@/lib/types/paper";
 import { prisma } from "@/lib/prisma";
 import { FAQsSection } from "@/components/home/faqs-section";
 import { HeroSearch } from "@/components/home/hero-search";
-import { ADMIN_TEST_FIXTURE_IDS } from "@/lib/auth/paper-authorization";
+import { ADMIN_TEST_FIXTURE_IDS, isPublicScholarlyPaper, getPublicPaperWhereInput } from "@/lib/auth/paper-authorization";
 
 // High-fidelity fallback research papers if database is empty
 const fallbackPapers: Paper[] = [
@@ -71,48 +82,6 @@ const fallbackPapers: Paper[] = [
     createdAt: "2024-05-10T12:00:00Z",
     updatedAt: "2024-05-10T12:00:00Z",
   },
-  {
-    id: "paper-003",
-    title: "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
-    abstract:
-      "Large pre-trained language models have been shown to store factual knowledge in their parameters. However, their ability to access and precisely manipulate knowledge is still limited. We build RAG models where the parametric memory is a pre-trained seq2seq model and the non-parametric memory is a dense vector index of Wikipedia.",
-    publicationDate: "2023-11-20",
-    journal: "Conference on Empirical Methods in Natural Language Processing (EMNLP)",
-    doi: "10.48550/arXiv.2005.11401",
-    status: "COMPLETED",
-    keywords: ["RAG", "Information Retrieval", "Vector Search", "Hallucination Mitigation"],
-    authors: [
-      { id: "a-7", name: "Patrick Lewis", institution: "Meta AI" },
-      { id: "a-8", name: "Ethan Perez", institution: "NYU" },
-      { id: "a-9", name: "Douwe Kiela", institution: "Stanford University" },
-    ],
-    categories: [
-      { id: "c-2", name: "NLP" },
-      { id: "c-1", name: "Artificial Intelligence" },
-    ],
-    createdAt: "2024-02-01T08:00:00Z",
-    updatedAt: "2024-02-01T08:00:00Z",
-  },
-  {
-    id: "paper-004",
-    title: "Fault-Tolerant Quantum Computation with Surface Codes and Magic State Distillation",
-    abstract:
-      "Surface codes offer the highest known fault-tolerance thresholds against physical errors in quantum bits. We analyze practical architectures for fault-tolerant universal quantum computation utilizing 2D nearest-neighbor coupling lattices, showing threshold error rates above 1%.",
-    publicationDate: "2024-01-18",
-    journal: "Physical Review X (Quantum)",
-    doi: "10.1103/PhysRevX.12.041012",
-    status: "COMPLETED",
-    keywords: ["Quantum Computing", "Surface Codes", "Error Correction", "Qubits"],
-    authors: [
-      { id: "a-10", name: "Austin G. Fowler", institution: "Google Quantum AI" },
-      { id: "a-11", name: "John M. Martinis", institution: "UC Santa Barbara" },
-    ],
-    categories: [
-      { id: "c-4", name: "Quantum Computing" },
-    ],
-    createdAt: "2024-01-20T14:30:00Z",
-    updatedAt: "2024-01-20T14:30:00Z",
-  },
 ];
 
 export default async function HomePage({
@@ -137,16 +106,12 @@ export default async function HomePage({
   }
 
   const isAdmin = session?.user?.role === "ADMIN";
+  const isAuthenticated = Boolean(session?.user);
 
-  // Fetch real research papers directly from PostgreSQL
+  // Fetch real research papers directly from PostgreSQL (compact preview of 2 top papers)
   const dbPapers = await prisma.paper.findMany({
-    where: isAdmin
-      ? {}
-      : {
-          id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
-          storagePath: null,
-        },
-    take: 6,
+    where: isAdmin ? {} : getPublicPaperWhereInput(),
+    take: 10,
     include: {
       authors: {
         include: { author: true },
@@ -160,25 +125,11 @@ export default async function HomePage({
     orderBy: [{ citationCount: "desc" }, { createdAt: "desc" }],
   });
 
-  // Fetch real categories with paper counts (hide categories with 0 papers)
-  const dbCategories = await prisma.category.findMany({
-    where: {
-      papers: {
-        some: {},
-      },
-    },
-    include: {
-      _count: {
-        select: { papers: true },
-      },
-    },
-    orderBy: { papers: { _count: "desc" } },
-    take: 6,
-  });
+  const publicDbPapers = isAdmin ? dbPapers : dbPapers.filter(isPublicScholarlyPaper);
 
   const featuredPapers: Paper[] =
-    dbPapers.length > 0
-      ? dbPapers.map((p) => ({
+    publicDbPapers.length > 0
+      ? publicDbPapers.slice(0, 2).map((p) => ({
           id: p.id,
           title: p.title,
           abstract: p.abstract,
@@ -221,8 +172,84 @@ export default async function HomePage({
         }))
       : fallbackPapers;
 
+  // Features configuration with authentication redirects for protected tools
+  const features = [
+    {
+      id: "scholarly-search",
+      title: "Scholarly Search",
+      tag: "Literature Discovery",
+      icon: Compass,
+      description:
+        "Query vast scholarly literature across PubMed, Crossref, and Semantic Scholar with smart deduplication and citation metrics.",
+      actionText: "Search Literature",
+      href: "/discover",
+      isProtected: false,
+      badgeColor: "bg-blue-50 text-blue-700 border-blue-200",
+    },
+    {
+      id: "my-library",
+      title: "My Library & Collections",
+      tag: "Research Workspace",
+      icon: BookOpen,
+      description:
+        "Curate papers into personalized color-coded collections, manage private lab manuscripts, and organize citations in a dedicated library.",
+      actionText: isAuthenticated ? "Open My Library" : "Sign in to Library",
+      href: isAuthenticated ? "/library" : "/login?callbackUrl=/library",
+      isProtected: true,
+      badgeColor: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    },
+    {
+      id: "chat-pdf",
+      title: "Chat with PDF",
+      tag: "Document Intelligence",
+      icon: FileText,
+      description:
+        "Upload or select any manuscript for grounded AI inquiry. Inspect exact page numbers, paragraph quotes, and verified citations.",
+      actionText: "Try Chat with PDF",
+      href: "/tools/chat-pdf",
+      isProtected: false,
+      badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    },
+    {
+      id: "multi-paper-chat",
+      title: "Multi-Paper Research Chat",
+      tag: "Comparative Synthesis",
+      icon: Layers,
+      description:
+        "Select multiple studies to synthesize cross-manuscript evidence, detect consensus, and compare experimental metrics with verifiable source citations.",
+      actionText: isAuthenticated ? "Open Research Threads" : "Explore Research Chat",
+      href: isAuthenticated ? "/conversations" : "/research",
+      isProtected: false,
+      badgeColor: "bg-purple-50 text-purple-700 border-purple-200",
+    },
+    {
+      id: "research-editor",
+      title: "AI Research Editor",
+      tag: "Academic Writing",
+      icon: PenTool,
+      description:
+        "Draft academic articles with autosave, insert verified passage citations linked to source chunks, and refine prose with formal tone rewrites.",
+      actionText: isAuthenticated ? "Launch Editor" : "Sign in to Edit",
+      href: isAuthenticated ? "/editor" : "/login?callbackUrl=/editor",
+      isProtected: true,
+      badgeColor: "bg-amber-50 text-amber-800 border-amber-200",
+    },
+    {
+      id: "doi-importer",
+      title: "DOI Import & Full-Text Discovery",
+      tag: "Automated Ingestion",
+      icon: Globe,
+      description:
+        "Enter any standard DOI to retrieve bibliographic metadata, discover legal open-access copies via Unpaywall and OpenAlex, and process full text.",
+      actionText: isAuthenticated ? "Import in Library" : "Sign in to Import",
+      href: isAuthenticated ? "/library" : "/login?callbackUrl=/library",
+      isProtected: true,
+      badgeColor: "bg-sky-50 text-sky-700 border-sky-200",
+    },
+  ];
+
   return (
-    <div className="space-y-16 sm:space-y-24 pb-16">
+    <div className="space-y-20 sm:space-y-28 pb-20">
       {/* Access Denied / Unauthorized Banner */}
       {isUnauthorized && (
         <div className="mx-auto max-w-3xl px-4 pt-6">
@@ -240,154 +267,301 @@ export default async function HomePage({
         </div>
       )}
 
-      {/* 1. HERO SECTION */}
+      {/* ========================================================================= */}
+      {/* 1. HERO SECTION                                                           */}
+      {/* ========================================================================= */}
       <section className="relative overflow-hidden pt-12 sm:pt-20 pb-16 border-b border-slate-200/70 bg-gradient-to-b from-indigo-50/50 via-white to-transparent">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center space-y-8">
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200/80 bg-indigo-50/80 px-4 py-1.5 text-xs font-semibold text-indigo-700 shadow-xs">
+          {/* Top Pill Marker */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200/80 bg-indigo-50/90 px-4 py-1.5 text-xs font-semibold text-indigo-700 shadow-xs">
             <ShieldCheck className="h-3.5 w-3.5 text-indigo-600" />
-            <span>Evidence-Grounded Literature Intelligence</span>
+            <span>Evidence-Grounded Academic Intelligence Platform</span>
           </div>
 
-          {/* Main Title & Conceptual Direction */}
-          <div className="max-w-4xl mx-auto space-y-4">
+          {/* Main Headline & Supporting Statement */}
+          <div className="max-w-4xl mx-auto space-y-5">
             <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-slate-900 leading-[1.08]">
-              AI Research Hub
+              Discover. Analyze. Write.
             </h1>
-            <p className="text-lg sm:text-2xl font-medium text-indigo-900 max-w-2xl mx-auto">
-              Discover, understand, and organize scientific research.
-            </p>
-            <p className="text-sm sm:text-base text-slate-600 leading-relaxed max-w-2xl mx-auto">
-              A scientific literature and research manuscript platform designed for rigorous scientific inquiry.
-              Read manuscripts, inspect verifiable evidence citations, and organize research in your personal library.
+            <p className="text-lg sm:text-xl md:text-2xl font-medium text-slate-700 max-w-3xl mx-auto leading-relaxed">
+              An AI-powered research workspace for discovering scholarly evidence, organizing sources, analyzing papers and writing academic documents.
             </p>
           </div>
 
-          {/* Search Box with Dual Target Selection */}
-          <HeroSearch />
-
-          {/* Quick Action Navigation */}
+          {/* Call to Action Buttons */}
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <Button asChild variant="outline" size="sm" className="border-slate-300 text-xs text-slate-700 font-medium">
-              <Link href="/papers">
-                <BookOpen className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
-                Browse Library
+            <Button
+              asChild
+              size="lg"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-7 shadow-md transition-all hover:shadow-lg"
+            >
+              <Link href={isAuthenticated ? "/library" : "/register?callbackUrl=/library"}>
+                <span>Get Started</span>
+                <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
-            <Button asChild variant="outline" size="sm" className="border-slate-300 text-xs text-slate-700 font-medium">
-              <Link href="/discover">
-                <Compass className="mr-1.5 h-3.5 w-3.5 text-indigo-600" />
-                Discover Literature
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm" className="border-slate-300 text-xs text-slate-700 font-medium">
-              <Link href="/research">
-                <Layers className="mr-1.5 h-3.5 w-3.5 text-indigo-600" />
-                Research Workspace
-              </Link>
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold px-6"
+            >
+              <a href="#features">Explore Features</a>
             </Button>
           </div>
 
-          {/* Quick Topic Chips */}
+          {/* Integrated Discovery Search Box */}
+          <div className="pt-4 max-w-3xl mx-auto">
+            <HeroSearch />
+          </div>
+
+          {/* Quick Research Topic Chips */}
           <div className="pt-2 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-500">
-            <span className="font-semibold text-slate-700">Sample Topics:</span>
-            <Link href="/papers?q=Transformer" className="hover:text-indigo-600 underline-offset-2 hover:underline">
+            <span className="font-semibold text-slate-700">Explore Topics:</span>
+            <Link href="/discover?q=Transformers" className="hover:text-indigo-600 underline-offset-2 hover:underline">
               Attention Transformers
             </Link>
             <span>•</span>
-            <Link href="/papers?q=AlphaFold" className="hover:text-indigo-600 underline-offset-2 hover:underline">
+            <Link href="/discover?q=AlphaFold+3" className="hover:text-indigo-600 underline-offset-2 hover:underline">
               AlphaFold 3
             </Link>
             <span>•</span>
-            <Link href="/papers?q=Ultrasound" className="hover:text-indigo-600 underline-offset-2 hover:underline">
-              Medical Ultrasound
+            <Link href="/discover?q=Retrieval+Augmented+Generation" className="hover:text-indigo-600 underline-offset-2 hover:underline">
+              RAG Architectures
             </Link>
             <span>•</span>
-            <Link href="/papers?q=Quantum" className="hover:text-indigo-600 underline-offset-2 hover:underline">
+            <Link href="/discover?q=Quantum+Error+Mitigation" className="hover:text-indigo-600 underline-offset-2 hover:underline">
               Surface Codes
             </Link>
             <span>•</span>
-            <Link href="/papers?q=Breast+Cancer" className="hover:text-indigo-600 underline-offset-2 hover:underline">
-              Breast Cancer AI
+            <Link href="/discover?q=Breast+Ultrasound" className="hover:text-indigo-600 underline-offset-2 hover:underline">
+              Biomedical Imaging
             </Link>
           </div>
 
-          {/* Platform Architecture Highlights (Factual) */}
+          {/* Architectural Trust Guarantees */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto pt-8 border-t border-slate-200/60 text-left">
             <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-xs space-y-1">
-              <div className="text-xs font-bold uppercase tracking-wider text-indigo-600">Verifiable Grounding</div>
-              <div className="text-sm font-bold text-slate-900">Source Evidence</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-indigo-600">Global Catalog</div>
+              <div className="text-sm font-bold text-slate-900">Vast Scholarly Index</div>
               <p className="text-[11px] text-slate-500 leading-snug">
-                Key findings anchored to supporting manuscript chunks and page context.
+                Unified discovery via PubMed, Crossref, and Semantic Scholar.
               </p>
             </div>
             <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-xs space-y-1">
-              <div className="text-xs font-bold uppercase tracking-wider text-emerald-600">Dual Architecture</div>
-              <div className="text-sm font-bold text-slate-900">Strict Separation</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-emerald-600">Strict Grounding</div>
+              <div className="text-sm font-bold text-slate-900">Verifiable Excerpts</div>
               <p className="text-[11px] text-slate-500 leading-snug">
-                Verbatim manuscript text strictly segregated from AI interpretations.
+                Every AI response is anchored to exact manuscript page numbers.
               </p>
             </div>
             <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-xs space-y-1">
-              <div className="text-xs font-bold uppercase tracking-wider text-blue-600">Original PDFs</div>
-              <div className="text-sm font-bold text-slate-900">Direct Reading</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-blue-600">Verifiable Citations</div>
+              <div className="text-sm font-bold text-slate-900">Evidence-Grounded Answers</div>
               <p className="text-[11px] text-slate-500 leading-snug">
-                Stream original PDFs inline and inspect structured sections.
+                Strict claim-to-chunk provenance segregation with verified excerpts.
               </p>
             </div>
             <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-xs space-y-1">
-              <div className="text-xs font-bold uppercase tracking-wider text-purple-600">Personal Library</div>
-              <div className="text-sm font-bold text-slate-900">Research Workspace</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-purple-600">Open Access</div>
+              <div className="text-sm font-bold text-slate-900">Legal Full Text</div>
               <p className="text-[11px] text-slate-500 leading-snug">
-                Bookmark and curate scientific literature in your private library.
+                Automated Unpaywall and OpenAlex discovery with rights checks.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 2. AUTHENTICATED USER QUICK ACCESS BANNER */}
-      {session?.user && (
+      {/* ========================================================================= */}
+      {/* 2. AUTHENTICATED USER QUICK RETURN BANNER                                 */}
+      {/* ========================================================================= */}
+      {isAuthenticated && (
         <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-2xl bg-indigo-50/70 border border-indigo-100">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-2xl bg-indigo-50/80 border border-indigo-200 shadow-xs">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shrink-0 shadow-xs">
                 <Bookmark className="h-5 w-5" />
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  Welcome back, {session.user.name || "Researcher"}
+                  Welcome back, {session?.user?.name || "Researcher"}
                 </h3>
                 <p className="text-xs text-slate-600">
-                  You have <span className="font-semibold text-indigo-700">{userSavedCount} paper{userSavedCount === 1 ? "" : "s"}</span> saved in your personal reading library.
+                  You have <span className="font-semibold text-indigo-700">{userSavedCount} paper{userSavedCount === 1 ? "" : "s"}</span> saved in your research library.
                 </p>
               </div>
             </div>
-            <Button asChild size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold shrink-0">
-              <Link href="/saved">
-                Open My Library
-                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-              </Link>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button asChild size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold shrink-0">
+                <Link href="/library">
+                  <span>My Library</span>
+                  <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline" className="text-xs font-semibold shrink-0 border-indigo-200 bg-white">
+                <Link href="/editor">
+                  <span>Open Editor</span>
+                </Link>
+              </Button>
+            </div>
           </div>
         </section>
       )}
 
-      {/* 3. FEATURED SCIENTIFIC PAPERS */}
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <SectionHeader
-            badge="Scientific Literature"
-            title="Featured Research Catalog"
-            description="Explore scientific manuscripts with structured sections, verifiable citations, and original PDF access."
-          />
-          <Link
-            href="/papers"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors shrink-0"
-          >
-            <span>Browse Full Catalog ({featuredPapers.length}+)</span>
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+      {/* ========================================================================= */}
+      {/* 3. CAPABILITIES & FEATURES SHOWCASE                                       */}
+      {/* ========================================================================= */}
+      <section id="features" className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-12">
+        <div className="text-center max-w-3xl mx-auto space-y-3">
+          <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+            <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+            <span>Comprehensive Academic AI Suite</span>
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+            Built for High-Stakes Scientific Literature
+          </h2>
+          <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
+            Every feature is engineered to provide evidence-grounded answers, enforce verified provenance, and accelerate empirical discovery.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {features.map((feature) => {
+            const Icon = feature.icon;
+            return (
+              <Card
+                key={feature.id}
+                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white hover:border-indigo-300 hover:shadow-lg transition-all duration-200 flex flex-col justify-between"
+              >
+                <div className="p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-50 text-indigo-600 border border-slate-200 group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-600 transition-colors shadow-2xs">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <Badge variant="outline" className={`text-[10px] font-bold uppercase tracking-wider ${feature.badgeColor}`}>
+                      {feature.tag}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                      {feature.title}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                      {feature.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-6 pt-0 border-t border-slate-100 mt-2">
+                  <Button
+                    asChild
+                    variant="ghost"
+                    className="w-full justify-between text-xs font-bold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/70 px-3 h-9"
+                  >
+                    <Link href={feature.href}>
+                      <span>{feature.actionText}</span>
+                      <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                    </Link>
+                  </Button>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ========================================================================= */}
+      {/* 4. HOW IT WORKS: THE EVIDENCE WORKFLOW                                    */}
+      {/* ========================================================================= */}
+      <section id="how-it-works" className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-12">
+        <SectionHeader
+          badge="Scientific Workflow"
+          title="How It Works"
+          description="A complete research cycle from global paper discovery to verifiable manuscript drafting."
+        />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 relative">
+          {/* Step 1 */}
+          <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3 relative group hover:border-indigo-300 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700 font-extrabold text-sm border border-indigo-100">
+                01
+              </div>
+              <Compass className="h-5 w-5 text-indigo-500" />
+            </div>
+            <h3 className="font-bold text-base text-slate-900">Discover Research</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Search across PubMed, Crossref, and Semantic Scholar or paste any DOI for automated open-access metadata resolution.
+            </p>
+          </div>
+
+          {/* Step 2 */}
+          <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3 relative group hover:border-indigo-300 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700 font-extrabold text-sm border border-blue-100">
+                02
+              </div>
+              <BookOpen className="h-5 w-5 text-blue-500" />
+            </div>
+            <h3 className="font-bold text-base text-slate-900">Save and Organize</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Curate literature in your private library, organize studies into thematic folders, and track full-text status.
+            </p>
+          </div>
+
+          {/* Step 3 */}
+          <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3 relative group hover:border-indigo-300 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 font-extrabold text-sm border border-emerald-100">
+                03
+              </div>
+              <Layers className="h-5 w-5 text-emerald-500" />
+            </div>
+            <h3 className="font-bold text-base text-slate-900">Analyze Evidence</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Interrogate manuscripts with grounded PDF chat or multi-paper synthesis where every finding is linked to page excerpts.
+            </p>
+          </div>
+
+          {/* Step 4 */}
+          <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3 relative group hover:border-indigo-300 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-700 font-extrabold text-sm border border-purple-100">
+                04
+              </div>
+              <PenTool className="h-5 w-5 text-purple-500" />
+            </div>
+            <h3 className="font-bold text-base text-slate-900">Write and Cite</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Compose manuscripts in the AI Research Editor, auto-insert verifiable citations, and export literature bibliographies.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ========================================================================= */}
+      {/* 5. FEATURED RESEARCH PREVIEW (COMPACT PREVIEW)                           */}
+      {/* ========================================================================= */}
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-slate-200 pb-4">
+          <div>
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 uppercase tracking-wider mb-1">
+              <BookOpen className="h-3.5 w-3.5" />
+              <span>Grounded Literature Catalog</span>
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900">Featured Research Studies</h2>
+            <p className="text-xs sm:text-sm text-slate-500">
+              Sample high-impact scientific manuscripts with structured findings and verified paragraph anchors.
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm" className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 shrink-0 font-semibold text-xs">
+            <Link href="/papers">
+              <span>Browse Full Catalog</span>
+              <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+            </Link>
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -397,135 +571,47 @@ export default async function HomePage({
         </div>
       </section>
 
-      {/* 4. RESEARCH DISCIPLINES & CATEGORIES */}
-      {dbCategories.length > 0 && (
-        <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-            <SectionHeader
-              badge="Taxonomy"
-              title="Explore by Research Category"
-              description="Browse scientific literature across foundational and emerging research disciplines."
-            />
-            <Link
-              href="/categories"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors shrink-0"
-            >
-              <span>All Disciplines</span>
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {dbCategories.map((cat) => (
-              <Link
-                key={cat.id}
-                href={`/papers?category=${cat.slug}`}
-                className="group p-5 rounded-2xl bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all flex flex-col justify-between space-y-3"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm text-slate-900 group-hover:text-indigo-600 transition-colors">
-                      {cat.name}
-                    </span>
-                    <Badge variant="secondary" className="text-[11px] font-semibold">
-                      {cat._count.papers} paper{cat._count.papers === 1 ? "" : "s"}
-                    </Badge>
-                  </div>
-                  {cat.description && (
-                    <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                      {cat.description}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center text-xs font-semibold text-indigo-600 gap-1 pt-1">
-                  <span>Explore category</span>
-                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* 5. PAPER-FIRST RESEARCH JOURNEY */}
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
-        <SectionHeader
-          badge="Research Flow"
-          title="The Evidence-First Workflow"
-          description="How AI Research Hub empowers rigorous literature discovery without synthetic claims."
-        />
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="p-6 rounded-2xl bg-white border border-slate-200 space-y-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 font-bold text-sm">
-              01
-            </div>
-            <h3 className="font-bold text-sm text-slate-900">Discover Literature</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Search by title, abstract, DOI, author, or keyword across scientific publications and research manuscripts.
-            </p>
-          </div>
-
-          <div className="p-6 rounded-2xl bg-white border border-slate-200 space-y-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 font-bold text-sm">
-              02
-            </div>
-            <h3 className="font-bold text-sm text-slate-900">Read Original PDFs</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Stream original manuscript PDFs inline and review structured methodology, results, and limitations.
-            </p>
-          </div>
-
-          <div className="p-6 rounded-2xl bg-white border border-slate-200 space-y-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 font-bold text-sm">
-              03
-            </div>
-            <h3 className="font-bold text-sm text-slate-900">Grounded Summaries</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Inspect AI summaries where key findings are anchored to supporting manuscript excerpts.
-            </p>
-          </div>
-
-          <div className="p-6 rounded-2xl bg-white border border-slate-200 space-y-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-600 font-bold text-sm">
-              04
-            </div>
-            <h3 className="font-bold text-sm text-slate-900">Curate in My Library</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Save key papers into your personal workspace for quick retrieval during synthesis.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* 6. ACADEMIC INTEGRITY FAQS */}
+      {/* ========================================================================= */}
+      {/* 6. ACADEMIC INTEGRITY FAQS                                                */}
+      {/* ========================================================================= */}
       <FAQsSection />
 
-      {/* 7. CALL TO ACTION */}
+      {/* ========================================================================= */}
+      {/* 7. CALL TO ACTION BANNER                                                  */}
+      {/* ========================================================================= */}
       <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
         <div className="rounded-3xl bg-slate-900 p-8 sm:p-14 text-white shadow-2xl space-y-6 max-w-4xl mx-auto border border-slate-800">
           <div className="inline-flex items-center gap-2 rounded-full bg-indigo-500/20 px-3.5 py-1 text-xs font-semibold text-indigo-300">
             <ShieldCheck className="h-3.5 w-3.5" />
-            <span>Rigorous Scientific Intelligence</span>
+            <span>Ready for Empirical Research</span>
           </div>
 
           <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
-            Start Exploring Scientific Research
+            Start Your Literature Workspace Today
           </h2>
 
           <p className="text-sm sm:text-base text-slate-300 max-w-xl mx-auto leading-relaxed">
-            Discover scientific literature, view evidence-grounded summaries, and curate your personal research library.
+            Create an account in seconds with your personal or institutional email. Search papers, curate your library, and write with verifiable evidence.
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
-            <Button asChild size="lg" className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md">
-              <Link href="/papers">
-                Browse Research Papers
+            <Button
+              asChild
+              size="lg"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-8 shadow-md"
+            >
+              <Link href={isAuthenticated ? "/library" : "/register?callbackUrl=/library"}>
+                <span>{isAuthenticated ? "Open My Library" : "Create Free Account"}</span>
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
-            <Button asChild size="lg" variant="outline" className="border-slate-700 text-slate-200 hover:bg-slate-800">
-              <Link href="/register">Create Free Account</Link>
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="border-slate-700 text-slate-200 hover:bg-slate-800 font-semibold"
+            >
+              <Link href="/discover">Search Literature</Link>
             </Button>
           </div>
         </div>
