@@ -26,8 +26,8 @@ import { searchPapersHybrid } from "@/lib/search/hybrid-search";
 import { ADMIN_TEST_FIXTURE_IDS, isPublicScholarlyPaper, getPublicPaperWhereInput } from "@/lib/auth/paper-authorization";
 
 export const metadata = {
-  title: "Research Library | AI Research Hub",
-  description: "Browse verified scientific literature, manage saved studies, and inspect evidence-grounded papers.",
+  title: "Scholarly Literature Catalog | AI Research Hub",
+  description: "Browse verified scientific literature, inspect evidence-grounded findings, and explore open-access academic publications.",
 };
 
 export default async function PapersPage({
@@ -52,8 +52,8 @@ export default async function PapersPage({
     savedPaperIds = new Set(userBookmarks.map((b) => b.paperId));
   }
 
-  const isAdmin = session?.user?.role === "ADMIN";
-  const excludeFixtures = !isAdmin;
+  // The public /papers route strictly excludes administrator fixtures and private user uploads
+  const excludeFixtures = true;
 
   // Query hybrid search and categories in parallel with defensive error handling
   let searchResult: Awaited<ReturnType<typeof searchPapersHybrid>> = {
@@ -148,22 +148,22 @@ export default async function PapersPage({
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       <SectionHeader
-        badge="Research Library"
-        title="Scientific Research Library"
-        description="Explore your library of scientific manuscripts, inspect evidence-grounded findings, and track manuscript processing states."
+        badge="Scholarly Catalog"
+        title="Scholarly Literature Catalog"
+        description="Browse verified scientific literature, inspect evidence-grounded findings, and explore open-access academic publications."
         action={
           <div className="flex items-center gap-2">
             <Link href="/discover">
               <Button size="sm" variant="outline" className="text-xs gap-1.5 border-slate-300">
                 <Compass className="h-4 w-4 text-indigo-600" />
-                <span>Discover Research</span>
+                <span>Global Discovery</span>
               </Button>
             </Link>
-            {session?.user?.role === "ADMIN" && (
-              <Link href="/admin/papers/new">
+            {session?.user?.id && (
+              <Link href="/library">
                 <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-xs gap-1.5">
-                  <Upload className="h-4 w-4" />
-                  <span>Upload Paper</span>
+                  <Bookmark className="h-4 w-4" />
+                  <span>My Library</span>
                 </Button>
               </Link>
             )}
@@ -332,23 +332,23 @@ export default async function PapersPage({
                 : statusFilter !== "all"
                 ? "No Papers In This View"
                 : totalPaperCount === 0
-                ? "Your Library Is Empty"
+                ? "Scholarly Catalog Is Empty"
                 : "No Papers Found In This Category"}
             </h3>
             <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
               {query ? (
                 <>
-                  No published manuscripts in your library matched &ldquo;{query}&rdquo;. You can search connected
+                  No published manuscripts in the catalog matched &ldquo;{query}&rdquo;. You can search connected
                   scholarly databases to discover and import papers on this topic.
                 </>
               ) : statusFilter === "saved" ? (
                 "You haven't bookmarked any papers yet. Save papers while browsing to organize them into your reading list."
               ) : statusFilter === "processing" ? (
-                "No papers are currently being processed in your library."
+                "No papers are currently being processed."
               ) : statusFilter === "needed" ? (
                 "All papers currently have manuscript text attached."
               ) : totalPaperCount === 0 ? (
-                "Your research library is empty. Discover papers from connected scholarly sources or upload a manuscript PDF."
+                "The scholarly catalog is currently empty. Discover papers from connected scholarly sources."
               ) : (
                 "Try selecting a different research discipline or clearing active filters."
               )}

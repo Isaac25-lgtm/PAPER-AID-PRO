@@ -108,9 +108,9 @@ export default async function HomePage({
   const isAdmin = session?.user?.role === "ADMIN";
   const isAuthenticated = Boolean(session?.user);
 
-  // Fetch real research papers directly from PostgreSQL (compact preview of 2 top papers)
+  // Fetch genuine public scholarly manuscripts only (strictly excluding test fixtures and private uploads for all visitors)
   const dbPapers = await prisma.paper.findMany({
-    where: isAdmin ? {} : getPublicPaperWhereInput(),
+    where: getPublicPaperWhereInput(),
     take: 10,
     include: {
       authors: {
@@ -125,7 +125,7 @@ export default async function HomePage({
     orderBy: [{ citationCount: "desc" }, { createdAt: "desc" }],
   });
 
-  const publicDbPapers = isAdmin ? dbPapers : dbPapers.filter(isPublicScholarlyPaper);
+  const publicDbPapers = dbPapers.filter(isPublicScholarlyPaper);
 
   const featuredPapers: Paper[] =
     publicDbPapers.length > 0

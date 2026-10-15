@@ -138,7 +138,7 @@ export default async function PaperDetailPage({
           className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-indigo-600 transition-colors mb-4"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          {isPrivateDoc ? "Back to My Library" : "Back to research library"}
+          {isPrivateDoc ? "Back to My Library" : "Back to scholarly catalog"}
         </Link>
       </div>
 

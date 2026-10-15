@@ -23,6 +23,7 @@ import { CrossrefProvider } from "./providers/crossref";
 import { SemanticScholarProvider } from "./providers/semantic-scholar";
 import { CitedEvidenceProvider } from "./providers/cited-evidence";
 import { deduplicateExternalPapers } from "./deduplicate";
+import { rankScholarlySearchResults } from "./ranking";
 import { matchPapersAgainstLocalLibrary } from "./library-matcher";
 
 // In-memory LRU-like cache for identical recent queries (TTL: 60s)
@@ -147,8 +148,11 @@ export class ScholarlyAggregator {
     // Deduplicate across providers
     const { papers: deduplicatedPapers } = deduplicateExternalPapers(rawPapers);
 
+    // Deterministic generalized relevance ranking across providers
+    const rankedPapers = rankScholarlySearchResults(deduplicatedPapers, trimmedQuery);
+
     // Hydrate local library status
-    const finalPapers = await matchPapersAgainstLocalLibrary(deduplicatedPapers, options.userId);
+    const finalPapers = await matchPapersAgainstLocalLibrary(rankedPapers, options.userId);
 
     const searchResult: DiscoverySearchResult = {
       query: trimmedQuery,
