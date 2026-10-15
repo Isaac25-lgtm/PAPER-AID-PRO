@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { CitationVerifier } from "@/components/tools/citation-verification/citation-verifier";
 import { RegisteredMetadata } from "@/lib/citations/verification-types";
+import { formatBibliographicCitation } from "@/lib/citations/citation-formatter";
 
 interface PaperCitationData {
   title: string;
@@ -29,6 +30,8 @@ interface PaperCitationData {
   issue?: string;
   pages?: string;
   doi: string;
+  documentType?: string;
+  institution?: string;
 }
 
 const sampleCitations: Record<string, PaperCitationData> = {
@@ -82,6 +85,15 @@ const sampleCitations: Record<string, PaperCitationData> = {
     pages: "032324",
     doi: "10.1103/PhysRevA.86.032324",
   },
+  thesis: {
+    title: "Scalable Distributed State Estimation in Cyber-Physical Power Networks",
+    authors: ["Alice M. Walker"],
+    year: 2024,
+    journal: "",
+    doi: "",
+    documentType: "DISSERTATION",
+    institution: "Stanford University",
+  },
 };
 
 export default function CitationGeneratorPage() {
@@ -118,56 +130,32 @@ export default function CitationGeneratorPage() {
       issue: meta.issue || paper.issue,
       pages: meta.pages || paper.pages,
       doi: meta.doi || paper.doi,
+      documentType: paper.documentType,
+      institution: paper.institution,
     };
     setPaper(updated);
     setEditForm(updated);
   };
 
-  const formatCitation = () => {
-    const authorList = paper.authors.join(", ");
-    const firstAuthor = paper.authors[0] || "Unknown";
+  const formattedResult = React.useMemo(() => {
+    return formatBibliographicCitation(
+      {
+        title: paper.title,
+        authors: paper.authors,
+        year: paper.year,
+        journal: paper.journal || null,
+        volume: paper.volume || null,
+        issue: paper.issue || null,
+        pages: paper.pages || null,
+        doi: paper.doi || null,
+        documentType: paper.documentType || null,
+        institution: paper.institution || null,
+      },
+      format
+    );
+  }, [paper, format]);
 
-    switch (format) {
-      case "apa":
-        return `${firstAuthor}, et al. (${paper.year}). ${paper.title}. ${paper.journal}${
-          paper.volume ? `, ${paper.volume}` : ""
-        }${paper.issue ? `(${paper.issue})` : ""}${
-          paper.pages ? `, ${paper.pages}` : ""
-        }.${paper.doi ? ` https://doi.org/${paper.doi}` : ""}`;
-      case "mla":
-        return `${firstAuthor}, et al. "${paper.title}." ${paper.journal}${
-          paper.volume ? `, vol. ${paper.volume}` : ""
-        }${paper.issue ? `, no. ${paper.issue}` : ""}, ${paper.year}${
-          paper.pages ? `, pp. ${paper.pages}` : ""
-        }.${paper.doi ? ` DOI: ${paper.doi}` : ""}`;
-      case "chicago":
-        return `${firstAuthor}, et al. ${paper.year}. "${paper.title}." ${paper.journal}${
-          paper.volume ? ` ${paper.volume}` : ""
-        }${paper.pages ? `: ${paper.pages}` : ""}.${
-          paper.doi ? ` https://doi.org/${paper.doi}.` : ""
-        }`;
-      case "ieee":
-        return `[1] ${firstAuthor} et al., "${paper.title}," ${paper.journal}${
-          paper.volume ? `, vol. ${paper.volume}` : ""
-        }${paper.issue ? `, no. ${paper.issue}` : ""}${
-          paper.pages ? `, pp. ${paper.pages}` : ""
-        }, ${paper.year}${paper.doi ? `, doi: ${paper.doi}` : ""}.`;
-      case "bibtex":
-        return `@article{${firstAuthor.split(" ").pop()?.toLowerCase() || "ref"}${paper.year}${paper.title.slice(0, 5).toLowerCase().replace(/\s+/g, "")},
-  author    = {${paper.authors.join(" and ")}},
-  title     = {${paper.title}},
-  journal   = {${paper.journal}},
-  year      = {${paper.year}},
-  volume    = {${paper.volume || ""}},
-  pages     = {${paper.pages || ""}},
-  doi       = {${paper.doi}}
-}`;
-      default:
-        return "";
-    }
-  };
-
-  const citationText = formatCitation();
+  const citationText = formattedResult.text;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(citationText);
@@ -244,6 +232,17 @@ export default function CitationGeneratorPage() {
               )}
             >
               Surface Codes
+            </button>
+            <button
+              onClick={() => handleSelectPreset("thesis")}
+              className={cn(
+                "px-3 py-1.5 rounded-full font-semibold border transition-all cursor-pointer",
+                selectedKey === "thesis" && !isEditing
+                  ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              )}
+            >
+              Ph.D. Dissertation (Unpublished)
             </button>
             <button
               onClick={() => setIsEditing(!isEditing)}
@@ -437,6 +436,14 @@ export default function CitationGeneratorPage() {
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs font-mono text-xs sm:text-sm text-slate-800 leading-relaxed overflow-x-auto whitespace-pre-wrap select-all">
           {citationText}
         </div>
+
+        {/* Verification Status Notice for Unpublished Works */}
+        {formattedResult.verificationNotice && (
+          <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+            <span className="font-semibold text-amber-950">Notice:</span>
+            <span>{formattedResult.verificationNotice}</span>
+          </div>
+        )}
 
         {/* Reference Manager Export Options */}
         <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-600">
