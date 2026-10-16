@@ -29,60 +29,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { SectionHeader } from "@/components/shared/section-header";
-import { PaperCard } from "@/components/shared/paper-card";
-import { Paper } from "@/lib/types/paper";
 import { prisma } from "@/lib/prisma";
 import { FAQsSection } from "@/components/home/faqs-section";
 import { HeroSearch } from "@/components/home/hero-search";
-import { ADMIN_TEST_FIXTURE_IDS, isPublicScholarlyPaper, getPublicPaperWhereInput } from "@/lib/auth/paper-authorization";
-
-// High-fidelity fallback research papers if database is empty
-const fallbackPapers: Paper[] = [
-  {
-    id: "paper-001",
-    title: "Attention Is All You Need: Scaled Dot-Product and Multi-Head Self-Attention in Sequence Transduction",
-    abstract:
-      "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks. We propose the Transformer, a model architecture eschewing recurrence and instead relying entirely on an attention mechanism to draw global dependencies between input and output.",
-    publicationDate: "2023-12-15",
-    journal: "Advances in Neural Information Processing Systems (NeurIPS)",
-    doi: "10.48550/arXiv.1706.03762",
-    status: "COMPLETED",
-    keywords: ["Transformer", "Self-Attention", "Deep Learning", "Seq2Seq"],
-    authors: [
-      { id: "a-1", name: "Ashish Vaswani", institution: "Google Brain" },
-      { id: "a-2", name: "Noam Shazeer", institution: "Google Brain" },
-      { id: "a-3", name: "Niki Parmar", institution: "Google Research" },
-    ],
-    categories: [
-      { id: "c-1", name: "Artificial Intelligence" },
-      { id: "c-2", name: "NLP" },
-    ],
-    createdAt: "2024-01-10T10:00:00Z",
-    updatedAt: "2024-01-10T10:00:00Z",
-  },
-  {
-    id: "paper-002",
-    title: "Accurate Structure Prediction of Biomolecular Interactions with AlphaFold 3",
-    abstract:
-      "The interaction of proteins with other molecules is fundamental to cellular function. Here we present AlphaFold 3, with a substantially updated diffusion-based architecture that is capable of predicting the joint 3D structure of complexes including proteins, nucleic acids, small molecules, ions, and chemical modifications.",
-    publicationDate: "2024-05-08",
-    journal: "Nature Biomedical Science",
-    doi: "10.1038/s41586-024-07487-w",
-    status: "COMPLETED",
-    keywords: ["AlphaFold", "Structural Biology", "Diffusion Models", "Biomolecules"],
-    authors: [
-      { id: "a-4", name: "Josh Abramson", institution: "Google DeepMind" },
-      { id: "a-5", name: "John Jumper", institution: "Google DeepMind" },
-      { id: "a-6", name: "Demis Hassabis", institution: "Google DeepMind" },
-    ],
-    categories: [
-      { id: "c-3", name: "Computational Biology" },
-      { id: "c-1", name: "Artificial Intelligence" },
-    ],
-    createdAt: "2024-05-10T12:00:00Z",
-    updatedAt: "2024-05-10T12:00:00Z",
-  },
-];
 
 export const dynamic = "force-dynamic";
 
@@ -109,70 +58,6 @@ export default async function HomePage({
 
   const isAdmin = session?.user?.role === "ADMIN";
   const isAuthenticated = Boolean(session?.user);
-
-  // Fetch genuine public scholarly manuscripts only (strictly excluding test fixtures and private uploads for all visitors)
-  const dbPapers = await prisma.paper.findMany({
-    where: getPublicPaperWhereInput(),
-    take: 10,
-    include: {
-      authors: {
-        include: { author: true },
-        orderBy: { orderIndex: "asc" },
-      },
-      categories: {
-        include: { category: true },
-      },
-      aiSummary: true,
-    },
-    orderBy: [{ citationCount: "desc" }, { createdAt: "desc" }],
-  });
-
-  const publicDbPapers = dbPapers.filter(isPublicScholarlyPaper);
-
-  const featuredPapers: Paper[] =
-    publicDbPapers.length > 0
-      ? publicDbPapers.slice(0, 2).map((p) => ({
-          id: p.id,
-          title: p.title,
-          abstract: p.abstract,
-          publicationDate: p.publicationDate?.toISOString() || new Date().toISOString(),
-          journal: p.journal || "Research Manuscript",
-          doi: p.doi || undefined,
-          pdfUrl: p.pdfUrl || undefined,
-          status: p.status as any,
-          keywords: p.keywords,
-          citationCount: p.citationCount,
-          researchQuestion: p.researchQuestion || undefined,
-          methodology: p.methodology || undefined,
-          results: p.results || undefined,
-          limitations: p.limitations || undefined,
-          conclusion: p.conclusion || undefined,
-          authors: p.authors.map((pa) => ({
-            id: pa.author.id,
-            name: pa.author.name,
-            institution: pa.author.institution || undefined,
-          })),
-          categories: p.categories.map((pc) => ({
-            id: pc.category.id,
-            name: pc.category.name,
-          })),
-          aiSummary: p.aiSummary
-            ? {
-                id: p.aiSummary.id,
-                paperId: p.aiSummary.paperId,
-                summary: p.aiSummary.summary,
-                keyFindings: p.aiSummary.keyFindings,
-                methodologySummary: p.aiSummary.methodologySummary || undefined,
-                limitations: p.aiSummary.limitations || undefined,
-                conclusion: p.aiSummary.conclusion || undefined,
-                modelUsed: p.aiSummary.modelUsed,
-                createdAt: p.aiSummary.createdAt.toISOString(),
-              }
-            : null,
-          createdAt: p.createdAt.toISOString(),
-          updatedAt: p.updatedAt.toISOString(),
-        }))
-      : fallbackPapers;
 
   // Features configuration with authentication redirects for protected tools
   const features = [
@@ -575,32 +460,42 @@ export default async function HomePage({
       </section>
 
       {/* ========================================================================= */}
-      {/* 5. FEATURED RESEARCH PREVIEW (COMPACT PREVIEW)                           */}
+      {/* 5. PRIVATE RESEARCH WORKSPACE INVITATION                                  */}
       {/* ========================================================================= */}
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-slate-200 pb-4">
-          <div>
-            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 uppercase tracking-wider mb-1">
-              <BookOpen className="h-3.5 w-3.5" />
-              <span>Grounded Literature Catalog</span>
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 via-white to-slate-50/60 p-8 sm:p-12 shadow-xs flex flex-col md:flex-row items-center justify-between gap-8">
+          <div className="max-w-2xl space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white px-3.5 py-1 text-xs font-semibold text-indigo-700 shadow-2xs">
+              <Library className="h-3.5 w-3.5 text-indigo-600" />
+              <span>Private Research Workspace</span>
             </div>
-            <h2 className="text-2xl font-bold text-slate-900">Featured Research Studies</h2>
-            <p className="text-xs sm:text-sm text-slate-500">
-              Sample high-impact scientific manuscripts with structured findings and verified paragraph anchors.
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+              A Private, Evidence-Grounded Workspace for Your Research
+            </h2>
+            <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
+              Curate papers from PubMed and Crossref, securely organize private laboratory manuscripts, and draft academic articles in the AI Research Editor with automated passage-verified citations.
             </p>
           </div>
-          <Button asChild variant="outline" size="sm" className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 shrink-0 font-semibold text-xs">
-            <Link href="/papers">
-              <span>Browse Full Catalog</span>
-              <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {featuredPapers.map((paper) => (
-            <PaperCard key={paper.id} paper={paper} />
-          ))}
+          <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0">
+            <Button
+              asChild
+              size="lg"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-7 shadow-md"
+            >
+              <Link href={isAuthenticated ? "/library" : "/register?callbackUrl=/library"}>
+                <span>Get Started</span>
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold px-6"
+            >
+              <Link href="/discover">Search Literature</Link>
+            </Button>
+          </div>
         </div>
       </section>
 

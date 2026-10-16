@@ -44,7 +44,6 @@ import { searchScholarlyAction, importPaperMetadataAction } from "@/lib/discover
 import { getResearchSnapshotAction } from "@/lib/discovery/snapshot/snapshot-actions";
 import { ResearchSnapshot, SnapshotCitation } from "@/lib/discovery/snapshot/types";
 import { AIResearchSnapshotCard } from "./ai-research-snapshot-card";
-import { CiteModal } from "./cite-modal";
 import { SourceEvidenceModal } from "./source-evidence-modal";
 import { SavePromptModal } from "./save-prompt-modal";
 import { cn } from "@/lib/utils";
@@ -95,7 +94,6 @@ export function DiscoveryInterface() {
   const [snapshotError, setSnapshotError] = React.useState<string | null>(null);
 
   // Modals state
-  const [activeCitePaper, setActiveCitePaper] = React.useState<NormalizedExternalPaper | null>(null);
   const [activeEvidenceCitation, setActiveEvidenceCitation] = React.useState<SnapshotCitation | null>(null);
   const [savePromptTargetTitle, setSavePromptTargetTitle] = React.useState<string | undefined>(undefined);
   const [isSavePromptOpen, setIsSavePromptOpen] = React.useState(false);
@@ -846,17 +844,6 @@ export function DiscoveryInterface() {
                       </a>
                     ) : null}
 
-                    {/* Cite Button: Opens Citation Modal */}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setActiveCitePaper(paper)}
-                      className="text-xs h-8 px-3 border-slate-200 text-slate-700 hover:bg-slate-50 w-full sm:w-auto flex items-center justify-center gap-1.5"
-                    >
-                      <Quote className="h-3.5 w-3.5 text-indigo-600" />
-                      <span>Cite</span>
-                    </Button>
-
                     {/* Save to My Library Controls */}
                     {isInLibrary ? (
                       <div className="flex flex-col items-start sm:items-end gap-1 w-full pt-1">
@@ -947,14 +934,7 @@ export function DiscoveryInterface() {
       </div>
 
       {/* MODALS */}
-      {/* 1. Citation Modal */}
-      <CiteModal
-        paper={activeCitePaper}
-        isOpen={Boolean(activeCitePaper)}
-        onClose={() => setActiveCitePaper(null)}
-      />
-
-      {/* 2. Source Evidence Provenance Modal */}
+      {/* 1. Source Evidence Provenance Modal */}
       <SourceEvidenceModal
         citation={activeEvidenceCitation}
         isOpen={Boolean(activeEvidenceCitation)}

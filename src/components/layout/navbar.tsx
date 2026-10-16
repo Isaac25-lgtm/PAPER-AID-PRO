@@ -27,7 +27,7 @@ export function Navbar() {
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      window.location.href = `/papers?q=${encodeURIComponent(searchQuery.trim())}`;
+      window.location.href = `/discover?q=${encodeURIComponent(searchQuery.trim())}`;
     }
   };
 
