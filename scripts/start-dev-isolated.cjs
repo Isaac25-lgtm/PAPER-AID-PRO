@@ -74,6 +74,7 @@ function verifyIsolation() {
 
   // Enable mock storage to prevent any interaction with live Supabase Storage
   envToUse.USE_MOCK_STORAGE = "true";
+  envToUse.ALLOW_MOCK_AUTOCOMPLETE = "true";
   delete envToUse.SUPABASE_SECRET_KEY;
   delete envToUse.SUPABASE_SERVICE_ROLE_KEY;
 

@@ -50,17 +50,30 @@ export async function generateInlineAutocomplete(
     throw new Error(`Research document '${params.documentId}' not found.`);
   }
 
-  // 2. Fetch context from selected sources if provided
+  // 2. Fetch context from selected sources if provided (strictly enforcing user access control)
   let sourceContext = "";
   if (params.selectedSourceIds && params.selectedSourceIds.length > 0) {
-    const papers = await prisma.paper.findMany({
-      where: { id: { in: params.selectedSourceIds } },
-      select: { title: true, abstract: true },
-      take: 3,
-    });
-    if (papers.length > 0) {
+    const accessiblePapers: { title: string; abstract: string }[] = [];
+    for (const paperId of params.selectedSourceIds.slice(0, 3)) {
+      try {
+        const allowed = await assertPaperAccess(userId, paperId);
+        if (allowed) {
+          const p = await prisma.paper.findUnique({
+            where: { id: paperId },
+            select: { title: true, abstract: true },
+          });
+          if (p && p.abstract) {
+            accessiblePapers.push(p);
+          }
+        }
+      } catch {
+        // Skip inaccessible papers or quarantined benchmark fixtures
+      }
+    }
+
+    if (accessiblePapers.length > 0) {
       sourceContext = `\n[REFERENCE RESEARCH PAPERS FOR CONTEXT]:\n` +
-        papers.map((p) => `- "${p.title}": ${p.abstract.slice(0, 300)}...`).join("\n");
+        accessiblePapers.map((p) => `- "${p.title}": ${p.abstract.slice(0, 300)}...`).join("\n");
     }
   }
 
@@ -71,6 +84,45 @@ EXISTING TEXT BEFORE CURSOR:
 """${params.prefixText.slice(-1500)}"""
 ${params.suffixText ? `TEXT AFTER CURSOR:\n"""${params.suffixText.slice(0, 300)}"""\n` : ""}
 INSTRUCTION: Continue drafting the next 1 to 2 cohesive academic sentences that logically follow the existing text. Output ONLY the continuation text with no preamble or quotes.`;
+
+  // 4. Autocomplete Safety & Environment Gate:
+  // Deterministic mock autocomplete is available ONLY in explicitly isolated development and test environments.
+  // In production, missing or unavailable AI providers must fail gracefully.
+  // Never present mock suggestions as genuine AI-generated research assistance.
+  const isProduction = process.env.NODE_ENV === "production";
+  const isIsolatedMockEnv =
+    !isProduction &&
+    (process.env.ALLOW_MOCK_AUTOCOMPLETE === "true" ||
+      process.env.NODE_ENV === "test" ||
+      process.env.USE_MOCK_STORAGE === "true");
+
+  if (!routerOverride && process.env.ENABLE_LIVE_AI_AUTOCOMPLETE !== "true") {
+    if (isIsolatedMockEnv) {
+      const cleanPrefix = params.prefixText.trim();
+      let mockContinuation = "which provides empirical grounding for subsequent comparative evaluations across diverse cohorts.";
+      if (cleanPrefix.endsWith(".") || cleanPrefix.endsWith("!") || cleanPrefix.endsWith("?")) {
+        mockContinuation = "Furthermore, our experimental observations demonstrate consistent convergence across multi-institutional benchmark environments.";
+      } else if (cleanPrefix.endsWith(",")) {
+        mockContinuation = "thereby mitigating systematic variance while preserving fine-grained feature representations.";
+      } else if (cleanPrefix.toLowerCase().includes("method") || cleanPrefix.toLowerCase().includes("approach")) {
+        mockContinuation = "incorporates rigorous cross-validation protocols to ensure replicability and minimize selection bias.";
+      }
+
+      return {
+        suggestion: mockContinuation,
+        provider: "mock" as any,
+        model: "deterministic-academic-mock",
+        cost: { estimatedCostUsd: 0, isEstimate: true, pricingTier: "local-mock" },
+        metrics: { ttftMs: 25, durationMs: 40 },
+      };
+    }
+
+    // In production, missing or unavailable AI providers must fail gracefully.
+    // Never present mock suggestions as genuine AI-generated research assistance.
+    throw new Error(
+      "AI Autocomplete service is currently unavailable. Genuine AI assistance requires an active, authorized provider."
+    );
+  }
 
   const router = routerOverride || getModelRouter();
   const response = await router.route({

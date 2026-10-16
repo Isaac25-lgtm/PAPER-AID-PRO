@@ -1,5 +1,6 @@
 import { prisma } from "../prisma";
 import { CitationType, DocumentType } from "@prisma/client";
+import { ADMIN_TEST_FIXTURE_IDS } from "../auth/paper-authorization";
 
 export interface CreateDocumentInput {
   title?: string;
@@ -74,7 +75,10 @@ export async function assertPaperAccess(userId: string, paperId: string): Promis
   const rawMeta = (paper.rawMetadata as any) || {};
 
   // Check benchmark fixture quarantine (admin only)
-  const isFixture = provenance.isBenchmarkFixture === true || rawMeta.adminOnly === true;
+  const isFixture =
+    ADMIN_TEST_FIXTURE_IDS.has(paperId) ||
+    provenance.isBenchmarkFixture === true ||
+    rawMeta.adminOnly === true;
   if (isFixture) {
     // Regular users are forbidden from viewing or attaching benchmark fixtures
     throw new Error(`Paper '${paperId}' is a quarantined benchmark fixture and cannot be accessed.`);

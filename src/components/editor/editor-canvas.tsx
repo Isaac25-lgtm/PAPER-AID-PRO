@@ -6,6 +6,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import Placeholder from "@tiptap/extension-placeholder";
+import { GhostSuggestion, ghostSuggestionPluginKey } from "./ghost-suggestion-extension";
 import { EditorToolbar } from "./editor-toolbar";
 import { AiSelectionPopover } from "./ai-selection-popover";
 import { generateAutocompleteAction } from "@/app/editor/actions";
@@ -31,6 +32,7 @@ export function EditorCanvas({
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [surroundingContext, setSurroundingContext] = useState<string>("");
   const [ghostSuggestion, setGhostSuggestion] = useState<string | null>(null);
+  const [autocompleteNotice, setAutocompleteNotice] = useState<string | null>(null);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
 
@@ -51,6 +53,17 @@ export function EditorCanvas({
       TableCell,
       Placeholder.configure({
         placeholder: "Start drafting your research manuscript, or press Ctrl+J for AI autocomplete...",
+      }),
+      GhostSuggestion.configure({
+        onTrigger: () => {
+          triggerAutocomplete();
+        },
+        onAccept: () => {
+          setGhostSuggestion(null);
+        },
+        onDismiss: () => {
+          setGhostSuggestion(null);
+        },
       }),
     ],
     content: initialContent,
@@ -76,6 +89,12 @@ export function EditorCanvas({
       }
     },
     onSelectionUpdate: ({ editor }) => {
+      // If cursor moved, verify whether ghost suggestion decoration was cleared
+      const pluginState = ghostSuggestionPluginKey.getState(editor.state);
+      if (!pluginState && ghostSuggestion) {
+        setGhostSuggestion(null);
+      }
+
       const { from, to } = editor.state.selection;
       if (from !== to) {
         const text = editor.state.doc.textBetween(from, to, " ");
@@ -108,6 +127,8 @@ export function EditorCanvas({
 
     setIsAiGenerating(true);
     setGhostSuggestion(null);
+    setAutocompleteNotice(null);
+    editor.commands.clearGhostSuggestion();
 
     try {
       const { from } = editor.state.selection;
@@ -127,9 +148,19 @@ export function EditorCanvas({
 
       if (res.success && res.suggestion) {
         setGhostSuggestion(res.suggestion);
+        // Inject inline ProseMirror ghost suggestion decoration at cursor position
+        editor.commands.setGhostSuggestion({
+          pos: from,
+          text: res.suggestion,
+        });
+      } else if (!res.success && res.error) {
+        setAutocompleteNotice(res.error);
+        setTimeout(() => setAutocompleteNotice(null), 5000);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Autocomplete failed:", err);
+      setAutocompleteNotice(err.message || "Autocomplete service unavailable.");
+      setTimeout(() => setAutocompleteNotice(null), 5000);
     } finally {
       setIsAiGenerating(false);
     }
@@ -137,15 +168,17 @@ export function EditorCanvas({
 
   // Accept ghost suggestion
   const acceptGhostSuggestion = useCallback(() => {
-    if (!editor || !ghostSuggestion) return;
-    editor.chain().focus().insertContent(" " + ghostSuggestion).run();
+    if (!editor) return;
+    editor.commands.acceptGhostSuggestion();
     setGhostSuggestion(null);
-  }, [editor, ghostSuggestion]);
+  }, [editor]);
 
   // Reject ghost suggestion
   const rejectGhostSuggestion = useCallback(() => {
+    if (!editor) return;
+    editor.commands.clearGhostSuggestion();
     setGhostSuggestion(null);
-  }, []);
+  }, [editor]);
 
   // Keyboard shortcut listener (Ctrl+J or Cmd+J for AI autocomplete, Tab for accept)
   useEffect(() => {
@@ -197,31 +230,25 @@ export function EditorCanvas({
           {/* TipTap Editor Content */}
           <EditorContent editor={editor} className="flex-1" />
 
-          {/* Jenni-style Ghost-Text Inline Banner */}
+          {/* Inline Autocomplete Helper Pill */}
           {ghostSuggestion && (
-            <div className="mx-8 mb-6 p-3 rounded-lg bg-indigo-50/70 border border-indigo-200 text-xs flex items-start justify-between gap-3 shadow-xs animate-in fade-in slide-in-from-bottom-1 duration-200">
-              <div className="flex items-start gap-2 min-w-0">
-                <Sparkles className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-semibold text-indigo-900 block mb-0.5">
-                    AI Suggested Completion:
-                  </span>
-                  <p className="font-serif text-slate-800 text-sm leading-relaxed">
-                    "{ghostSuggestion}"
-                  </p>
-                </div>
+            <div className="mx-8 mb-4 p-2.5 rounded-lg bg-indigo-50/80 border border-indigo-200/80 text-xs flex items-center justify-between gap-3 shadow-2xs animate-in fade-in duration-150">
+              <div className="flex items-center gap-2 min-w-0">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span className="font-semibold text-indigo-900 shrink-0">AI Suggestion:</span>
+                <span className="text-slate-600 truncate italic">"{ghostSuggestion}"</span>
               </div>
 
-              <div className="flex items-center gap-1.5 flex-shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={acceptGhostSuggestion}
-                  className="px-2.5 py-1 rounded bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1 shadow-xs"
+                  className="px-2 py-0.5 rounded bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1 text-[11px] shadow-2xs"
                   title="Accept (Tab)"
                 >
-                  <Check className="w-3.5 h-3.5" />
+                  <Check className="w-3 h-3" />
                   <span>Accept</span>
-                  <kbd className="px-1 py-0.2 text-[10px] bg-indigo-700 rounded border border-indigo-500 text-indigo-100">
+                  <kbd className="px-1 py-0.2 text-[9px] bg-indigo-700 rounded border border-indigo-500 text-indigo-100">
                     Tab
                   </kbd>
                 </button>
@@ -231,9 +258,26 @@ export function EditorCanvas({
                   className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
                   title="Dismiss (Esc)"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Autocomplete Notice (e.g. In production or unconfigured environments) */}
+          {autocompleteNotice && (
+            <div className="mx-8 mb-4 p-2.5 rounded-lg bg-amber-50/90 border border-amber-200 text-xs flex items-center justify-between gap-3 text-amber-800 shadow-2xs animate-in fade-in duration-150">
+              <div className="flex items-center gap-2 min-w-0">
+                <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="truncate">{autocompleteNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAutocompleteNotice(null)}
+                className="p-1 rounded text-amber-500 hover:text-amber-800 shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 

@@ -217,6 +217,18 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
     await executeSave(true);
   };
 
+  // Keyboard shortcut listener for Ctrl+S or Cmd+S (manual save)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+        executeSave(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [executeSave]);
+
   const linkedPaperIds = (document.linkedPapers || []).map((lp: any) => lp.paperId);
 
   return (
