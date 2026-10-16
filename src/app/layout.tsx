@@ -31,6 +31,8 @@ export const metadata: Metadata = {
   authors: [{ name: "AI Research Hub" }],
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({
   children,
 }: Readonly<{

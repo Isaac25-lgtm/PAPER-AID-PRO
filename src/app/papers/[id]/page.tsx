@@ -310,12 +310,16 @@ export default async function PaperDetailPage({
             </div>
             <div className="space-y-1">
               <h3 className="text-base font-bold text-amber-950">
-                Reference Saved — Full Text Needed for AI Analysis
+                {isBookmarked
+                  ? "Reference Saved in My Library — Full Text Needed for AI Analysis"
+                  : "Bibliographic Reference — Full Text Needed for AI Analysis"}
               </h3>
               <p className="text-xs sm:text-sm text-amber-900 leading-relaxed">
                 {paper.pdfUrl
                   ? "An open-access reading link is available for this manuscript, but direct server processing is restricted by publisher terms. You may open the external publication or upload a personal PDF copy."
-                  : "This paper is saved as a bibliographic reference in your research library. Grounded paragraph evidence, interactive RAG Q&A, and structured summaries require full-text ingestion."}
+                  : isBookmarked
+                  ? "This paper is saved as a bibliographic reference in your research library. Grounded paragraph evidence, interactive RAG Q&A, and structured summaries require full-text ingestion."
+                  : "This paper is cataloged as a bibliographic reference. Save it to your library or attach a manuscript PDF copy to enable grounded paragraph evidence, interactive RAG Q&A, and structured summaries."}
               </p>
               {isPreprint && (
                 <p className="text-xs text-amber-800 font-medium">
@@ -334,7 +338,7 @@ export default async function PaperDetailPage({
               externalPdfUrl={paper.pdfUrl}
             />
 
-            <Link href="/library">
+            <Link href={`/library?uploadPaperId=${paper.id}`}>
               <Button size="sm" variant="outline" className="border-amber-300 text-amber-900 bg-white hover:bg-amber-50 text-xs gap-1.5 shadow-2xs">
                 <Upload className="h-3.5 w-3.5 text-amber-700" />
                 <span>Upload PDF to My Library</span>

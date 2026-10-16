@@ -85,7 +85,10 @@ export async function toggleBookmarkAction(paperId: string): Promise<BookmarkAct
         where: { id: existing.id },
       });
 
+      revalidatePath("/library");
       revalidatePath("/saved");
+      revalidatePath("/");
+      revalidatePath("/papers");
       revalidatePath(`/papers/${paperId}`);
 
       return {
@@ -100,7 +103,10 @@ export async function toggleBookmarkAction(paperId: string): Promise<BookmarkAct
         },
       });
 
+      revalidatePath("/library");
       revalidatePath("/saved");
+      revalidatePath("/");
+      revalidatePath("/papers");
       revalidatePath(`/papers/${paperId}`);
 
       return {
@@ -114,6 +120,97 @@ export async function toggleBookmarkAction(paperId: string): Promise<BookmarkAct
       success: false,
       isBookmarked: false,
       error: err.message || "Failed to update saved paper status.",
+    };
+  }
+}
+
+/**
+ * Idempotently saves a research paper to the authenticated user's library.
+ * If already saved, returns success without removing or creating duplicates.
+ */
+export async function savePaperAction(paperId: string): Promise<BookmarkActionResult> {
+  let session = null;
+  try {
+    session = await getServerSession(authOptions);
+  } catch {
+    session = null;
+  }
+
+  if (!session?.user?.id) {
+    return {
+      success: false,
+      isBookmarked: false,
+      unauthorized: true,
+      error: "You must be signed in to save papers to your library.",
+    };
+  }
+
+  const userId = session.user.id;
+
+  try {
+    const paper = await prisma.paper.findUnique({
+      where: { id: paperId },
+      select: {
+        id: true,
+        title: true,
+        storagePath: true,
+        pdfUrl: true,
+        sourceProvenance: true,
+        doi: true,
+        arxivId: true,
+        pmid: true,
+        pmcid: true,
+        semanticScholarId: true,
+      },
+    });
+
+    if (!paper) {
+      return {
+        success: false,
+        isBookmarked: false,
+        error: "Paper not found.",
+      };
+    }
+
+    const auth = await authorizePaperAccess(paper, session.user, "VIEW_METADATA");
+    if (!auth.allowed) {
+      return {
+        success: false,
+        isBookmarked: false,
+        error: "Paper not found.",
+      };
+    }
+
+    await prisma.bookmark.upsert({
+      where: {
+        userId_paperId: {
+          userId,
+          paperId,
+        },
+      },
+      create: {
+        userId,
+        paperId,
+      },
+      update: {},
+    });
+
+    revalidatePath("/library");
+    revalidatePath("/saved");
+    revalidatePath("/");
+    revalidatePath("/papers");
+    revalidatePath(`/papers/${paperId}`);
+
+    return {
+      success: true,
+      isBookmarked: true,
+    };
+  } catch (err: any) {
+    console.error("Failed to save paper:", err);
+    return {
+      success: false,
+      isBookmarked: false,
+      error: err.message || "Failed to save paper to library.",
     };
   }
 }

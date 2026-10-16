@@ -9,13 +9,25 @@ import { PaperProcessingStatus } from "@prisma/client";
 export const MAX_USER_PDF_SIZE_BYTES = 35 * 1024 * 1024; // 35 MB
 
 export type UserDocumentType =
-  | "THESIS"
-  | "DISSERTATION"
-  | "PROPOSAL"
-  | "DRAFT"
-  | "STUDENT_PAPER"
+  | "RESEARCH_ARTICLE"
   | "JOURNAL_ARTICLE"
-  | "MANUSCRIPT";
+  | "THESIS"
+  | "MASTERS_THESIS"
+  | "DISSERTATION"
+  | "PHD_DISSERTATION"
+  | "UNPUBLISHED_MANUSCRIPT"
+  | "MANUSCRIPT"
+  | "PROPOSAL"
+  | "RESEARCH_PROPOSAL"
+  | "TEXTBOOK_STUDY_NOTES"
+  | "LECTURE_MATERIAL"
+  | "ESSAY_ASSIGNMENT"
+  | "STUDENT_PAPER"
+  | "TECHNICAL_REPORT"
+  | "BUSINESS_REPORT"
+  | "INSTITUTIONAL_REPORT"
+  | "OTHER_DOCUMENT"
+  | "DRAFT";
 
 export interface UserDocumentMetadata {
   title?: string;
@@ -103,11 +115,11 @@ export async function uploadUserPrivateDocument(params: {
   validateUserPdfBuffer(fileBuffer);
 
   const cleanFilename = filename.replace(/\.pdf$/i, "").trim();
-  const title = metadata?.title?.trim() || cleanFilename || "Untitled Manuscript";
+  const title = metadata?.title?.trim() || cleanFilename || "Untitled Document";
   const abstract =
     metadata?.description?.trim() ||
-    `Personal research document (${metadata?.documentType || "manuscript"}) uploaded to My Library.`;
-  const documentType = (metadata?.documentType as UserDocumentType) || "MANUSCRIPT";
+    `Personal document (${metadata?.documentType || "general document"}) uploaded to My Library.`;
+  const documentType = (metadata?.documentType as UserDocumentType) || "OTHER_DOCUMENT";
 
   // 2. Create Paper record first to obtain canonical cuid ID
   const paper = await prisma.paper.create({
@@ -237,6 +249,352 @@ export async function uploadUserPrivateDocument(params: {
 }
 
 /**
+ * Attaches a user-provided PDF to an existing paper (e.g. a saved METADATA_ONLY reference)
+ * in the user's library.
+ *
+ * Guarantees (Copy-on-Write Ownership-Safe Attachment Pattern):
+ * 1. If target paper is ALREADY private and owned by this user, updates it in-place.
+ * 2. If target paper is a SHARED PUBLIC scholarly paper (e.g. DOI reference saved by multiple users),
+ *    the shared public paper is NEVER mutated or claimed. It remains public and METADATA_ONLY.
+ * 3. A private clone of the paper is created specifically for this user with canonical metadata copied,
+ *    storing the PDF in user-scoped storage (research-papers/users/<userId>/papers/<privatePaperId>/original.pdf).
+ * 4. Other users who saved the public paper retain their public reference without any leakage
+ *    of this user's private PDF, text chunks, embeddings, summaries, or chat history.
+ * 5. Neither user's upload can overwrite or alter the other user's ownership.
+ * 6. Deleting the private copy never affects the shared public paper or another user's library.
+ */
+export async function attachPdfToExistingPaper(params: {
+  userId: string;
+  paperId: string;
+  fileBuffer: Buffer;
+  filename: string;
+  autoProcess?: boolean;
+}): Promise<{
+  success: boolean;
+  paperId: string;
+  storagePath: string;
+  chunkCount?: number;
+  pageCount?: number;
+  error?: string;
+}> {
+  const { userId, paperId, fileBuffer, filename, autoProcess = true } = params;
+
+  // 1. Validate PDF signature & size
+  validateUserPdfBuffer(fileBuffer);
+
+  // 2. Fetch existing paper with authors and categories for cloning if needed
+  const paper = await prisma.paper.findUnique({
+    where: { id: paperId },
+    include: {
+      authors: true,
+      categories: true,
+    },
+  });
+
+  if (!paper) {
+    throw new Error(`Target document "${paperId}" not found.`);
+  }
+
+  const existingProv = (paper.sourceProvenance as Record<string, any>) || {};
+  const isAlreadyPrivateOwnedByUser =
+    existingProv.isPrivate === true &&
+    (existingProv.ownerId === userId || existingProv.uploadedByUserId === userId);
+
+  let targetPaperId = paperId;
+  let targetStoragePath = "";
+  let isNewlyCreatedClone = false;
+
+  if (isAlreadyPrivateOwnedByUser) {
+    // Branch A: In-place update for existing private user document owned by caller
+    const uploadResult = await uploadPaperPdf(
+      paperId,
+      fileBuffer,
+      "application/pdf",
+      { userId }
+    );
+    targetStoragePath = uploadResult.storagePath;
+
+    const updatedProv = {
+      ...existingProv,
+      attachedByUserId: userId,
+      ownerId: userId,
+      isPrivate: true,
+      attachedFilename: filename,
+      attachedAt: new Date().toISOString(),
+      hasUserSuppliedPdf: true,
+    };
+
+    await prisma.paper.update({
+      where: { id: paperId },
+      data: {
+        storagePath: targetStoragePath,
+        status: "UPLOADED",
+        sourceProvenance: updatedProv,
+      },
+    });
+
+    await prisma.bookmark.upsert({
+      where: {
+        userId_paperId: {
+          userId,
+          paperId,
+        },
+      },
+      create: {
+        userId,
+        paperId,
+      },
+      update: {},
+    });
+  } else {
+    // Branch B: Copy-on-Write for Shared Public Scholarly Paper
+    // 1. Check if caller ALREADY has an existing private clone attached to this public paper
+    const existingUserClone = await prisma.paper.findFirst({
+      where: {
+        sourceProvenance: {
+          path: ["attachedToPublicPaperId"],
+          equals: paper.id,
+        },
+        AND: {
+          sourceProvenance: {
+            path: ["ownerId"],
+            equals: userId,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existingUserClone) {
+      // Reuse existing clone (idempotent re-attach / overwrite)
+      targetPaperId = existingUserClone.id;
+
+      const uploadResult = await uploadPaperPdf(
+        targetPaperId,
+        fileBuffer,
+        "application/pdf",
+        { userId }
+      );
+      targetStoragePath = uploadResult.storagePath;
+
+      await prisma.paper.update({
+        where: { id: targetPaperId },
+        data: {
+          storagePath: targetStoragePath,
+          status: "UPLOADED",
+          sourceProvenance: {
+            ...((existingUserClone.sourceProvenance as Record<string, any>) || {}),
+            attachedFilename: filename,
+            attachedAt: new Date().toISOString(),
+            hasUserSuppliedPdf: true,
+          },
+        },
+      });
+
+      // Ensure bookmark points to the clone
+      await prisma.bookmark.deleteMany({
+        where: { userId, paperId: paper.id },
+      }).catch(() => {});
+      const existingBm = await prisma.bookmark.findUnique({
+        where: { userId_paperId: { userId, paperId: targetPaperId } },
+      }).catch(() => null);
+      if (!existingBm) {
+        await prisma.bookmark.create({
+          data: { userId, paperId: targetPaperId },
+        }).catch(() => {});
+      }
+    } else {
+      // Create new private clone
+      isNewlyCreatedClone = true;
+      const privatePaper = await prisma.paper.create({
+        data: {
+          title: paper.title,
+          abstract: paper.abstract,
+          status: "UPLOADED",
+          isOpenAccess: false,
+          publicationDate: paper.publicationDate,
+          journal: paper.journal,
+          keywords: paper.keywords || [],
+          // Omit unique fields on clone to strictly prevent PostgreSQL @unique collision
+          doi: null,
+          arxivId: null,
+          pmid: null,
+          pmcid: null,
+          semanticScholarId: null,
+          sourceProvenance: {
+            ...existingProv,
+            isPrivate: true,
+            ownerId: userId,
+            uploadedByUserId: userId,
+            attachedByUserId: userId,
+            documentType: existingProv.documentType || "RESEARCH_ARTICLE",
+            attachedToPublicPaperId: paper.id,
+            canonicalDoi: paper.doi || null,
+            canonicalArxivId: paper.arxivId || null,
+            canonicalJournal: paper.journal || null,
+            attachedFilename: filename,
+            attachedAt: new Date().toISOString(),
+            hasUserSuppliedPdf: true,
+          },
+        },
+      });
+
+      targetPaperId = privatePaper.id;
+
+      // Concurrency collision check: if another request created a clone concurrently, deduplicate
+      const allClones = await prisma.paper.findMany({
+        where: {
+          sourceProvenance: {
+            path: ["attachedToPublicPaperId"],
+            equals: paper.id,
+          },
+          AND: {
+            sourceProvenance: {
+              path: ["ownerId"],
+              equals: userId,
+            },
+          },
+        },
+        orderBy: { createdAt: "asc" },
+      });
+
+      if (allClones.length > 1) {
+        const primaryClone = allClones[0];
+        if (targetPaperId !== primaryClone.id) {
+          // Redundant concurrent clone: delete it and adopt primary clone
+          await prisma.paper.delete({ where: { id: targetPaperId } }).catch(() => {});
+          targetPaperId = primaryClone.id;
+          isNewlyCreatedClone = false;
+        }
+      }
+
+      try {
+        // Upload PDF to user-scoped storage path under targetPaperId
+        const uploadResult = await uploadPaperPdf(
+          targetPaperId,
+          fileBuffer,
+          "application/pdf",
+          { userId }
+        );
+        targetStoragePath = uploadResult.storagePath;
+      } catch (uploadErr: any) {
+        // Storage upload failed: clean up newly created clone and restore original public bookmark
+        if (isNewlyCreatedClone) {
+          await prisma.paper.delete({ where: { id: targetPaperId } }).catch(() => {});
+          await prisma.bookmark.upsert({
+            where: { userId_paperId: { userId, paperId: paper.id } },
+            create: { userId, paperId: paper.id },
+            update: {},
+          }).catch(() => {});
+        }
+        throw new Error(`Failed to upload PDF attachment to storage: ${uploadErr.message}`);
+      }
+
+      try {
+        await prisma.paper.update({
+          where: { id: targetPaperId },
+          data: {
+            storagePath: targetStoragePath,
+          },
+        });
+
+        // Copy authors to private paper
+        if (paper.authors && paper.authors.length > 0) {
+          for (const pa of paper.authors) {
+            await prisma.paperAuthor.create({
+              data: {
+                paperId: targetPaperId,
+                authorId: pa.authorId,
+                orderIndex: pa.orderIndex,
+              },
+            }).catch(() => {});
+          }
+        }
+
+        // Copy categories to private paper
+        if (paper.categories && paper.categories.length > 0) {
+          for (const pc of paper.categories) {
+            await prisma.paperCategory.create({
+              data: {
+                paperId: targetPaperId,
+                categoryId: pc.categoryId,
+              },
+            }).catch(() => {});
+          }
+        }
+
+        // Repoint user's bookmark from public paper to the private paper
+        await prisma.bookmark.deleteMany({
+          where: {
+            userId,
+            paperId: paper.id,
+          },
+        }).catch(() => {});
+
+        const existingCloneBm = await prisma.bookmark.findUnique({
+          where: { userId_paperId: { userId, paperId: targetPaperId } },
+        }).catch(() => null);
+        if (!existingCloneBm) {
+          await prisma.bookmark.create({
+            data: { userId, paperId: targetPaperId },
+          }).catch(() => {});
+        }
+      } catch (dbErr: any) {
+        // Database update failed after storage upload: purge storage file and delete clone
+        if (isNewlyCreatedClone) {
+          if (targetStoragePath) {
+            await deletePaperPdf(targetStoragePath).catch(() => {});
+          }
+          await prisma.paper.delete({ where: { id: targetPaperId } }).catch(() => {});
+          await prisma.bookmark.upsert({
+            where: { userId_paperId: { userId, paperId: paper.id } },
+            create: { userId, paperId: paper.id },
+            update: {},
+          }).catch(() => {});
+        }
+        throw new Error(`Failed to finalize document attachment in database: ${dbErr.message}`);
+      }
+    }
+  }
+
+  // 6. Run pipeline on the target paper if autoProcess is true
+  let chunkCount = 0;
+  let pageCount = 0;
+  if (autoProcess) {
+    try {
+      const processResult = await processPaperDocument(targetPaperId, { forceReprocess: true });
+      if (processResult.success) {
+        chunkCount = processResult.chunkCount || 0;
+        pageCount = processResult.pageCount || 0;
+        try {
+          await embedPaperChunks(targetPaperId, { force: true });
+        } catch (embedErr: any) {
+          console.warn(`[attachPdfToExistingPaper] Embedding note for ${targetPaperId}:`, embedErr.message);
+        }
+      }
+    } catch (procErr: any) {
+      console.warn(`[attachPdfToExistingPaper] Pipeline processing note for ${targetPaperId}:`, procErr.message);
+    }
+  }
+
+  try {
+    revalidatePath("/library");
+    revalidatePath("/saved");
+    revalidatePath(`/papers/${targetPaperId}`);
+    revalidatePath(`/papers/${paperId}`);
+    revalidatePath("/");
+  } catch {}
+
+  return {
+    success: true,
+    paperId: targetPaperId,
+    storagePath: targetStoragePath,
+    chunkCount,
+    pageCount,
+  };
+}
+
+/**
  * Executes document extraction and chunk embedding for a user document.
  * Ensures strict ownership isolation and prevents duplicate concurrent runs.
  */
@@ -270,7 +628,7 @@ export async function processUserDocumentPipeline(
 
   // Ownership verification
   const prov = paper.sourceProvenance as any;
-  const ownerId = prov?.uploadedByUserId || prov?.ownerId;
+  const ownerId = prov?.uploadedByUserId || prov?.ownerId || prov?.attachedByUserId;
 
   // Allow document owner or system admin
   if (ownerId && ownerId !== userId) {
@@ -516,7 +874,10 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
     if (itemMap.has(paper.id)) return;
 
     const prov = paper.sourceProvenance as any;
-    const isPrivate = prov?.uploadedByUserId === userId || prov?.ownerId === userId;
+    const isPrivate =
+      prov?.uploadedByUserId === userId ||
+      prov?.ownerId === userId ||
+      prov?.attachedByUserId === userId;
     const latestJob = paper.processingJobs?.[0];
 
     const authorsList = paper.authors?.map((a: any) => a.author.name) || [];
@@ -533,26 +894,27 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
       institution: prov?.institution || null,
       isPrivate,
       documentType:
-        prov?.documentType || (isPrivate ? "MANUSCRIPT" : "PUBLISHED_PAPER"),
+        prov?.documentType || (isPrivate ? "OTHER_DOCUMENT" : "PUBLISHED_PAPER"),
       status: paper.status,
       hasPdf: Boolean(paper.storagePath || paper.pdfUrl),
       storagePath: paper.storagePath,
       pdfUrl: paper.pdfUrl || null,
-      doi: paper.doi || null,
+      doi: paper.doi || prov?.canonicalDoi || null,
       isOpenAccess: Boolean(paper.isOpenAccess),
       isPreprint: prov?.version === "submittedVersion" || prov?.isPreprint === true,
       sourceProvenance: prov || null,
       chunkCount: paper._count?.chunks || 0,
       canChat:
         paper.status === "COMPLETED" ||
-        (paper._count?.chunks > 0 && isPrivate),
+        (paper._count?.chunks > 0 && isPrivate) ||
+        (paper._count?.chunks > 0 && prov?.attachedByUserId === userId),
       latestJobStage: latestJob?.stage || null,
       latestJobStatus: latestJob?.status || null,
       latestJobError: latestJob?.errorMessage || null,
       publicationDate: paper.publicationDate
         ? paper.publicationDate.toISOString()
         : null,
-      journal: paper.journal || null,
+      journal: paper.journal || prov?.canonicalJournal || null,
       categories: categoriesList,
       collections: collectionNames,
       createdAt: paper.createdAt.toISOString(),

@@ -91,10 +91,11 @@ export function classifyPaper(paper: MinimalPaperRecord): PaperClassification {
     return "ADMIN_TEST_FIXTURE";
   }
 
-  // 2. Private User Document (Uploaded or owned by a researcher)
+  // 2. Private User Document (Uploaded or owned by a researcher, or user-attached PDF)
   const ownerId =
     prov?.uploadedByUserId ||
     prov?.ownerId ||
+    prov?.attachedByUserId ||
     (paper as any).uploadedByUserId;
   if (
     prov?.isPrivate === true ||
@@ -218,7 +219,11 @@ export async function authorizePaperAccess(
     }
 
     const prov = paper.sourceProvenance as any;
-    const ownerId = prov?.uploadedByUserId || prov?.ownerId;
+    const ownerId =
+      prov?.uploadedByUserId ||
+      prov?.ownerId ||
+      prov?.attachedByUserId ||
+      (paper as any).uploadedByUserId;
 
     if (user.id !== ownerId) {
       return {

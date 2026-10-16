@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import {
   uploadUserPrivateDocument,
+  attachPdfToExistingPaper,
   deleteUserLibraryItem,
   processUserDocumentPipeline,
   getUserLibraryItems,
@@ -67,8 +68,9 @@ export async function uploadUserDocumentAction(
       };
     }
 
+    const targetPaperId = (formData.get("targetPaperId") as string)?.trim() || "";
     const title = (formData.get("title") as string)?.trim() || "";
-    const documentType = (formData.get("documentType") as string)?.trim() || "THESIS";
+    const documentType = (formData.get("documentType") as string)?.trim() || "OTHER_DOCUMENT";
     const authors = (formData.get("authors") as string)?.trim() || "";
     const institution = (formData.get("institution") as string)?.trim() || "";
     const researchCategory = (formData.get("researchCategory") as string)?.trim() || "";
@@ -76,6 +78,29 @@ export async function uploadUserDocumentAction(
 
     const arrayBuffer = await file.arrayBuffer();
     const fileBuffer = Buffer.from(arrayBuffer);
+
+    // If attaching full-text PDF to an existing saved reference:
+    if (targetPaperId) {
+      const attachResult = await attachPdfToExistingPaper({
+        userId: session.user.id,
+        paperId: targetPaperId,
+        fileBuffer,
+        filename: file.name,
+        autoProcess: true,
+      });
+
+      revalidatePath("/library");
+      revalidatePath("/saved");
+      revalidatePath(`/papers/${attachResult.paperId}`);
+      revalidatePath(`/papers/${targetPaperId}`);
+      revalidatePath("/");
+
+      return {
+        success: true,
+        paperId: attachResult.paperId,
+        message: "Full-text PDF successfully attached to saved reference and processed for AI analysis.",
+      };
+    }
 
     const result = await uploadUserPrivateDocument({
       userId: session.user.id,

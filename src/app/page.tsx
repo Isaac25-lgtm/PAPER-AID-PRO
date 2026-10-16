@@ -84,6 +84,8 @@ const fallbackPapers: Paper[] = [
   },
 ];
 
+export const dynamic = "force-dynamic";
+
 export default async function HomePage({
   searchParams,
 }: {
@@ -374,9 +376,9 @@ export default async function HomePage({
       </section>
 
       {/* ========================================================================= */}
-      {/* 2. AUTHENTICATED USER QUICK RETURN BANNER                                 */}
+      {/* 2. MY LIBRARY & AI WORKSPACE PANEL                                        */}
       {/* ========================================================================= */}
-      {isAuthenticated && (
+      {isAuthenticated ? (
         <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-2xl bg-indigo-50/80 border border-indigo-200 shadow-xs">
             <div className="flex items-center gap-3">
@@ -385,7 +387,7 @@ export default async function HomePage({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  Welcome back, {session?.user?.name || "Researcher"}
+                  Welcome back, {session?.user?.name || session?.user?.email || "Researcher"}
                 </h3>
                 <p className="text-xs text-slate-600">
                   You have <span className="font-semibold text-indigo-700">{userSavedCount} paper{userSavedCount === 1 ? "" : "s"}</span> saved in your research library.
@@ -402,6 +404,37 @@ export default async function HomePage({
               <Button asChild size="sm" variant="outline" className="text-xs font-semibold shrink-0 border-indigo-200 bg-white">
                 <Link href="/editor">
                   <span>Open Editor</span>
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-slate-50 via-indigo-50/40 to-slate-50 border border-slate-200 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shrink-0 shadow-xs">
+                <Library className="h-5 w-5" />
+              </div>
+              <div className="space-y-0.5">
+                <h3 className="text-sm font-bold text-slate-900">
+                  Your Private AI Document & Research Workspace
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Save scholarly references, upload private PDFs, lecture notes, reports, and theses. Chat with full texts using grounded page citations.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button asChild size="sm" variant="outline" className="text-xs font-semibold shrink-0 border-slate-300 bg-white hover:bg-slate-50">
+                <Link href="/login?callbackUrl=/library">
+                  <span>Sign In</span>
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shrink-0">
+                <Link href="/register?callbackUrl=/library">
+                  <span>Create Free Account</span>
+                  <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
                 </Link>
               </Button>
             </div>

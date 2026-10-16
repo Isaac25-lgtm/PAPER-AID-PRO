@@ -25,7 +25,7 @@ export interface BibliographicCitationInput {
   issue?: string | null;
   pages?: string | null;
   doi?: string | null;
-  documentType?: "THESIS" | "DISSERTATION" | "PROPOSAL" | "DRAFT" | "STUDENT_PAPER" | "JOURNAL_ARTICLE" | "MANUSCRIPT" | string | null;
+  documentType?: string | null;
   institution?: string | null;
   isUnpublished?: boolean;
 }
@@ -76,18 +76,57 @@ function formatAuthorMLA(author: string): string {
   return `${last}, ${first}`;
 }
 
-function getDocumentTypeDescriptor(type?: string | null): string {
-  switch (type?.toUpperCase()) {
-    case "DISSERTATION":
-      return "Doctoral dissertation";
-    case "THESIS":
-      return "Master's thesis";
+export function getDocumentTypeDescriptor(type?: string | null, title?: string | null): string {
+  const norm = type?.toUpperCase() || "";
+  const titleLower = title?.toLowerCase() || "";
+
+  // Explicit Master's Thesis check
+  if (
+    norm === "MASTERS_THESIS" ||
+    norm === "MASTER_THESIS" ||
+    norm === "THESIS" ||
+    titleLower.includes("master's thesis") ||
+    titleLower.includes("master of science thesis") ||
+    titleLower.includes("masters thesis")
+  ) {
+    return "Master's thesis";
+  }
+
+  // Explicit Doctoral Dissertation check
+  if (
+    norm === "DISSERTATION" ||
+    norm === "PHD_DISSERTATION" ||
+    norm === "DOCTORAL_DISSERTATION" ||
+    titleLower.includes("doctoral dissertation") ||
+    titleLower.includes("ph.d. dissertation") ||
+    titleLower.includes("phd dissertation")
+  ) {
+    return "Doctoral dissertation";
+  }
+
+  switch (norm) {
     case "PROPOSAL":
+    case "RESEARCH_PROPOSAL":
       return "Research proposal";
     case "DRAFT":
-      return "Manuscript draft";
+    case "UNPUBLISHED_MANUSCRIPT":
+    case "MANUSCRIPT":
+      return "Unpublished manuscript";
     case "STUDENT_PAPER":
+    case "ESSAY_ASSIGNMENT":
       return "Student research paper";
+    case "TEXTBOOK_STUDY_NOTES":
+      return "Study notes";
+    case "LECTURE_MATERIAL":
+      return "Lecture material";
+    case "TECHNICAL_REPORT":
+      return "Technical report";
+    case "BUSINESS_REPORT":
+      return "Business report";
+    case "INSTITUTIONAL_REPORT":
+      return "Institutional report";
+    case "OTHER_DOCUMENT":
+      return "Document";
     default:
       return "Unpublished manuscript";
   }
@@ -115,9 +154,25 @@ export function formatBibliographicCitation(
 
   const isUnpublished =
     input.isUnpublished === true ||
-    ["THESIS", "DISSERTATION", "PROPOSAL", "DRAFT", "STUDENT_PAPER", "MANUSCRIPT"].includes(
-      documentType?.toUpperCase() || ""
-    ) ||
+    [
+      "THESIS",
+      "MASTERS_THESIS",
+      "DISSERTATION",
+      "PHD_DISSERTATION",
+      "PROPOSAL",
+      "RESEARCH_PROPOSAL",
+      "DRAFT",
+      "STUDENT_PAPER",
+      "ESSAY_ASSIGNMENT",
+      "MANUSCRIPT",
+      "UNPUBLISHED_MANUSCRIPT",
+      "TEXTBOOK_STUDY_NOTES",
+      "LECTURE_MATERIAL",
+      "TECHNICAL_REPORT",
+      "BUSINESS_REPORT",
+      "INSTITUTIONAL_REPORT",
+      "OTHER_DOCUMENT",
+    ].includes(documentType?.toUpperCase() || "") ||
     (!journal && !doi);
 
   const hasExternalIdentifier = Boolean(doi && doi.trim().length > 0);
@@ -140,7 +195,7 @@ export function formatBibliographicCitation(
           : `${apaAuthors[0]}, et al.`;
 
       if (isUnpublished) {
-        const descriptor = getDocumentTypeDescriptor(documentType);
+        const descriptor = getDocumentTypeDescriptor(documentType, title);
         const bracketInfo = institution ? `[${descriptor}, ${institution}]` : `[${descriptor}]`;
         formattedText = `${authorStr} (${yearString}). ${title} ${bracketInfo}.`;
       } else {
@@ -170,7 +225,7 @@ export function formatBibliographicCitation(
           : firstAuthorMLA;
 
       if (isUnpublished) {
-        const descriptor = getDocumentTypeDescriptor(documentType);
+        const descriptor = getDocumentTypeDescriptor(documentType, title);
         const instStr = institution ? `${institution}, ` : "";
         formattedText = `${authorStr}. "${title}." ${instStr}${descriptor}, ${yearString}.`;
       } else {
@@ -194,7 +249,7 @@ export function formatBibliographicCitation(
           : validAuthors.join(", ");
 
       if (isUnpublished) {
-        const descriptor = getDocumentTypeDescriptor(documentType);
+        const descriptor = getDocumentTypeDescriptor(documentType, title);
         const instStr = institution ? `${institution}` : "Unpublished manuscript";
         formattedText = `${authorStr}. ${yearString}. "${title}." ${descriptor}, ${instStr}.`;
       } else {
@@ -216,7 +271,7 @@ export function formatBibliographicCitation(
           : validAuthors.join(" and ");
 
       if (isUnpublished) {
-        const descriptor = getDocumentTypeDescriptor(documentType);
+        const descriptor = getDocumentTypeDescriptor(documentType, title);
         const instStr = institution ? `, ${institution}` : "";
         formattedText = `[1] ${authorStr}, "${title}," ${descriptor}${instStr}, ${yearString}.`;
       } else {
@@ -238,25 +293,50 @@ export function formatBibliographicCitation(
       const citeKey = `${primaryAuthorLast}${year || "nd"}${keyTitle}`;
       const authorBib = validAuthors.join(" and ");
 
-      if (documentType?.toUpperCase() === "DISSERTATION") {
-        formattedText = `@phdthesis{${citeKey},
-  author    = {${authorBib}},
-  title     = {${title}},
-  school    = {${institution || "University"}},
-  year      = {${yearString}}
-}`;
-      } else if (documentType?.toUpperCase() === "THESIS") {
+      const docTypeUpper = documentType?.toUpperCase() || "";
+      const isMasterThesis =
+        docTypeUpper === "THESIS" ||
+        docTypeUpper === "MASTERS_THESIS" ||
+        docTypeUpper === "MASTER_THESIS" ||
+        title.toLowerCase().includes("master's thesis") ||
+        title.toLowerCase().includes("master of science thesis") ||
+        title.toLowerCase().includes("masters thesis");
+
+      const isDoctoralDissertation =
+        !isMasterThesis &&
+        (docTypeUpper === "DISSERTATION" ||
+          docTypeUpper === "PHD_DISSERTATION" ||
+          docTypeUpper === "DOCTORAL_DISSERTATION" ||
+          title.toLowerCase().includes("doctoral dissertation") ||
+          title.toLowerCase().includes("ph.d. dissertation") ||
+          title.toLowerCase().includes("phd dissertation"));
+
+      if (isMasterThesis) {
         formattedText = `@mastersthesis{${citeKey},
   author    = {${authorBib}},
   title     = {${title}},
   school    = {${institution || "University"}},
   year      = {${yearString}}
 }`;
+      } else if (isDoctoralDissertation) {
+        formattedText = `@phdthesis{${citeKey},
+  author    = {${authorBib}},
+  title     = {${title}},
+  school    = {${institution || "University"}},
+  year      = {${yearString}}
+}`;
+      } else if (docTypeUpper === "TECHNICAL_REPORT") {
+        formattedText = `@techreport{${citeKey},
+  author      = {${authorBib}},
+  title       = {${title}},
+  institution = {${institution || "Institution"}},
+  year        = {${yearString}}
+}`;
       } else if (isUnpublished) {
         formattedText = `@unpublished{${citeKey},
   author    = {${authorBib}},
   title     = {${title}},
-  note      = {${getDocumentTypeDescriptor(documentType)}${institution ? ` (${institution})` : ""}},
+  note      = {${getDocumentTypeDescriptor(documentType, title)}${institution ? ` (${institution})` : ""}},
   year      = {${yearString}}
 }`;
       } else {

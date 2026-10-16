@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 
 export function Navbar() {
   const pathname = usePathname();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
 
@@ -116,7 +116,12 @@ export function Navbar() {
 
         {/* Right Auth / User Area */}
         <div className="hidden md:flex items-center gap-3 shrink-0">
-          {session?.user ? (
+          {status === "loading" ? (
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-full bg-slate-100 animate-pulse" />
+              <div className="h-4 w-16 bg-slate-100 rounded animate-pulse" />
+            </div>
+          ) : session?.user ? (
             <div className="flex items-center gap-3">
               <Link href="/account" title="Account Settings" className="flex items-center gap-2 group">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs group-hover:ring-2 group-hover:ring-indigo-300 transition-all cursor-pointer">
@@ -201,7 +206,12 @@ export function Navbar() {
           </nav>
 
           <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
-            {session?.user ? (
+            {status === "loading" ? (
+              <div className="flex items-center gap-2 p-2">
+                <div className="h-8 w-8 rounded-full bg-slate-100 animate-pulse" />
+                <div className="h-4 w-24 bg-slate-100 rounded animate-pulse" />
+              </div>
+            ) : session?.user ? (
               <>
                 <Link
                   href="/account"

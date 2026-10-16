@@ -120,7 +120,8 @@ export function LibraryView({
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = React.useState<string | null>(null);
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
-  const [docType, setDocType] = React.useState<UserDocumentType>("THESIS");
+  const [targetPaperId, setTargetPaperId] = React.useState<string | null>(null);
+  const [docType, setDocType] = React.useState<UserDocumentType>("OTHER_DOCUMENT");
   const [title, setTitle] = React.useState("");
   const [authors, setAuthors] = React.useState("");
   const [institution, setInstitution] = React.useState("");
@@ -285,6 +286,9 @@ export function LibraryView({
 
     const formData = new FormData();
     formData.append("pdfFile", selectedFile);
+    if (targetPaperId) {
+      formData.append("targetPaperId", targetPaperId);
+    }
     formData.append("title", title);
     formData.append("documentType", docType);
     formData.append("authors", authors);
@@ -295,8 +299,13 @@ export function LibraryView({
     try {
       const res = await uploadUserDocumentAction(formData);
       if (res.success) {
-        setUploadSuccess("Manuscript successfully uploaded and processed!");
+        setUploadSuccess(
+          targetPaperId
+            ? "Full-text PDF successfully attached to saved reference!"
+            : "Document successfully uploaded and processed!"
+        );
         setSelectedFile(null);
+        setTargetPaperId(null);
         setTitle("");
         setAuthors("");
         setInstitution("");
@@ -1390,14 +1399,16 @@ export function LibraryView({
                           variant="ghost"
                           type="button"
                           onClick={() => {
+                            setTargetPaperId(item.id);
                             setTitle(item.title);
+                            setDocType((item.documentType as any) || "OTHER_DOCUMENT");
                             setIsUploadOpen(true);
                           }}
                           className="h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-100 gap-1"
-                          title="Upload manuscript PDF copy"
+                          title="Attach manuscript PDF to this saved reference"
                         >
                           <FileUp className="h-3 w-3" />
-                          <span>Upload</span>
+                          <span>Attach PDF</span>
                         </Button>
 
                         <Link href={`/tools/citation-generator?query=${encodeURIComponent(item.doi || item.title)}`}>
@@ -1546,11 +1557,12 @@ export function LibraryView({
                 </div>
                 <div>
                   <h2 className="text-base font-bold text-slate-900">
-                    Upload Private Document
+                    {targetPaperId ? "Attach Full-Text PDF" : "Upload Private Document"}
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Theses, dissertations, proposals, drafts, and research
-                    manuscripts
+                    {targetPaperId
+                      ? "Attach PDF to saved reference without creating a duplicate"
+                      : "Research articles, theses, lecture notes, reports, and general PDF documents"}
                   </p>
                 </div>
               </div>
@@ -1559,6 +1571,7 @@ export function LibraryView({
                 type="button"
                 onClick={() => {
                   setIsUploadOpen(false);
+                  setTargetPaperId(null);
                   setUploadError(null);
                   setUploadSuccess(null);
                 }}
@@ -1567,6 +1580,16 @@ export function LibraryView({
                 <X className="h-5 w-5" />
               </button>
             </div>
+
+            {targetPaperId && (
+              <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs flex items-start gap-2">
+                <Sparkles className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
+                <div>
+                  <span className="font-semibold">Attaching to saved reference:</span>{" "}
+                  <span className="italic">{title || targetPaperId}</span>. Full-text extraction and AI analysis will be enabled.
+                </div>
+              </div>
+            )}
 
             {uploadError && (
               <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
@@ -1637,13 +1660,19 @@ export function LibraryView({
                   }
                   className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
                 >
-                  <option value="THESIS">Master's / Ph.D. Thesis</option>
-                  <option value="DISSERTATION">Doctoral Dissertation</option>
-                  <option value="PROPOSAL">Research Proposal / Grant</option>
+                  <option value="OTHER_DOCUMENT">General Document (PDF)</option>
+                  <option value="RESEARCH_ARTICLE">Research Article / Paper</option>
+                  <option value="MASTERS_THESIS">Master's Thesis</option>
+                  <option value="PHD_DISSERTATION">Doctoral Dissertation</option>
+                  <option value="UNPUBLISHED_MANUSCRIPT">Unpublished Manuscript / Working Paper</option>
+                  <option value="RESEARCH_PROPOSAL">Research Proposal / Grant</option>
+                  <option value="TEXTBOOK_STUDY_NOTES">Textbook & Study Notes</option>
+                  <option value="LECTURE_MATERIAL">Lecture Material / Slides</option>
+                  <option value="ESSAY_ASSIGNMENT">Essay & Assignment</option>
+                  <option value="TECHNICAL_REPORT">Technical Report</option>
+                  <option value="BUSINESS_REPORT">Business / Corporate Report</option>
+                  <option value="INSTITUTIONAL_REPORT">Institutional / Policy Report</option>
                   <option value="DRAFT">Manuscript Draft</option>
-                  <option value="STUDENT_PAPER">Student Research Paper</option>
-                  <option value="JOURNAL_ARTICLE">Published Journal PDF</option>
-                  <option value="MANUSCRIPT">Other Working Paper</option>
                 </select>
               </div>
 
