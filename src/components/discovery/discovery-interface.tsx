@@ -12,13 +12,24 @@ import {
   CheckCircle2,
   AlertCircle,
   ExternalLink,
-  Layers,
   Sparkles,
   Info,
   Clock,
   Filter,
   FileText,
   Loader2,
+  Quote,
+  Bookmark,
+  ChevronDown,
+  ChevronUp,
+  Calendar,
+  ArrowUpDown,
+  SlidersHorizontal,
+  X,
+  FileCheck,
+  ShieldCheck,
+  Building,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +41,17 @@ import {
   SourceProvider,
 } from "@/lib/discovery/types";
 import { searchScholarlyAction, importPaperMetadataAction } from "@/lib/discovery/import-actions";
+import { getResearchSnapshotAction } from "@/lib/discovery/snapshot/snapshot-actions";
+import { ResearchSnapshot, SnapshotCitation } from "@/lib/discovery/snapshot/types";
+import { AIResearchSnapshotCard } from "./ai-research-snapshot-card";
+import { CiteModal } from "./cite-modal";
+import { SourceEvidenceModal } from "./source-evidence-modal";
+import { SavePromptModal } from "./save-prompt-modal";
 import { cn } from "@/lib/utils";
+
+type SearchCategory = "PAPERS" | "AUTHORS" | "JOURNALS";
+type DateFilter = "ALL" | "1_YEAR" | "5_YEARS" | "10_YEARS" | "CUSTOM";
+type SortOption = "RELEVANCE" | "NEWEST" | "MOST_CITED";
 
 const EXAMPLE_QUERIES = [
   "breast ultrasound artificial intelligence",
@@ -42,22 +63,45 @@ const EXAMPLE_QUERIES = [
 export function DiscoveryInterface() {
   const router = useRouter();
   const { data: session } = useSession();
+
+  // Search state
   const [query, setQuery] = React.useState("");
+  const [activeQuery, setActiveQuery] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [searchResult, setSearchResult] = React.useState<DiscoverySearchResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Filters
+  // Compact Sub-Controls
+  const [selectedCategory, setSelectedCategory] = React.useState<SearchCategory>("PAPERS");
+  const [dateFilter, setDateFilter] = React.useState<DateFilter>("ALL");
+  const [customYearStart, setCustomYearStart] = React.useState("");
+  const [customYearEnd, setCustomYearEnd] = React.useState("");
+  const [openAccessOnly, setOpenAccessOnly] = React.useState(false);
+  const [sortBy, setSortBy] = React.useState<SortOption>("RELEVANCE");
+
+  // Advanced Search Panel Toggle
+  const [showAdvancedSearch, setShowAdvancedSearch] = React.useState(false);
+  const [autoGenerateSnapshot, setAutoGenerateSnapshot] = React.useState(true);
   const [selectedProviders, setSelectedProviders] = React.useState<SourceProvider[]>([
     "CITED_EVIDENCE",
     "PUBMED",
     "CROSSREF",
     "SEMANTIC_SCHOLAR",
   ]);
-  const [openAccessOnly, setOpenAccessOnly] = React.useState(false);
-  const [expandedAbstracts, setExpandedAbstracts] = React.useState<Record<string, boolean>>({});
 
-  // Import states
+  // AI Research Snapshot State
+  const [snapshot, setSnapshot] = React.useState<ResearchSnapshot | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = React.useState(false);
+  const [snapshotError, setSnapshotError] = React.useState<string | null>(null);
+
+  // Modals state
+  const [activeCitePaper, setActiveCitePaper] = React.useState<NormalizedExternalPaper | null>(null);
+  const [activeEvidenceCitation, setActiveEvidenceCitation] = React.useState<SnapshotCitation | null>(null);
+  const [savePromptTargetTitle, setSavePromptTargetTitle] = React.useState<string | undefined>(undefined);
+  const [isSavePromptOpen, setIsSavePromptOpen] = React.useState(false);
+
+  // In-line UI states
+  const [expandedAbstracts, setExpandedAbstracts] = React.useState<Record<string, boolean>>({});
   const [importingPaperId, setImportingPaperId] = React.useState<string | null>(null);
   const [importSuccessMap, setImportSuccessMap] = React.useState<
     Record<string, { paperId: string; fullTextStatus?: string; message?: string }>
@@ -73,13 +117,25 @@ export function DiscoveryInterface() {
     });
   };
 
+  const insertBooleanOperator = (op: string) => {
+    setQuery((prev) => {
+      const trimmed = prev.trim();
+      if (!trimmed) return op === '""' ? '""' : op;
+      if (op === '""') return `${trimmed} ""`;
+      return `${trimmed} ${op} `;
+    });
+  };
+
   const handleSearch = async (e?: React.FormEvent, customQuery?: string) => {
     if (e) e.preventDefault();
-    const q = customQuery !== undefined ? customQuery : query;
-    if (!q.trim()) return;
+    const q = (customQuery !== undefined ? customQuery : query).trim();
+    if (!q) return;
 
+    setActiveQuery(q);
     setLoading(true);
     setError(null);
+    setSnapshot(null);
+    setSnapshotError(null);
 
     try {
       const res = await searchScholarlyAction(q, {
@@ -88,10 +144,38 @@ export function DiscoveryInterface() {
         openAccessOnly,
       });
       setSearchResult(res);
+
+      // Auto-trigger AI Research Snapshot if enabled and papers were found
+      if (autoGenerateSnapshot && res.papers && res.papers.length > 0) {
+        fetchSnapshot(q, res.papers);
+      }
     } catch (err: any) {
       setError(err?.message || "Failed to search scholarly sources. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchSnapshot = async (
+    searchQ: string,
+    papersToSynthesize: NormalizedExternalPaper[],
+    forceRefresh: boolean = false
+  ) => {
+    setSnapshotLoading(true);
+    setSnapshotError(null);
+    try {
+      const res = await getResearchSnapshotAction(searchQ, papersToSynthesize, {
+        forceRefresh,
+      });
+      if (res.success && res.snapshot) {
+        setSnapshot(res.snapshot);
+      } else {
+        setSnapshotError(res.error || "Unable to generate snapshot at this time.");
+      }
+    } catch (err: any) {
+      setSnapshotError(err?.message || "Failed to communicate with snapshot service.");
+    } finally {
+      setSnapshotLoading(false);
     }
   };
 
@@ -100,7 +184,9 @@ export function DiscoveryInterface() {
     attemptFullTextFetch: boolean = false
   ) => {
     if (!session?.user) {
-      router.push(`/login?callbackUrl=/discover`);
+      // Unauthenticated visitor: Open Save Prompt Modal
+      setSavePromptTargetTitle(paper.title);
+      setIsSavePromptOpen(true);
       return;
     }
 
@@ -129,7 +215,9 @@ export function DiscoveryInterface() {
                     inLibrary: true,
                     paperId: res.paperId,
                     processingStatus: (res.fullTextStatus as any) || "METADATA_ONLY",
-                    hasFullText: res.fullTextStatus === "COMPLETED" || res.fullTextStatus === "FULL_TEXT_AVAILABLE",
+                    hasFullText:
+                      res.fullTextStatus === "COMPLETED" ||
+                      res.fullTextStatus === "FULL_TEXT_AVAILABLE",
                   },
                 };
               }
@@ -139,7 +227,8 @@ export function DiscoveryInterface() {
         }
       } else {
         if (res.error?.includes("Authentication required") || res.error?.includes("sign in")) {
-          router.push(`/login?callbackUrl=/discover`);
+          setSavePromptTargetTitle(paper.title);
+          setIsSavePromptOpen(true);
           return;
         }
         alert(res.error || "Failed to import paper.");
@@ -158,68 +247,133 @@ export function DiscoveryInterface() {
     }));
   };
 
-  const filteredPapers = React.useMemo(() => {
+  // Filtered and Sorted Papers according to compact sub-controls
+  const filteredAndSortedPapers = React.useMemo(() => {
     if (!searchResult) return [];
-    let list = searchResult.papers;
+    let list = [...searchResult.papers];
+
+    // Category filtering
+    if (selectedCategory === "AUTHORS") {
+      const qLower = (activeQuery || query).toLowerCase().trim();
+      if (qLower) {
+        const matching = list.filter((p) =>
+          p.authors.some((a) => a.name.toLowerCase().includes(qLower))
+        );
+        if (matching.length > 0) list = matching;
+      }
+    } else if (selectedCategory === "JOURNALS") {
+      const qLower = (activeQuery || query).toLowerCase().trim();
+      if (qLower) {
+        const matching = list.filter(
+          (p) => p.journal && p.journal.toLowerCase().includes(qLower)
+        );
+        if (matching.length > 0) list = matching;
+      }
+    }
+
+    // Open Access filter
     if (openAccessOnly) {
       list = list.filter((p) => p.isOpenAccess);
     }
+
+    // Publication Date Filter
+    const currentYear = new Date().getFullYear();
+    if (dateFilter === "1_YEAR") {
+      list = list.filter((p) => p.year && p.year >= currentYear - 1);
+    } else if (dateFilter === "5_YEARS") {
+      list = list.filter((p) => p.year && p.year >= currentYear - 5);
+    } else if (dateFilter === "10_YEARS") {
+      list = list.filter((p) => p.year && p.year >= currentYear - 10);
+    } else if (dateFilter === "CUSTOM") {
+      const start = customYearStart ? parseInt(customYearStart, 10) : null;
+      const end = customYearEnd ? parseInt(customYearEnd, 10) : null;
+      if (start) list = list.filter((p) => p.year && p.year >= start);
+      if (end) list = list.filter((p) => p.year && p.year <= end);
+    }
+
+    // Sorting
+    if (sortBy === "NEWEST") {
+      list.sort((a, b) => (b.year || 0) - (a.year || 0));
+    } else if (sortBy === "MOST_CITED") {
+      list.sort((a, b) => (b.citationCount || 0) - (a.citationCount || 0));
+    }
+    // RELEVANCE preserves hybrid rank order
+
     return list;
-  }, [searchResult, openAccessOnly]);
+  }, [
+    searchResult,
+    selectedCategory,
+    openAccessOnly,
+    dateFilter,
+    customYearStart,
+    customYearEnd,
+    sortBy,
+    activeQuery,
+    query,
+  ]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-6">
         <div className="flex items-center gap-2 text-indigo-600 font-semibold text-xs uppercase tracking-wider mb-2">
           <Globe className="h-4 w-4" />
-          <span>External Scholarly Discovery</span>
+          <span>Academic Intelligence Discovery</span>
         </div>
         <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
-          Search Global Research Literature
+          Scholarly Research Discovery
         </h1>
         <p className="mt-2 text-base text-slate-600 max-w-3xl">
-          Search across CitedEvidence Scholar, PubMed, Crossref, and Semantic Scholar with automated deduplication and
-          identity resolution. Import metadata and lawfully retrieve open-access manuscripts into your
-          evidence library.
+          Search global peer-reviewed literature across PubMed, Crossref, Semantic Scholar, and
+          CitedEvidence. Instantly view an evidence-grounded AI Research Snapshot, inspect supporting
+          citations, and save verified papers to your private library.
         </p>
       </div>
 
-      {/* Scope and Scientific Evaluation Disclosure */}
-      <div className="mb-6 rounded-lg border border-amber-200/80 bg-amber-50/50 p-4 text-xs text-amber-900 flex items-start gap-3">
+      {/* Scope and Evidence Boundary Disclosure */}
+      <div className="mb-6 rounded-lg border border-amber-200/80 bg-amber-50/50 p-3.5 text-xs text-amber-900 flex items-start gap-3">
         <Info className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           <p className="font-semibold text-amber-950">
-            Scholarly Discovery & Evidence Boundary Disclosure
+            Scholarly Integrity &amp; Evidence Grounding Standard
           </p>
           <p className="text-amber-800 leading-relaxed">
-            External search results are ranked by provider relevance. Citation counts represent
-            descriptive external bibliometrics and do not represent internal evidence evaluation or
-            scientific consensus. Discovered metadata does not automatically participate in Phase 7 RAG
-            or Phase 8 research synthesis until authentic full-text manuscripts are imported and
-            processed into the local library.
+            External search results reflect provider metadata. AI Research Snapshots are strictly
+            grounded in retrieved paper abstracts or verified manuscript full text — citations link
+            directly to the exact supporting source passage.
           </p>
         </div>
       </div>
 
-      {/* Search Input Bar */}
-      <Card className="p-4 sm:p-6 mb-8 border-slate-200 shadow-xs bg-white">
+      {/* Prominent Search Bar & Compact Controls Card */}
+      <Card className="p-4 sm:p-6 mb-8 border-slate-200 shadow-sm bg-white">
         <form onSubmit={(e) => handleSearch(e)} className="space-y-4">
+          {/* Main Natural Language Search Bar */}
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-3 h-5 w-5 text-slate-400" />
+              <Search className="absolute left-3.5 top-3.5 h-5 w-5 text-slate-400" />
               <Input
                 type="text"
-                placeholder="Search by topic, keyword, title, or DOI (e.g., breast ultrasound artificial intelligence)..."
+                placeholder="Ask a scientific question or enter topic, DOI, author, or keyword..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="pl-11 h-12 text-base border-slate-300 focus:border-indigo-600"
+                className="pl-11 pr-8 h-12 text-base border-slate-300 focus:border-indigo-600 rounded-lg shadow-2xs"
               />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600"
+                  title="Clear search"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              )}
             </div>
             <Button
               type="submit"
               disabled={loading || !query.trim()}
-              className="h-12 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center justify-center gap-2 shrink-0"
+              className="h-12 px-7 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center justify-center gap-2 shrink-0 rounded-lg shadow-2xs transition-all"
             >
               {loading ? (
                 <>
@@ -235,9 +389,9 @@ export function DiscoveryInterface() {
             </Button>
           </div>
 
-          {/* Query Suggestion Chips */}
-          <div className="flex flex-wrap items-center gap-2 pt-2 text-xs text-slate-500">
-            <span className="font-medium text-slate-600">Sample topics:</span>
+          {/* Sample Topic Chips */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs text-slate-500">
+            <span className="font-medium text-slate-600 mr-1">Suggested topics:</span>
             {EXAMPLE_QUERIES.map((q) => (
               <button
                 key={q}
@@ -246,53 +400,205 @@ export function DiscoveryInterface() {
                   setQuery(q);
                   handleSearch(undefined, q);
                 }}
-                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
+                className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
               >
                 {q}
               </button>
             ))}
           </div>
 
-          {/* Provider Selection and Filters Bar */}
-          <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-slate-700 flex items-center gap-1">
-                <Filter className="h-3.5 w-3.5 text-slate-500" />
-                Connected Sources:
-              </span>
-              {(["CITED_EVIDENCE", "PUBMED", "CROSSREF", "SEMANTIC_SCHOLAR"] as SourceProvider[]).map((prov) => {
-                const active = selectedProviders.includes(prov);
-                return (
+          {/* COMPACT SUB-CONTROLS DIRECTLY BELOW */}
+          <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+            {/* Left: Category Selector & Date Filter */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Category Pills */}
+              <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50/80 p-0.5">
+                {(
+                  [
+                    { id: "PAPERS", label: "Papers", icon: FileText },
+                    { id: "AUTHORS", label: "Authors", icon: User },
+                    { id: "JOURNALS", label: "Journals", icon: Building },
+                  ] as const
+                ).map(({ id, label, icon: Icon }) => (
                   <button
-                    key={prov}
+                    key={id}
                     type="button"
-                    onClick={() => toggleProvider(prov)}
+                    onClick={() => setSelectedCategory(id)}
                     className={cn(
-                      "px-2.5 py-1 rounded-md font-medium border transition-colors",
-                      active
-                        ? "bg-indigo-50 border-indigo-200 text-indigo-700"
-                        : "bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-700"
+                      "flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-colors",
+                      selectedCategory === id
+                        ? "bg-white text-indigo-700 shadow-2xs font-semibold"
+                        : "text-slate-600 hover:text-slate-900"
                     )}
                   >
-                    {prov === "CITED_EVIDENCE" && "CitedEvidence"}
-                    {prov === "PUBMED" && "PubMed"}
-                    {prov === "CROSSREF" && "Crossref"}
-                    {prov === "SEMANTIC_SCHOLAR" && "Semantic Scholar"}
+                    <Icon className="h-3.5 w-3.5" />
+                    <span>{label}</span>
                   </button>
-                );
-              })}
+                ))}
+              </div>
+
+              {/* Publication Date Filter */}
+              <div className="flex items-center gap-1.5 text-slate-600">
+                <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value as DateFilter)}
+                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="ALL">All Publication Dates</option>
+                  <option value="1_YEAR">Past 1 Year</option>
+                  <option value="5_YEARS">Past 5 Years</option>
+                  <option value="10_YEARS">Past 10 Years</option>
+                  <option value="CUSTOM">Custom Year Range...</option>
+                </select>
+              </div>
+
+              {/* Custom Year Inputs if selected */}
+              {dateFilter === "CUSTOM" && (
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="number"
+                    placeholder="From"
+                    value={customYearStart}
+                    onChange={(e) => setCustomYearStart(e.target.value)}
+                    className="h-7 w-16 text-xs p-1"
+                  />
+                  <span className="text-slate-400">–</span>
+                  <Input
+                    type="number"
+                    placeholder="To"
+                    value={customYearEnd}
+                    onChange={(e) => setCustomYearEnd(e.target.value)}
+                    className="h-7 w-16 text-xs p-1"
+                  />
+                </div>
+              )}
             </div>
 
-            <label className="flex items-center gap-2 cursor-pointer select-none text-slate-700">
-              <input
-                type="checkbox"
-                checked={openAccessOnly}
-                onChange={(e) => setOpenAccessOnly(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <span>Open Access Only</span>
-            </label>
+            {/* Right: Open Access Toggle & Sort Selector */}
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Open Access Toggle */}
+              <label className="flex items-center gap-1.5 cursor-pointer select-none text-slate-700 font-medium">
+                <input
+                  type="checkbox"
+                  checked={openAccessOnly}
+                  onChange={(e) => setOpenAccessOnly(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="flex items-center gap-1">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>Open Access Only</span>
+                </span>
+              </label>
+
+              {/* Sort Selector */}
+              <div className="flex items-center gap-1.5 text-slate-600">
+                <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as SortOption)}
+                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="RELEVANCE">Sort: Relevance</option>
+                  <option value="NEWEST">Sort: Newest First</option>
+                  <option value="MOST_CITED">Sort: Most Cited</option>
+                </select>
+              </div>
+
+              {/* Advanced Search Panel Toggle Button */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAdvancedSearch(!showAdvancedSearch)}
+                className="h-8 px-2 text-xs text-slate-600 hover:text-indigo-600 flex items-center gap-1"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                <span>Advanced</span>
+                {showAdvancedSearch ? (
+                  <ChevronUp className="h-3 w-3" />
+                ) : (
+                  <ChevronDown className="h-3 w-3" />
+                )}
+              </Button>
+            </div>
           </div>
+
+          {/* COLLAPSIBLE ADVANCED SEARCH PANEL */}
+          {showAdvancedSearch && (
+            <div className="mt-3 pt-3 border-t border-slate-100 bg-slate-50/60 p-3.5 rounded-lg space-y-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold text-slate-700">Boolean Query Builder &amp; Operators:</span>
+                <span className="text-slate-500 text-[11px]">Click to append syntax to search bar</span>
+              </div>
+
+              {/* Boolean Operators Bar */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { label: "AND", op: "AND" },
+                  { label: "OR", op: "OR" },
+                  { label: "NOT", op: "NOT" },
+                  { label: 'Exact Phrase "..."', op: '""' },
+                ].map(({ label, op }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => insertBooleanOperator(op)}
+                    className="px-2.5 py-1 rounded bg-white border border-slate-200 text-slate-700 font-mono text-[11px] hover:border-indigo-400 hover:text-indigo-700 transition-colors shadow-2xs"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Connected Source Providers */}
+              <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-slate-700 flex items-center gap-1">
+                    <Filter className="h-3.5 w-3.5 text-slate-500" />
+                    Scholarly Sources:
+                  </span>
+                  {(
+                    ["CITED_EVIDENCE", "PUBMED", "CROSSREF", "SEMANTIC_SCHOLAR"] as SourceProvider[]
+                  ).map((prov) => {
+                    const active = selectedProviders.includes(prov);
+                    return (
+                      <button
+                        key={prov}
+                        type="button"
+                        onClick={() => toggleProvider(prov)}
+                        className={cn(
+                          "px-2.5 py-0.5 rounded-md font-medium border text-[11px] transition-colors",
+                          active
+                            ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-semibold"
+                            : "bg-white border-slate-200 text-slate-500 hover:text-slate-700"
+                        )}
+                      >
+                        {prov === "CITED_EVIDENCE" && "CitedEvidence"}
+                        {prov === "PUBMED" && "PubMed"}
+                        {prov === "CROSSREF" && "Crossref"}
+                        {prov === "SEMANTIC_SCHOLAR" && "Semantic Scholar"}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* AI Research Snapshot Configuration */}
+                <label className="flex items-center gap-2 cursor-pointer select-none text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={autoGenerateSnapshot}
+                    onChange={(e) => setAutoGenerateSnapshot(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="flex items-center gap-1">
+                    <Sparkles className="h-3 w-3 text-indigo-600" />
+                    <span>Auto-generate AI Snapshot</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+          )}
         </form>
       </Card>
 
@@ -307,12 +613,12 @@ export function DiscoveryInterface() {
         </div>
       )}
 
-      {/* Telemetry and Provider Status Bar */}
+      {/* Telemetry and Results Counter Bar */}
       {searchResult && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-lg bg-slate-100/70 p-3 text-xs text-slate-600">
           <div className="flex items-center gap-3">
             <span className="font-semibold text-slate-900">
-              {filteredPapers.length} unique results
+              {filteredAndSortedPapers.length} results
             </span>
             <span className="text-slate-400">•</span>
             <span>
@@ -325,76 +631,53 @@ export function DiscoveryInterface() {
             </span>
           </div>
 
-          {/* Expandable Source Details Toggle */}
-          <div className="flex items-center gap-2">
-            {Object.values(searchResult.providerResults).some((p) => p.status !== "SUCCESS") ? (
-              <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1">
-                <Info className="h-3 w-3 text-amber-600" />
-                <span>Some sources temporarily limited</span>
-              </span>
-            ) : (
-              <span className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full font-medium flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                <span>All connected sources active</span>
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => setExpandedAbstracts((prev) => ({ ...prev, __providerDetails: !prev.__providerDetails }))}
-              className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold"
+          {/* Manual Snapshot Trigger if not auto-generated */}
+          {!snapshot && !snapshotLoading && searchResult.papers.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => fetchSnapshot(activeQuery || query, searchResult.papers)}
+              className="h-7 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50 flex items-center gap-1.5"
             >
-              {expandedAbstracts.__providerDetails ? "Hide source details" : "Source details"}
-            </button>
-          </div>
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Generate AI Research Snapshot</span>
+            </Button>
+          )}
         </div>
       )}
 
-      {/* Expandable Provider Telemetry Details */}
-      {searchResult && expandedAbstracts.__providerDetails && (
-        <div className="mb-6 p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
-          <div className="font-semibold text-slate-700">Source Provider Status:</div>
-          <div className="flex flex-wrap gap-2">
-            {Object.values(searchResult.providerResults).map((pRes) => (
-              <div
-                key={pRes.provider}
-                className={cn(
-                  "p-2 rounded-lg border text-xs space-y-0.5 min-w-[140px]",
-                  pRes.status === "SUCCESS"
-                    ? "border-emerald-200 bg-emerald-50/60 text-emerald-800"
-                    : pRes.status === "RATE_LIMITED"
-                    ? "border-amber-200 bg-amber-50/60 text-amber-800"
-                    : "border-rose-200 bg-rose-50/60 text-rose-800"
-                )}
-              >
-                <div className="font-bold text-[11px]">
-                  {pRes.provider === "PUBMED" ? "PubMed" : pRes.provider === "CROSSREF" ? "Crossref" : "Semantic Scholar"}
-                </div>
-                <div className="text-[11px]">
-                  {pRes.status === "SUCCESS" ? `${pRes.count} records retrieved` : pRes.status === "RATE_LIMITED" ? "Temporarily rate limited" : "Source unavailable"}
-                </div>
-              </div>
-            ))}
-          </div>
-          <p className="text-[11px] text-slate-500 pt-1">
-            When an external source is temporarily unavailable, results from all responding providers are deduplicated and merged automatically.
-          </p>
+      {/* COMPACT AI RESEARCH SNAPSHOT PANEL */}
+      {(snapshot || snapshotLoading || snapshotError) && (
+        <div className="mb-8">
+          <AIResearchSnapshotCard
+            snapshot={snapshot}
+            loading={snapshotLoading}
+            error={snapshotError}
+            onSelectCitation={(citation: SnapshotCitation) => setActiveEvidenceCitation(citation)}
+            onRefresh={() => {
+              if (searchResult && searchResult.papers.length > 0) {
+                fetchSnapshot(activeQuery || query, searchResult.papers, true);
+              }
+            }}
+          />
         </div>
       )}
 
-      {/* Search Results List */}
+      {/* SCHOLARLY SEARCH RESULTS LIST */}
       <div className="space-y-4">
-        {filteredPapers.map((paper) => {
+        {filteredAndSortedPapers.map((paper) => {
           const isExpanded = Boolean(expandedAbstracts[paper.id]);
           const isImporting = importingPaperId === paper.id;
           const importSuccess = importSuccessMap[paper.id];
           const localStatus = paper.localStatus;
           const isInLibrary = Boolean(localStatus?.inLibrary) || Boolean(importSuccess);
-          const hasPmcFullText = paper.fullTextAvailability === "FULL_TEXT_AVAILABLE" && paper.pmcid;
+          const hasPmcFullText =
+            paper.fullTextAvailability === "FULL_TEXT_AVAILABLE" && paper.pmcid;
 
           return (
             <Card
               key={paper.id}
-              className="p-5 border-slate-200 hover:border-slate-300 transition-all bg-white shadow-2xs"
+              className="p-5 border-slate-200 hover:border-slate-300 transition-all bg-white shadow-2xs rounded-xl"
             >
               <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                 {/* Main Paper Metadata Column */}
@@ -436,7 +719,7 @@ export function DiscoveryInterface() {
                       </Badge>
                     )}
 
-                    {/* Full text availability */}
+                    {/* PMC Full text badge */}
                     {hasPmcFullText && (
                       <Badge
                         variant="outline"
@@ -463,7 +746,7 @@ export function DiscoveryInterface() {
                     {paper.journal && (
                       <>
                         <span className="text-slate-300">•</span>
-                        <span className="italic">{paper.journal}</span>
+                        <span className="italic font-medium">{paper.journal}</span>
                       </>
                     )}
                     {paper.year && (
@@ -513,7 +796,10 @@ export function DiscoveryInterface() {
 
                   {/* Abstract Preview with expand/collapse */}
                   {paper.abstract ? (
-                    <div className="pt-2 text-xs text-slate-700 leading-relaxed">
+                    <div className="pt-2 text-xs text-slate-700 leading-relaxed bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
+                      <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">
+                        Abstract Excerpt:
+                      </div>
                       <p className={cn("transition-all", !isExpanded && "line-clamp-2")}>
                         {paper.abstract}
                       </p>
@@ -521,7 +807,7 @@ export function DiscoveryInterface() {
                         <button
                           type="button"
                           onClick={() => toggleAbstract(paper.id)}
-                          className="mt-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                          className="mt-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
                         >
                           {isExpanded ? "Show less" : "Read full abstract"}
                         </button>
@@ -535,77 +821,93 @@ export function DiscoveryInterface() {
                 </div>
 
                 {/* Right Action Column */}
-                <div className="flex flex-col sm:items-end justify-between gap-3 shrink-0 md:min-w-[200px] border-t md:border-t-0 md:border-l border-slate-100 pt-3 md:pt-0 md:pl-4">
-                  {/* Library Status or Import Controls */}
-                  {isInLibrary ? (
-                    <div className="flex flex-col items-start sm:items-end gap-2 w-full">
-                      <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-semibold flex items-center gap-1 px-3 py-1">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        <span>In Library</span>
-                      </Badge>
+                <div className="flex flex-col sm:items-end justify-between gap-3 shrink-0 md:min-w-[210px] border-t md:border-t-0 md:border-l border-slate-100 pt-3 md:pt-0 md:pl-4">
+                  {/* Action Group: View Paper, Cite, Save to Library */}
+                  <div className="flex flex-col items-start sm:items-end gap-2 w-full">
+                    {/* View Paper Button */}
+                    {localStatus?.paperId || importSuccess?.paperId ? (
+                      <Link
+                        href={`/papers/${localStatus?.paperId || importSuccess?.paperId}`}
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 w-full sm:w-auto justify-center"
+                      >
+                        <BookOpen className="h-3.5 w-3.5" />
+                        <span>View Paper</span>
+                      </Link>
+                    ) : paper.externalUrl || paper.doi ? (
+                      <a
+                        href={paper.externalUrl || `https://doi.org/${paper.doi}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 w-full sm:w-auto justify-center"
+                      >
+                        <BookOpen className="h-3.5 w-3.5" />
+                        <span>View Paper</span>
+                        <ExternalLink className="h-3 w-3 text-slate-400" />
+                      </a>
+                    ) : null}
 
-                      <div className="text-[11px] text-slate-500 sm:text-right">
-                        {localStatus?.hasFullText || importSuccess?.fullTextStatus === "COMPLETED" ? (
-                          <span className="text-emerald-700 font-medium">
-                            Full Text Processed &amp; Ready for AI Research
-                          </span>
+                    {/* Cite Button: Opens Citation Modal */}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setActiveCitePaper(paper)}
+                      className="text-xs h-8 px-3 border-slate-200 text-slate-700 hover:bg-slate-50 w-full sm:w-auto flex items-center justify-center gap-1.5"
+                    >
+                      <Quote className="h-3.5 w-3.5 text-indigo-600" />
+                      <span>Cite</span>
+                    </Button>
+
+                    {/* Save to My Library Controls */}
+                    {isInLibrary ? (
+                      <div className="flex flex-col items-start sm:items-end gap-1 w-full pt-1">
+                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-semibold flex items-center gap-1 px-2.5 py-0.5 text-[11px]">
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span>In My Library</span>
+                        </Badge>
+                        <span className="text-[10px] text-slate-500 sm:text-right">
+                          {localStatus?.hasFullText || importSuccess?.fullTextStatus === "COMPLETED"
+                            ? "Full text processed for AI inquiry"
+                            : "Metadata saved"}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="w-full sm:w-auto space-y-1">
+                        {hasPmcFullText ? (
+                          <>
+                            <Button
+                              size="sm"
+                              disabled={isImporting}
+                              onClick={() => handleImport(paper, true)}
+                              className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 h-8"
+                            >
+                              {isImporting ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  <span>Saving...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Download className="h-3.5 w-3.5" />
+                                  <span>Save &amp; Get Full Text</span>
+                                </>
+                              )}
+                            </Button>
+                            <button
+                              type="button"
+                              disabled={isImporting}
+                              onClick={() => handleImport(paper, false)}
+                              className="text-[10px] text-slate-500 hover:text-slate-800 underline block text-center sm:text-right"
+                            >
+                              Save metadata only
+                            </button>
+                          </>
                         ) : (
-                          <span className="text-slate-600">
-                            Saved to Library — Full text needed
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        <Link
-                          href={`/papers/${localStatus?.paperId || importSuccess?.paperId}`}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
-                        >
-                          <BookOpen className="h-3.5 w-3.5" />
-                          <span>Open Paper</span>
-                        </Link>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-start sm:items-end gap-2 w-full">
-                      {/* If PMC Open Full Text is lawfully accessible */}
-                      {hasPmcFullText ? (
-                        <>
-                          <Button
-                            size="sm"
-                            disabled={isImporting}
-                            onClick={() => handleImport(paper, true)}
-                            className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-1.5"
-                          >
-                            {isImporting ? (
-                              <>
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                <span>Ingesting...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Download className="h-3.5 w-3.5" />
-                                <span>Get Full Text &amp; Save</span>
-                              </>
-                            )}
-                          </Button>
-                          <button
-                            type="button"
-                            disabled={isImporting}
-                            onClick={() => handleImport(paper, false)}
-                            className="text-[11px] text-slate-500 hover:text-slate-800 underline"
-                          >
-                            Save to Library (metadata only)
-                          </button>
-                        </>
-                      ) : (
-                        <>
                           <Button
                             size="sm"
                             disabled={isImporting}
                             onClick={() => handleImport(paper, false)}
                             variant="outline"
-                            className="w-full sm:w-auto border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold text-xs flex items-center gap-1.5"
+                            className="w-full sm:w-auto border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold text-xs flex items-center justify-center gap-1.5 h-8"
                           >
                             {isImporting ? (
                               <>
@@ -614,31 +916,15 @@ export function DiscoveryInterface() {
                               </>
                             ) : (
                               <>
-                                <FileText className="h-3.5 w-3.5" />
-                                <span>Save to Library</span>
+                                <Bookmark className="h-3.5 w-3.5" />
+                                <span>Save to My Library</span>
                               </>
                             )}
                           </Button>
-                          <span className="text-[10px] text-slate-400 italic">
-                            Full manuscript text needed for AI inquiry
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* External Source Link */}
-                  {paper.externalUrl && (
-                    <a
-                      href={paper.externalUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-slate-500 hover:text-indigo-600 flex items-center gap-1 pt-2 border-t border-slate-100 w-full justify-start sm:justify-end"
-                    >
-                      <span>External Source</span>
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </Card>
@@ -646,19 +932,42 @@ export function DiscoveryInterface() {
         })}
 
         {/* Empty state when search returned 0 results */}
-        {searchResult && filteredPapers.length === 0 && !loading && (
+        {searchResult && filteredAndSortedPapers.length === 0 && !loading && (
           <Card className="p-12 text-center border-slate-200 bg-white">
             <BookOpen className="h-10 w-10 text-slate-400 mx-auto mb-3" />
             <h3 className="text-base font-semibold text-slate-900">
               No matching scholarly results found
             </h3>
             <p className="mt-1 text-sm text-slate-500 max-w-md mx-auto">
-              No external manuscripts matched your search across the selected scholarly providers.
-              Try broadening your search query or selecting additional providers.
+              No external manuscripts matched your search across the selected filters.
+              Try adjusting your date range, toggling off Open Access, or broadening the query.
             </p>
           </Card>
         )}
       </div>
+
+      {/* MODALS */}
+      {/* 1. Citation Modal */}
+      <CiteModal
+        paper={activeCitePaper}
+        isOpen={Boolean(activeCitePaper)}
+        onClose={() => setActiveCitePaper(null)}
+      />
+
+      {/* 2. Source Evidence Provenance Modal */}
+      <SourceEvidenceModal
+        citation={activeEvidenceCitation}
+        isOpen={Boolean(activeEvidenceCitation)}
+        onClose={() => setActiveEvidenceCitation(null)}
+      />
+
+      {/* 3. Guest Save Prompt Modal */}
+      <SavePromptModal
+        paperTitle={savePromptTargetTitle}
+        isOpen={isSavePromptOpen}
+        onClose={() => setIsSavePromptOpen(false)}
+      />
     </div>
   );
 }
+
