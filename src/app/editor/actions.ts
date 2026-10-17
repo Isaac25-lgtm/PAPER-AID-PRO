@@ -17,12 +17,14 @@ import {
   deleteDocumentCitation,
   InsertCitationInput,
   UpdateDocumentInput,
+  CreateDocumentInput,
 } from "@/lib/editor/document-service";
 import {
   generateInlineAutocomplete,
   rewriteSelectedText,
   summarizeEvidenceForEditor,
   RewriteMode,
+  AutocompleteParams,
 } from "@/lib/editor/ai-editor-service";
 import { getUserLibraryItems } from "@/lib/library/user-library-service";
 
@@ -37,10 +39,7 @@ async function requireAuthUserId(): Promise<string> {
   return session.user.id;
 }
 
-export async function createDocumentAction(data?: {
-  title?: string;
-  docType?: DocumentType;
-}) {
+export async function createDocumentAction(data?: CreateDocumentInput) {
   try {
     const userId = await requireAuthUserId();
     const doc = await createResearchDocument(userId, data);
@@ -257,12 +256,9 @@ export type SummarizeEvidenceActionResult =
       cost?: undefined;
     };
 
-export async function generateAutocompleteAction(params: {
-  documentId: string;
-  prefixText: string;
-  suffixText?: string;
-  selectedSourceIds?: string[];
-}): Promise<AutocompleteActionResult> {
+export async function generateAutocompleteAction(
+  params: AutocompleteParams
+): Promise<AutocompleteActionResult> {
   try {
     const userId = await requireAuthUserId();
     const result = await generateInlineAutocomplete(userId, params);

@@ -18,6 +18,20 @@ interface EditorClientProps {
   initialDocument: any;
 }
 
+function extractHeadingsFromContent(content: any): string[] {
+  if (!content) return [];
+  const headings: string[] = [];
+  if (Array.isArray(content.content)) {
+    for (const node of content.content) {
+      if (node.type === "heading" && Array.isArray(node.content)) {
+        const text = node.content.map((c: any) => c.text || "").join("").trim();
+        if (text) headings.push(text);
+      }
+    }
+  }
+  return headings;
+}
+
 export function EditorClient({ initialDocument }: EditorClientProps) {
   const router = useRouter();
 
@@ -29,6 +43,12 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
   );
   const [wordCount, setWordCount] = useState<number>(initialDocument.wordCount || 0);
   const [charCount, setCharCount] = useState<number>(initialDocument.charCount || 0);
+
+  // Guided Document metadata and live outline synchronization
+  const guidedMetaRef = useRef<any>((initialDocument.content as any)?.meta || null);
+  const [liveHeadings, setLiveHeadings] = useState<string[]>(() =>
+    extractHeadingsFromContent(initialDocument.content)
+  );
 
   // Save State Machine
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
@@ -126,8 +146,20 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
       const words = textContent.trim() ? textContent.trim().split(/\s+/).length : 0;
       const chars = textContent.length;
 
+      // Extract current live headings from contentJson
+      const currentHeadings = extractHeadingsFromContent(contentJson);
+      if (currentHeadings.length > 0) {
+        setLiveHeadings(currentHeadings);
+      }
+
+      // Preserve guided metadata even if TipTap's getJSON() drops it
+      const contentToSave =
+        guidedMetaRef.current && contentJson && !contentJson.meta
+          ? { ...contentJson, meta: guidedMetaRef.current }
+          : contentJson;
+
       pendingUpdatesRef.current = {
-        content: contentJson,
+        content: contentToSave,
         textContent,
         wordCount: words,
         charCount: chars,
@@ -174,6 +206,13 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
         setVersion(res.document.version);
         setUpdatedAt(new Date(res.document.updatedAt).toISOString());
         currentVersionRef.current = res.document.version;
+        if ((res.document.content as any)?.meta) {
+          guidedMetaRef.current = (res.document.content as any).meta;
+        }
+        const refreshedHeadings = extractHeadingsFromContent(res.document.content);
+        if (refreshedHeadings.length > 0) {
+          setLiveHeadings(refreshedHeadings);
+        }
       }
     } catch (err) {
       console.error("Refresh failed:", err);
@@ -247,6 +286,8 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
         isSourcesOpen={isSourcesOpen}
         onToggleSources={() => setIsSourcesOpen(!isSourcesOpen)}
         onRename={handleRename}
+        guidedMeta={(document.content as any)?.meta || guidedMetaRef.current}
+        liveHeadings={liveHeadings}
       />
 
       {/* Concurrency Conflict Alert Banner */}

@@ -1,11 +1,16 @@
 import { prisma } from "../prisma";
 import { CitationType, DocumentType } from "@prisma/client";
 import { ADMIN_TEST_FIXTURE_IDS } from "../auth/paper-authorization";
+import {
+  GuidedDocumentConfig,
+  createGuidedTipTapContent,
+} from "./guided-templates";
 
 export interface CreateDocumentInput {
   title?: string;
   docType?: DocumentType;
   initialContent?: any;
+  guidedConfig?: GuidedDocumentConfig;
 }
 
 export interface UpdateDocumentInput {
@@ -14,6 +19,7 @@ export interface UpdateDocumentInput {
   textContent?: string;
   docType?: DocumentType;
   expectedVersion?: number;
+  guidedMeta?: any;
 }
 
 export interface InsertCitationInput {
@@ -103,10 +109,23 @@ export async function createResearchDocument(
   userId: string,
   input: CreateDocumentInput = {}
 ) {
-  const title = (input.title || "").trim() || "Untitled Research Document";
-  const docType = input.docType || DocumentType.DRAFT;
-  const content = input.initialContent || createDefaultTipTapContent(title);
-  const textContent = `${title}\nStart drafting your research manuscript...`;
+  let title = (input.title || "").trim();
+  let docType = input.docType || DocumentType.DRAFT;
+  let content = input.initialContent;
+  let textContent = "";
+
+  if (input.guidedConfig) {
+    title = (input.guidedConfig.topic || "").trim() || "Untitled Guided Document";
+    docType = input.guidedConfig.docType || DocumentType.MANUSCRIPT;
+    content = createGuidedTipTapContent(input.guidedConfig);
+    const objText = input.guidedConfig.generalObjective ? `Objective: ${input.guidedConfig.generalObjective}` : "";
+    const headingsText = (input.guidedConfig.headings || []).join("\n");
+    textContent = `${title}\n${objText}\n${headingsText}`;
+  } else {
+    title = title || "Untitled Research Document";
+    content = content || createDefaultTipTapContent(title);
+    textContent = `${title}\nStart drafting your research manuscript...`;
+  }
 
   return await prisma.researchDocument.create({
     data: {
@@ -220,7 +239,7 @@ export async function updateResearchDocument(
 ) {
   const existing = await prisma.researchDocument.findUnique({
     where: { id: documentId },
-    select: { id: true, userId: true, version: true },
+    select: { id: true, userId: true, version: true, content: true },
   });
 
   if (!existing || existing.userId !== userId) {
@@ -244,9 +263,25 @@ export async function updateResearchDocument(
   if (updates.title !== undefined) {
     dataToUpdate.title = updates.title.trim() || "Untitled Research Document";
   }
-  if (updates.content !== undefined) {
-    dataToUpdate.content = updates.content;
+
+  if (updates.content !== undefined || updates.guidedMeta !== undefined) {
+    let finalContent = updates.content !== undefined ? updates.content : existing.content;
+    const existingMeta = (existing.content as any)?.meta;
+    const incomingMeta = updates.guidedMeta !== undefined
+      ? updates.guidedMeta
+      : (finalContent && typeof finalContent === "object" ? (finalContent as any).meta : undefined);
+
+    const mergedMeta = incomingMeta || existingMeta;
+
+    if (mergedMeta && finalContent && typeof finalContent === "object") {
+      finalContent = {
+        ...(finalContent as any),
+        meta: mergedMeta,
+      };
+    }
+    dataToUpdate.content = finalContent;
   }
+
   if (updates.textContent !== undefined) {
     dataToUpdate.textContent = updates.textContent;
   }

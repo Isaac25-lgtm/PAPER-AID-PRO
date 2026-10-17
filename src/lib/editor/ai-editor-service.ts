@@ -1,6 +1,7 @@
 import { getModelRouter, ModelRouter } from "../ai/router";
 import { prisma } from "../prisma";
 import { assertPaperAccess } from "./document-service";
+import { normalizeSuggestionSpacingAndDeduplication } from "./guided-templates";
 
 export type RewriteMode = "academic_tone" | "rewrite" | "concise" | "expand";
 
@@ -9,6 +10,14 @@ export interface AutocompleteParams {
   prefixText: string;
   suffixText?: string;
   selectedSourceIds?: string[];
+  currentSection?: string;
+  researchTopic?: string;
+  docType?: string;
+  studyDesign?: string;
+  objectives?: {
+    general?: string;
+    specific?: string[];
+  };
 }
 
 export interface RewriteParams {
@@ -41,14 +50,28 @@ export async function generateInlineAutocomplete(
   params: AutocompleteParams,
   routerOverride?: ModelRouter
 ) {
-  // 1. Verify document ownership
+  // 1. Verify document ownership & retrieve metadata
   const doc = await prisma.researchDocument.findUnique({
     where: { id: params.documentId },
-    select: { id: true, userId: true, title: true },
+    select: { id: true, userId: true, title: true, docType: true, content: true },
   });
   if (!doc || doc.userId !== userId) {
     throw new Error(`Research document '${params.documentId}' not found.`);
   }
+
+  const docMeta = ((doc.content as any)?.meta || {}) as {
+    researchTopic?: string;
+    docType?: string;
+    studyDesign?: string;
+    objectives?: { general?: string; specific?: string[] };
+  };
+
+  const topic = params.researchTopic || docMeta.researchTopic || doc.title || "the specified research problem";
+  const docType = params.docType || docMeta.docType || doc.docType;
+  const studyDesign = params.studyDesign || docMeta.studyDesign || "";
+  const generalObjective = params.objectives?.general || docMeta.objectives?.general || "";
+  const specificObjectives = params.objectives?.specific || docMeta.objectives?.specific || [];
+  const currentSection = (params.currentSection || "").trim();
 
   // 2. Fetch context from selected sources if provided (strictly enforcing user access control)
   let sourceContext = "";
@@ -78,12 +101,17 @@ export async function generateInlineAutocomplete(
   }
 
   // 3. Format prompt
-  const prompt = `DOCUMENT TITLE: ${doc.title}
-${sourceContext}
+  const prompt = `DOCUMENT METADATA:
+- Title / Topic: ${topic}
+- Document Type: ${docType}
+${studyDesign ? `- Study Design: ${studyDesign}\n` : ""}${generalObjective ? `- General Objective: ${generalObjective}\n` : ""}${specificObjectives.length > 0 ? `- Specific Objectives:\n${specificObjectives.map((o: string) => `  * ${o}`).join("\n")}\n` : ""}${currentSection ? `- Current Active Section Heading: "${currentSection}"\n` : ""}${sourceContext}
 EXISTING TEXT BEFORE CURSOR:
 """${params.prefixText.slice(-1500)}"""
 ${params.suffixText ? `TEXT AFTER CURSOR:\n"""${params.suffixText.slice(0, 300)}"""\n` : ""}
-INSTRUCTION: Continue drafting the next 1 to 2 cohesive academic sentences that logically follow the existing text. Output ONLY the continuation text with no preamble or quotes.`;
+INSTRUCTION: Continue drafting the next 1 to 2 cohesive academic sentences that logically follow the existing text under the active section "${currentSection || "manuscript"}".
+CRITICAL SCIENTIFIC INTEGRITY RULES:
+- Never invent patient numbers, sample sizes, empirical statistics, methods already executed, or unsupported citations.
+- Output ONLY the direct continuation text without repeating prefix words or adding preamble.`;
 
   // 4. Autocomplete Safety & Environment Gate:
   // Deterministic mock autocomplete is available ONLY in explicitly isolated development and test environments.
@@ -99,17 +127,45 @@ INSTRUCTION: Continue drafting the next 1 to 2 cohesive academic sentences that 
   if (!routerOverride && process.env.ENABLE_LIVE_AI_AUTOCOMPLETE !== "true") {
     if (isIsolatedMockEnv) {
       const cleanPrefix = params.prefixText.trim();
-      let mockContinuation = "which provides empirical grounding for subsequent comparative evaluations across diverse cohorts.";
-      if (cleanPrefix.endsWith(".") || cleanPrefix.endsWith("!") || cleanPrefix.endsWith("?")) {
-        mockContinuation = "Furthermore, our experimental observations demonstrate consistent convergence across multi-institutional benchmark environments.";
-      } else if (cleanPrefix.endsWith(",")) {
-        mockContinuation = "thereby mitigating systematic variance while preserving fine-grained feature representations.";
-      } else if (cleanPrefix.toLowerCase().includes("method") || cleanPrefix.toLowerCase().includes("approach")) {
-        mockContinuation = "incorporates rigorous cross-validation protocols to ensure replicability and minimize selection bias.";
+      const lowerSec = currentSection.toLowerCase();
+      let mockContinuation = "";
+
+      if (lowerSec.includes("intro") || lowerSec.includes("background")) {
+        mockContinuation = `Previous investigations into ${topic} highlight substantial promise, yet establishing reproducible methodological consensus remains an ongoing priority across the research community.`;
+      } else if (lowerSec.includes("objective") || lowerSec.includes("aims") || lowerSec.includes("hypothes")) {
+        if (generalObjective) {
+          mockContinuation = `Specifically, this inquiry aligns directly with the primary objective to systematically evaluate outcomes under pre-specified validation benchmarks.`;
+        } else {
+          mockContinuation = `Specifically, this work aims to evaluate primary and secondary outcome metrics across controlled reference cohorts.`;
+        }
+      } else if (lowerSec.includes("method") || lowerSec.includes("protocol") || lowerSec.includes("design") || lowerSec.includes("strategy")) {
+        const designLabel = studyDesign ? `the ${studyDesign} protocol` : "the methodological framework";
+        mockContinuation = `To ensure empirical validity, ${designLabel} establishes pre-registered observation protocols, standardized inclusion criteria, and reproducible analytical pipelines.`;
+      } else if (lowerSec.includes("result") || lowerSec.includes("finding") || lowerSec.includes("synthesis")) {
+        mockContinuation = `Comparative observations demonstrate consistent stability across validation iterations, maintaining alignment with theoretical expectations without systematic divergence.`;
+      } else if (lowerSec.includes("discussion") || lowerSec.includes("implication") || lowerSec.includes("significance")) {
+        mockContinuation = `These observations directly reinforce the stated study objectives by elucidating key contextual variables while identifying necessary parameters for subsequent prospective trials.`;
+      } else if (lowerSec.includes("limitation") || lowerSec.includes("ethical") || lowerSec.includes("pitfall")) {
+        mockContinuation = `Key methodological boundaries include observational horizon constraints and cohort distribution variability, indicating the necessity of prospective multi-center replication.`;
+      } else {
+        if (cleanPrefix.endsWith(".") || cleanPrefix.endsWith("!") || cleanPrefix.endsWith("?")) {
+          mockContinuation = "Furthermore, ongoing comparative evaluations demonstrate consistent convergence across standardized benchmark environments.";
+        } else if (cleanPrefix.endsWith(",")) {
+          mockContinuation = "thereby mitigating systematic variance while preserving fine-grained feature representations.";
+        } else if (cleanPrefix.toLowerCase().includes("method") || cleanPrefix.toLowerCase().includes("approach")) {
+          mockContinuation = "incorporates rigorous cross-validation protocols to ensure replicability and minimize selection bias.";
+        } else {
+          mockContinuation = "which provides empirical grounding for subsequent comparative evaluations across diverse cohorts.";
+        }
       }
 
+      const normalizedSuggestion = normalizeSuggestionSpacingAndDeduplication(
+        params.prefixText,
+        mockContinuation
+      );
+
       return {
-        suggestion: mockContinuation,
+        suggestion: normalizedSuggestion,
         provider: "mock" as any,
         model: "deterministic-academic-mock",
         cost: { estimatedCostUsd: 0, isEstimate: true, pricingTier: "local-mock" },
@@ -143,6 +199,8 @@ INSTRUCTION: Continue drafting the next 1 to 2 cohesive academic sentences that 
   if (suggestion.startsWith("```") && suggestion.endsWith("```")) {
     suggestion = suggestion.replace(/```[a-z]*\n?/gi, "").trim();
   }
+
+  suggestion = normalizeSuggestionSpacingAndDeduplication(params.prefixText, suggestion);
 
   return {
     suggestion,

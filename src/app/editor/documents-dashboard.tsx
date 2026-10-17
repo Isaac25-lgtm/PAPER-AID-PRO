@@ -18,10 +18,14 @@ import {
   Layers,
   GraduationCap,
   Scroll,
-  Award,
   Loader2,
   X,
   AlertCircle,
+  Compass,
+  ArrowUp,
+  ArrowDown,
+  Check,
+  Award,
 } from "lucide-react";
 import { DocumentType } from "@prisma/client";
 import {
@@ -29,6 +33,11 @@ import {
   renameDocumentAction,
   deleteDocumentAction,
 } from "@/app/editor/actions";
+import {
+  STUDY_DESIGN_OPTIONS,
+  getDefaultHeadings,
+  getDefaultObjectives,
+} from "@/lib/editor/guided-templates";
 
 interface DocumentListItem {
   id: string;
@@ -71,10 +80,86 @@ export function DocumentsDashboard({ initialDocuments, user }: DocumentsDashboar
 
   // New Document Dialog State
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+  const [creationMode, setCreationMode] = useState<"BLANK" | "GUIDED">("BLANK");
   const [newTitle, setNewTitle] = useState("");
   const [newDocType, setNewDocType] = useState<DocumentType>(DocumentType.DRAFT);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Guided Document State
+  const [guidedTopic, setGuidedTopic] = useState("");
+  const [guidedDocType, setGuidedDocType] = useState<DocumentType>(DocumentType.MANUSCRIPT);
+  const [guidedStudyDesign, setGuidedStudyDesign] = useState("");
+  const [guidedGeneralObjective, setGuidedGeneralObjective] = useState("");
+  const [guidedSpecificObjectives, setGuidedSpecificObjectives] = useState<string[]>([]);
+  const [guidedHeadings, setGuidedHeadings] = useState<string[]>([]);
+  const [isManualObjectives, setIsManualObjectives] = useState(false);
+  const [isManualHeadings, setIsManualHeadings] = useState(false);
+
+  // Initialize or update default outline & objectives
+  React.useEffect(() => {
+    if (!isManualHeadings) {
+      setGuidedHeadings(getDefaultHeadings(guidedDocType, guidedStudyDesign));
+    }
+    if (!isManualObjectives) {
+      const defObj = getDefaultObjectives(guidedTopic, guidedDocType, guidedStudyDesign);
+      setGuidedGeneralObjective(defObj.general);
+      setGuidedSpecificObjectives(defObj.specific);
+    }
+  }, [guidedDocType, guidedStudyDesign, guidedTopic, isManualHeadings, isManualObjectives]);
+
+  // Outline section handlers
+  const handleAddHeading = () => {
+    setIsManualHeadings(true);
+    setGuidedHeadings((prev) => [...prev, "New Section"]);
+  };
+
+  const handleUpdateHeading = (index: number, val: string) => {
+    setIsManualHeadings(true);
+    setGuidedHeadings((prev) => {
+      const next = [...prev];
+      next[index] = val;
+      return next;
+    });
+  };
+
+  const handleMoveHeading = (index: number, direction: -1 | 1) => {
+    setIsManualHeadings(true);
+    setGuidedHeadings((prev) => {
+      const next = [...prev];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return prev;
+      const temp = next[index];
+      next[index] = next[target];
+      next[target] = temp;
+      return next;
+    });
+  };
+
+  const handleDeleteHeading = (index: number) => {
+    setIsManualHeadings(true);
+    setGuidedHeadings((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Specific objective handlers
+  const handleAddSpecificObjective = () => {
+    setIsManualObjectives(true);
+    setGuidedSpecificObjectives((prev) => [...prev, ""]);
+  };
+
+  const handleUpdateSpecificObjective = (index: number, val: string) => {
+    setIsManualObjectives(true);
+    setGuidedSpecificObjectives((prev) => {
+      const next = [...prev];
+      next[index] = val;
+      return next;
+    });
+  };
+
+  const handleDeleteSpecificObjective = (index: number) => {
+    setIsManualObjectives(true);
+    setGuidedSpecificObjectives((prev) => prev.filter((_, i) => i !== index));
+  };
 
   // Rename Dialog State
   const [renameTarget, setRenameTarget] = useState<DocumentListItem | null>(null);
@@ -101,21 +186,42 @@ export function DocumentsDashboard({ initialDocuments, user }: DocumentsDashboar
   const totalCitations = documents.reduce((acc, doc) => acc + doc._count.citations, 0);
   const totalSources = documents.reduce((acc, doc) => acc + doc._count.linkedPapers, 0);
 
-  // Handle New Document
+  // Handle Document Creation
   const handleCreateDocument = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsCreating(true);
     setCreateError(null);
 
     try {
-      const res = await createDocumentAction({
-        title: newTitle.trim() || undefined,
-        docType: newDocType,
-      });
+      let res;
+      if (creationMode === "BLANK") {
+        res = await createDocumentAction({
+          title: newTitle.trim() || undefined,
+          docType: newDocType,
+        });
+      } else {
+        if (!guidedTopic.trim()) {
+          setCreateError("Please enter a research topic or title for your guided document.");
+          setIsCreating(false);
+          return;
+        }
+
+        res = await createDocumentAction({
+          guidedConfig: {
+            topic: guidedTopic.trim(),
+            docType: guidedDocType,
+            studyDesign: guidedStudyDesign.trim() || undefined,
+            generalObjective: guidedGeneralObjective.trim() || undefined,
+            specificObjectives: guidedSpecificObjectives.filter((o) => o.trim().length > 0),
+            headings: guidedHeadings.filter((h) => h.trim().length > 0),
+          },
+        });
+      }
 
       if (res.success && res.document) {
         setIsNewModalOpen(false);
         setNewTitle("");
+        setGuidedTopic("");
         router.push(`/editor/${res.document.id}`);
       } else {
         setCreateError(res.error || "Failed to create document.");
@@ -426,14 +532,27 @@ export function DocumentsDashboard({ initialDocuments, user }: DocumentsDashboar
         </div>
       )}
 
-      {/* New Document Modal */}
+      {/* New Document Modal: Blank vs Guided Research Document */}
       {isNewModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+          <div
+            className={`bg-white rounded-2xl w-full p-6 shadow-xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150 transition-all ${
+              creationMode === "GUIDED" ? "max-w-3xl max-h-[92vh] flex flex-col" : "max-w-md"
+            }`}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3 flex-shrink-0">
               <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-600" />
-                <h3 className="text-base font-semibold text-slate-900">Create Research Document</h3>
+                {creationMode === "GUIDED" ? (
+                  <Compass className="w-5 h-5 text-indigo-600" />
+                ) : (
+                  <FileText className="w-5 h-5 text-indigo-600" />
+                )}
+                <h3 className="text-base font-semibold text-slate-900">
+                  {creationMode === "GUIDED"
+                    ? "Create Guided Research Document"
+                    : "Create Blank Research Document"}
+                </h3>
               </div>
               <button
                 type="button"
@@ -444,52 +563,296 @@ export function DocumentsDashboard({ initialDocuments, user }: DocumentsDashboar
               </button>
             </div>
 
+            {/* Mode Switch Tabs */}
+            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-xl mb-4 flex-shrink-0 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => {
+                  setCreationMode("BLANK");
+                  setCreateError(null);
+                }}
+                className={`py-2 rounded-lg flex items-center justify-center gap-2 transition-all ${
+                  creationMode === "BLANK"
+                    ? "bg-white text-indigo-700 shadow-xs font-bold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Blank Document</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCreationMode("GUIDED");
+                  setCreateError(null);
+                }}
+                className={`py-2 rounded-lg flex items-center justify-center gap-2 transition-all ${
+                  creationMode === "GUIDED"
+                    ? "bg-white text-indigo-700 shadow-xs font-bold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Compass className="w-3.5 h-3.5" />
+                <span>Guided Research Document</span>
+              </button>
+            </div>
+
             {createError && (
-              <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center gap-2">
+              <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center gap-2 flex-shrink-0">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <span>{createError}</span>
               </div>
             )}
 
-            <form onSubmit={handleCreateDocument} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Document Title
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Scalable Transformer Architectures: A Survey"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  autoFocus
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                />
-              </div>
+            <form onSubmit={handleCreateDocument} className="space-y-4 flex-1 overflow-y-auto pr-1">
+              {creationMode === "BLANK" ? (
+                /* Blank Document Form */
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Document Title (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Scalable Transformer Architectures: A Survey"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      autoFocus
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Document Type
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(DOC_TYPE_LABELS).map(([typeKey, meta]) => (
-                    <button
-                      key={typeKey}
-                      type="button"
-                      onClick={() => setNewDocType(typeKey as DocumentType)}
-                      className={`p-2.5 rounded-lg border text-left transition-all flex items-center gap-2 ${
-                        newDocType === typeKey
-                          ? "border-indigo-600 bg-indigo-50/60 text-indigo-900 ring-1 ring-indigo-600"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      <meta.icon className="w-4 h-4 text-slate-500" />
-                      <span className="text-xs font-medium">{meta.label}</span>
-                    </button>
-                  ))}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Document Type
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {Object.entries(DOC_TYPE_LABELS).map(([typeKey, meta]) => (
+                        <button
+                          key={typeKey}
+                          type="button"
+                          onClick={() => setNewDocType(typeKey as DocumentType)}
+                          className={`p-2.5 rounded-lg border text-left transition-all flex items-center gap-2 ${
+                            newDocType === typeKey
+                              ? "border-indigo-600 bg-indigo-50/60 text-indigo-900 ring-1 ring-indigo-600"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          <meta.icon className="w-4 h-4 text-slate-500" />
+                          <span className="text-xs font-medium">{meta.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                    Creates an empty TipTap canvas. Full formatting, passage-verified citations, autosave, and on-demand inline AI autocomplete (<kbd className="font-mono bg-white px-1 py-0.5 rounded border border-slate-200 text-[10px]">Ctrl+J</kbd>) remain available.
+                  </p>
+                </>
+              ) : (
+                /* Guided Research Document Form */
+                <div className="space-y-4">
+                  {/* Topic & Document Type Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Research Topic or Working Title <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Evaluating Transformer Latency in Resource-Constrained Edge Devices"
+                        value={guidedTopic}
+                        onChange={(e) => setGuidedTopic(e.target.value)}
+                        autoFocus
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Document Type
+                      </label>
+                      <select
+                        value={guidedDocType}
+                        onChange={(e) => {
+                          const dt = e.target.value as DocumentType;
+                          setGuidedDocType(dt);
+                          setIsManualHeadings(false);
+                          setIsManualObjectives(false);
+                          setGuidedStudyDesign("");
+                        }}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      >
+                        <option value="MANUSCRIPT">Original Research (Manuscript)</option>
+                        <option value="PROPOSAL">Research Proposal (Grant/Protocol)</option>
+                        <option value="LITERATURE_REVIEW">Literature Review</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Optional Study Design
+                      </label>
+                      <select
+                        value={guidedStudyDesign}
+                        onChange={(e) => setGuidedStudyDesign(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      >
+                        <option value="">None / Standard Protocol</option>
+                        {(STUDY_DESIGN_OPTIONS[guidedDocType] || []).map((design) => (
+                          <option key={design} value={design}>
+                            {design}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Suggested Objectives */}
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3.5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                        <span className="text-xs font-bold text-indigo-950">
+                          Suggested Research Objectives
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-indigo-600">Editable before creation</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Primary / General Objective
+                      </label>
+                      <input
+                        type="text"
+                        value={guidedGeneralObjective}
+                        onChange={(e) => {
+                          setIsManualObjectives(true);
+                          setGuidedGeneralObjective(e.target.value);
+                        }}
+                        placeholder="e.g. To investigate and quantify..."
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-[11px] font-semibold text-slate-700">
+                          Specific Objectives ({guidedSpecificObjectives.length})
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleAddSpecificObjective}
+                          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium inline-flex items-center gap-1"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add Objective</span>
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                        {guidedSpecificObjectives.map((obj, idx) => (
+                          <div key={idx} className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono text-indigo-600 font-bold w-4 text-center">
+                              {idx + 1}.
+                            </span>
+                            <input
+                              type="text"
+                              value={obj}
+                              onChange={(e) => handleUpdateSpecificObjective(idx, e.target.value)}
+                              placeholder={`Specific Objective ${idx + 1}...`}
+                              className="flex-1 px-2.5 py-1 rounded-md border border-slate-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSpecificObjective(idx)}
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                              title="Delete objective"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Editable Outline Preview */}
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-slate-600" />
+                        <span className="text-xs font-bold text-slate-800">
+                          Editable Outline Preview ({guidedHeadings.length} Headings)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddHeading}
+                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium inline-flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add Section</span>
+                      </button>
+                    </div>
+
+                    <p className="text-[11px] text-slate-500">
+                      Sections to be generated in your TipTap document. Edit labels, reorder, or remove any heading:
+                    </p>
+
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {guidedHeadings.map((heading, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center gap-1.5 p-1.5 bg-white border border-slate-200 rounded-lg shadow-2xs"
+                        >
+                          <span className="text-[10px] font-mono font-bold text-slate-400 w-5 text-center">
+                            {idx + 1}.
+                          </span>
+                          <input
+                            type="text"
+                            value={heading}
+                            onChange={(e) => handleUpdateHeading(idx, e.target.value)}
+                            className="flex-1 px-2 py-0.5 text-xs text-slate-800 font-medium border-0 focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded"
+                          />
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => handleMoveHeading(idx, -1)}
+                              className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 rounded"
+                              title="Move up"
+                            >
+                              <ArrowUp className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === guidedHeadings.length - 1}
+                              onClick={() => handleMoveHeading(idx, 1)}
+                              className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 rounded"
+                              title="Move down"
+                            >
+                              <ArrowDown className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteHeading(idx)}
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                              title="Remove section"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="pt-2 flex items-center justify-end gap-2">
+              <div className="pt-2 flex items-center justify-end gap-2 flex-shrink-0 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsNewModalOpen(false)}
@@ -503,7 +866,13 @@ export function DocumentsDashboard({ initialDocuments, user }: DocumentsDashboar
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors shadow-xs disabled:opacity-50"
                 >
                   {isCreating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{isCreating ? "Creating..." : "Create & Open"}</span>
+                  <span>
+                    {isCreating
+                      ? "Creating..."
+                      : creationMode === "GUIDED"
+                      ? "Create Guided Document"
+                      : "Create Blank Document"}
+                  </span>
                 </button>
               </div>
             </form>

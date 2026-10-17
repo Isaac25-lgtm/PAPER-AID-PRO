@@ -139,11 +139,20 @@ export function EditorCanvas({
         "\n"
       );
 
+      // Detect active section heading above current cursor position
+      let currentSection = "";
+      editor.state.doc.nodesBetween(0, from, (node) => {
+        if (node.type.name === "heading") {
+          currentSection = node.textContent;
+        }
+      });
+
       const res = await generateAutocompleteAction({
         documentId,
         prefixText: textBefore,
         suffixText: textAfter,
         selectedSourceIds: linkedPaperIds,
+        currentSection,
       });
 
       if (res.success && res.suggestion) {

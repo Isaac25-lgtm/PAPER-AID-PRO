@@ -65,11 +65,13 @@ export const GhostSuggestion = Extension.create<GhostSuggestionOptions>({
             let insertText = text;
             try {
               const charBefore = editor.state.doc.textBetween(Math.max(0, pos - 1), pos);
-              if (charBefore && !/\s/.test(charBefore) && !insertText.startsWith(" ")) {
+              if (charBefore && !/\s/.test(charBefore) && !insertText.startsWith(" ") && !/^[.,;:!?]/.test(insertText)) {
                 insertText = " " + insertText;
+              } else if (charBefore && /\s/.test(charBefore) && insertText.startsWith(" ")) {
+                insertText = insertText.trimStart();
               }
             } catch {
-              if (!insertText.startsWith(" ")) {
+              if (!insertText.startsWith(" ") && !/^[.,;:!?]/.test(insertText)) {
                 insertText = " " + insertText;
               }
             }
@@ -130,11 +132,13 @@ export const GhostSuggestion = Extension.create<GhostSuggestionOptions>({
             let displayText = text;
             try {
               const charBefore = state.doc.textBetween(Math.max(0, pos - 1), pos);
-              if (charBefore && !/\s/.test(charBefore) && !displayText.startsWith(" ")) {
+              if (charBefore && !/\s/.test(charBefore) && !displayText.startsWith(" ") && !/^[.,;:!?]/.test(displayText)) {
                 displayText = " " + displayText;
+              } else if (charBefore && /\s/.test(charBefore) && displayText.startsWith(" ")) {
+                displayText = displayText.trimStart();
               }
             } catch {
-              if (!displayText.startsWith(" ")) {
+              if (!displayText.startsWith(" ") && !/^[.,;:!?]/.test(displayText)) {
                 displayText = " " + displayText;
               }
             }
