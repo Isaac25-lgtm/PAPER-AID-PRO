@@ -35,10 +35,10 @@ export class PubMedProvider implements ScholarlyProvider {
     const timeoutMs = options.timeoutMs || 8000;
     const apiKeyParam = this.getApiKeyParam();
 
-    // 1. ESearch: Discover PMIDs
+    // 1. ESearch: Discover PMIDs with relevance sorting
     const searchUrl = `${NCBI_EUTILS_BASE}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(
       query
-    )}&retmode=json&retmax=${limit}${apiKeyParam}`;
+    )}&retmode=json&retmax=${limit}&sort=relevance${apiKeyParam}`;
 
     const searchRes = await fetch(searchUrl, {
       signal: AbortSignal.timeout(timeoutMs),

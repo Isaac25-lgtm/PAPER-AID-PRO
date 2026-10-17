@@ -184,7 +184,38 @@ export function mergePaperRecords(
 }
 
 /**
+ * Collects all known strong and secondary identifier keys for a paper.
+ */
+function getPaperIdentifierAliases(paper: NormalizedExternalPaper): string[] {
+  const aliases: string[] = [];
+  if (paper.doi) {
+    const cleanDoi = normalizeDoi(paper.doi);
+    if (cleanDoi) aliases.push(`doi:${cleanDoi}`);
+  }
+  if (paper.pmid) {
+    aliases.push(`pmid:${paper.pmid}`);
+  }
+  if (paper.pmcid) {
+    aliases.push(`pmcid:${paper.pmcid.toUpperCase()}`);
+  }
+  if (paper.arxivId) {
+    aliases.push(`arxiv:${paper.arxivId}`);
+  }
+  if (paper.semanticScholarId) {
+    aliases.push(`s2:${paper.semanticScholarId}`);
+  }
+  const normTitle = conservativeNormalizeTitle(paper.title);
+  if (normTitle.length >= 20) {
+    const yearSuffix = paper.year ? `:${paper.year}` : "";
+    aliases.push(`title:${normTitle}${yearSuffix}`);
+  }
+  return aliases;
+}
+
+/**
  * Deduplicates an array of external papers from multiple providers.
+ * Uses cross-identifier alias resolution so that a paper with PMID-only
+ * merges correctly with a subsequent record carrying both PMID and DOI.
  */
 export function deduplicateExternalPapers(
   rawPapers: NormalizedExternalPaper[]
@@ -193,17 +224,44 @@ export function deduplicateExternalPapers(
   duplicatesMergedCount: number;
 } {
   const clusterMap = new Map<string, NormalizedExternalPaper>();
+  const aliasToClusterKey = new Map<string, string>();
   let duplicatesMergedCount = 0;
 
   for (const paper of rawPapers) {
-    const key = getPaperClusterKey(paper);
+    const candidateAliases = getPaperIdentifierAliases(paper);
 
-    if (clusterMap.has(key)) {
-      const existing = clusterMap.get(key)!;
-      clusterMap.set(key, mergePaperRecords(existing, paper));
+    // Check if any alias points to an existing cluster
+    let existingClusterKey: string | null = null;
+    for (const alias of candidateAliases) {
+      if (aliasToClusterKey.has(alias)) {
+        existingClusterKey = aliasToClusterKey.get(alias)!;
+        break;
+      }
+    }
+
+    if (existingClusterKey && clusterMap.has(existingClusterKey)) {
+      const existing = clusterMap.get(existingClusterKey)!;
+      const merged = mergePaperRecords(existing, paper);
+      const newClusterKey = getPaperClusterKey(merged);
+
+      if (newClusterKey !== existingClusterKey) {
+        clusterMap.delete(existingClusterKey);
+      }
+      clusterMap.set(newClusterKey, merged);
+
+      // Re-index all aliases for this cluster
+      const allAliases = getPaperIdentifierAliases(merged);
+      for (const a of allAliases) {
+        aliasToClusterKey.set(a, newClusterKey);
+      }
+
       duplicatesMergedCount++;
     } else {
-      clusterMap.set(key, paper);
+      const clusterKey = getPaperClusterKey(paper);
+      clusterMap.set(clusterKey, paper);
+      for (const a of candidateAliases) {
+        aliasToClusterKey.set(a, clusterKey);
+      }
     }
   }
 

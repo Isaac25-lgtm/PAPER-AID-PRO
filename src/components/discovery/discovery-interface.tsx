@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Search,
@@ -63,6 +63,9 @@ export function DiscoveryInterface() {
   const router = useRouter();
   const { data: session } = useSession();
 
+  const searchParams = useSearchParams();
+  const activeSearchIdRef = React.useRef(0);
+
   // Search state
   const [query, setQuery] = React.useState("");
   const [activeQuery, setActiveQuery] = React.useState("");
@@ -106,6 +109,15 @@ export function DiscoveryInterface() {
   >({});
   const [importErrorMap, setImportErrorMap] = React.useState<Record<string, string>>({});
 
+  // Synchronize URL ?q= parameter on mount or browser navigation
+  React.useEffect(() => {
+    const qParam = searchParams?.get("q")?.trim();
+    if (qParam && qParam !== activeQuery) {
+      setQuery(qParam);
+      handleSearch(undefined, qParam);
+    }
+  }, [searchParams]);
+
   const toggleProvider = (provider: SourceProvider) => {
     setSelectedProviders((prev) => {
       if (prev.includes(provider)) {
@@ -130,11 +142,27 @@ export function DiscoveryInterface() {
     const q = (customQuery !== undefined ? customQuery : query).trim();
     if (!q) return;
 
+    // Increment request ID to invalidate any in-flight or older requests
+    const currentSearchId = ++activeSearchIdRef.current;
+
     setActiveQuery(q);
     setLoading(true);
     setError(null);
     setSnapshot(null);
     setSnapshotError(null);
+
+    // Keep URL parameter in sync without reloading page
+    try {
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("q") !== q) {
+          url.searchParams.set("q", q);
+          window.history.replaceState(null, "", url.toString());
+        }
+      }
+    } catch {
+      // Non-fatal if running in environments without window.location
+    }
 
     try {
       const res = await searchScholarlyAction(q, {
@@ -142,39 +170,56 @@ export function DiscoveryInterface() {
         enabledProviders: selectedProviders,
         openAccessOnly,
       });
+
+      // Discard response if a newer query has superseded this one
+      if (activeSearchIdRef.current !== currentSearchId) {
+        return;
+      }
+
       setSearchResult(res);
 
       // Auto-trigger AI Research Snapshot if enabled and papers were found
       if (autoGenerateSnapshot && res.papers && res.papers.length > 0) {
-        fetchSnapshot(q, res.papers);
+        fetchSnapshot(q, res.papers, { searchId: currentSearchId });
       }
     } catch (err: any) {
+      if (activeSearchIdRef.current !== currentSearchId) return;
       setError(err?.message || "Failed to search scholarly sources. Please try again.");
     } finally {
-      setLoading(false);
+      if (activeSearchIdRef.current === currentSearchId) {
+        setLoading(false);
+      }
     }
   };
 
   const fetchSnapshot = async (
     searchQ: string,
     papersToSynthesize: NormalizedExternalPaper[],
-    forceRefresh: boolean = false
+    options: { searchId?: number; forceRefresh?: boolean } = {}
   ) => {
+    const boundSearchId = options.searchId ?? activeSearchIdRef.current;
     setSnapshotLoading(true);
     setSnapshotError(null);
     try {
       const res = await getResearchSnapshotAction(searchQ, papersToSynthesize, {
-        forceRefresh,
+        forceRefresh: options.forceRefresh,
       });
+      // Stale check
+      if (activeSearchIdRef.current !== boundSearchId) {
+        return;
+      }
       if (res.success && res.snapshot) {
         setSnapshot(res.snapshot);
       } else {
         setSnapshotError(res.error || "Unable to generate snapshot at this time.");
       }
     } catch (err: any) {
+      if (activeSearchIdRef.current !== boundSearchId) return;
       setSnapshotError(err?.message || "Failed to communicate with snapshot service.");
     } finally {
-      setSnapshotLoading(false);
+      if (activeSearchIdRef.current === boundSearchId) {
+        setSnapshotLoading(false);
+      }
     }
   };
 
@@ -624,6 +669,46 @@ export function DiscoveryInterface() {
         </div>
       )}
 
+      {/* Partial Provider Failure Warning */}
+      {searchResult && (() => {
+        const failed = Object.values(searchResult.providerResults).filter(
+          (p) => p.status === "RATE_LIMITED" || p.status === "TIMEOUT" || p.status === "ERROR"
+        );
+        if (failed.length === 0) return null;
+        return (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50/90 p-3.5 text-xs text-amber-900 flex items-start gap-3 shadow-2xs">
+            <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <p className="font-semibold text-amber-950">
+                Partial Provider Availability Notice
+              </p>
+              <p className="text-amber-800 leading-relaxed">
+                {failed
+                  .map((p) => {
+                    const name =
+                      p.provider === "SEMANTIC_SCHOLAR"
+                        ? "Semantic Scholar"
+                        : p.provider === "PUBMED"
+                        ? "PubMed"
+                        : p.provider === "CROSSREF"
+                        ? "Crossref"
+                        : "CitedEvidence";
+                    const issue =
+                      p.status === "RATE_LIMITED"
+                        ? "rate-limited"
+                        : p.status === "TIMEOUT"
+                        ? "timed out"
+                        : "temporarily unavailable";
+                    return `${name} (${issue})`;
+                  })
+                  .join(", ")}
+                . Literature retrieved from active providers is displayed below.
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Telemetry and Results Counter Bar */}
       {searchResult && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-lg bg-slate-100/70 p-3 text-xs text-slate-600">
@@ -667,7 +752,7 @@ export function DiscoveryInterface() {
             onSelectCitation={(citation: SnapshotCitation) => setActiveEvidenceCitation(citation)}
             onRefresh={() => {
               if (searchResult && searchResult.papers.length > 0) {
-                fetchSnapshot(activeQuery || query, searchResult.papers, true);
+                fetchSnapshot(activeQuery || query, searchResult.papers, { forceRefresh: true });
               }
             }}
           />
@@ -948,19 +1033,80 @@ export function DiscoveryInterface() {
           );
         })}
 
-        {/* Empty state when search returned 0 results */}
-        {searchResult && filteredAndSortedPapers.length === 0 && !loading && (
-          <Card className="p-12 text-center border-slate-200 bg-white">
-            <BookOpen className="h-10 w-10 text-slate-400 mx-auto mb-3" />
-            <h3 className="text-base font-semibold text-slate-900">
-              No matching scholarly results found
-            </h3>
-            <p className="mt-1 text-sm text-slate-500 max-w-md mx-auto">
-              No external manuscripts matched your search across the selected filters.
-              Try adjusting your date range, toggling off Open Access, or broadening the query.
-            </p>
-          </Card>
-        )}
+        {/* Results States when 0 papers are displayed */}
+        {searchResult && filteredAndSortedPapers.length === 0 && !loading && (() => {
+          const providerList = Object.values(searchResult.providerResults);
+          const allFailed = providerList.length > 0 && providerList.every((p) => p.status !== "SUCCESS");
+          const someFailed = providerList.some((p) => p.status !== "SUCCESS");
+          const failedNames = providerList
+            .filter((p) => p.status !== "SUCCESS")
+            .map((p) =>
+              p.provider === "SEMANTIC_SCHOLAR"
+                ? "Semantic Scholar"
+                : p.provider === "PUBMED"
+                ? "PubMed"
+                : p.provider === "CROSSREF"
+                ? "Crossref"
+                : "CitedEvidence"
+            );
+
+          // State 1: All scholarly providers unavailable
+          if (allFailed) {
+            return (
+              <Card className="p-12 text-center border-rose-200 bg-rose-50/40">
+                <AlertCircle className="h-10 w-10 text-rose-500 mx-auto mb-3" />
+                <h3 className="text-base font-semibold text-rose-950">
+                  All scholarly providers temporarily unavailable
+                </h3>
+                <p className="mt-1 text-sm text-rose-800 max-w-lg mx-auto">
+                  None of the connected scholarly literature providers could be reached due to network timeouts, rate limits, or service outages. This is not a confirmed zero-result search in the literature.
+                </p>
+                <div className="mt-4">
+                  <Button
+                    type="button"
+                    onClick={() => handleSearch(undefined, activeQuery || query)}
+                    variant="outline"
+                    className="border-rose-300 text-rose-800 hover:bg-rose-100 text-xs font-semibold"
+                  >
+                    Retry Search
+                  </Button>
+                </div>
+              </Card>
+            );
+          }
+
+          // State 2: Some providers unavailable, remaining active providers returned 0
+          if (someFailed) {
+            return (
+              <Card className="p-12 text-center border-amber-200 bg-amber-50/30">
+                <AlertCircle className="h-10 w-10 text-amber-500 mx-auto mb-3" />
+                <h3 className="text-base font-semibold text-slate-900">
+                  No matching studies found (Partial Provider Response)
+                </h3>
+                <p className="mt-1 text-sm text-slate-600 max-w-lg mx-auto">
+                  The active providers that responded found no matching studies for your query. Note that {failedNames.join(", ")} {failedNames.length === 1 ? "was" : "were"} unavailable.
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Try broadening your terms, toggling off Open Access, or retrying to query all providers.
+                </p>
+              </Card>
+            );
+          }
+
+          // State 3: Genuine zero results (all active providers responded successfully with 0 matches)
+          return (
+            <Card className="p-12 text-center border-slate-200 bg-white">
+              <BookOpen className="h-10 w-10 text-slate-400 mx-auto mb-3" />
+              <h3 className="text-base font-semibold text-slate-900">
+                No matching studies found
+              </h3>
+              <p className="mt-1 text-sm text-slate-500 max-w-md mx-auto">
+                No peer-reviewed literature matched your search across the selected filters.
+                Try adjusting your date range, toggling off Open Access, or broadening the query.
+              </p>
+            </Card>
+          );
+        })()}
       </div>
 
       {/* MODALS */}

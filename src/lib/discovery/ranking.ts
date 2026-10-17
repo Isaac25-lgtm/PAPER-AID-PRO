@@ -5,13 +5,14 @@
  * applied after multi-source deduplication and identity resolution.
  *
  * Ranking Factors:
- * 1. Substantive Query Term Coverage in Title (30 pts + 5 pt full coverage bonus)
+ * 1. Substantive Query Term & Concept Coverage in Title (up to 35 pts)
  * 2. Exact Phrase and Multiword N-Gram Matches (up to 25 pts)
  * 3. Abstract Query Term Coverage & Concept Presence (up to 15 pts)
- * 4. Research Modality / Method Alignment & Distractor Penalty (+10 pts or -15 pts)
- * 5. Multi-Provider Consensus & Canonical DOI Provenance (up to 7 pts)
- * 6. Damped Citation Signal (log-scaled prior, capped at 3 pts)
- * 7. Stable Deterministic Tie-Breaking (score -> title coverage -> year -> id)
+ * 4. Multi-Concept Intent Alignment (+15 pts full title alignment, +8 pts cross-text)
+ * 5. Research Modality / Method Alignment & Distractor Penalty (+10 pts or -15 to -25 pts)
+ * 6. Multi-Provider Consensus & Canonical DOI Provenance (up to 7 pts)
+ * 7. Damped Citation Signal (log-scaled prior, capped at 3 pts)
+ * 8. Stable Deterministic Tie-Breaking (score -> title coverage -> year -> id)
  */
 
 import { NormalizedExternalPaper } from "./types";
@@ -75,41 +76,130 @@ interface ModalityCluster {
   }[];
 }
 
-const MODALITY_CLUSTERS: ModalityCluster[] = [
+export const MODALITY_CLUSTERS: ModalityCluster[] = [
   {
     family: "medical_imaging",
     modalities: [
       {
         name: "ultrasound",
-        aliases: ["ultrasound", "ultrasonography", "sonography", "echocardiography", "echography", "endosonography", "doppler"],
+        aliases: [
+          "ultrasound",
+          "ultrasonography",
+          "sonography",
+          "echocardiography",
+          "echography",
+          "endosonography",
+          "doppler",
+          "pocus",
+          "point of care ultrasound",
+        ],
       },
       {
         name: "mri",
-        aliases: ["mri", "magnetic resonance", "nmr", "radiomics", "multiparametric mri", "mp mri", "dwi", "fmri"],
+        aliases: [
+          "mri",
+          "magnetic resonance",
+          "nmr",
+          "multiparametric mri",
+          "mp mri",
+          "dwi",
+          "fmri",
+        ],
       },
       {
         name: "ct",
-        aliases: ["computed tomography", "ct scan", "ct imaging", "multidetector ct", "mdct", "hrct"],
+        aliases: [
+          "computed tomography",
+          "ct scan",
+          "ct imaging",
+          "multidetector ct",
+          "mdct",
+          "hrct",
+        ],
+      },
+      {
+        name: "retinal_ophthalmic",
+        aliases: [
+          "retina",
+          "retinal",
+          "choroid",
+          "choroidal",
+          "fundus",
+          "optical coherence tomography",
+          "oct imaging",
+          "ophthalmology",
+          "ophthalmic",
+        ],
+      },
+      {
+        name: "molecular_optical",
+        aliases: [
+          "molecular imaging",
+          "fluorescence imaging",
+          "bioluminescence",
+          "optical imaging",
+          "fluorogenic",
+          "spectroscopy",
+        ],
+      },
+      {
+        name: "endoscopy",
+        aliases: [
+          "endoscopy",
+          "colonoscopy",
+          "gastroscopy",
+          "bronchoscopy",
+          "laparoscopy",
+        ],
       },
       {
         name: "mammography",
-        aliases: ["mammography", "mammogram", "digital breast tomosynthesis", "dbt", "breast screening"],
+        aliases: [
+          "mammography",
+          "mammogram",
+          "digital breast tomosynthesis",
+          "dbt",
+          "breast screening",
+        ],
       },
       {
         name: "xray",
-        aliases: ["x ray", "xray", "radiography", "chest radiograph", "radiograph"],
+        aliases: [
+          "x ray",
+          "xray",
+          "radiography",
+          "chest radiograph",
+          "radiograph",
+        ],
       },
       {
         name: "pet_spect",
-        aliases: ["positron emission tomography", "pet scan", "pet ct", "spect", "scintigraphy"],
+        aliases: [
+          "positron emission tomography",
+          "pet scan",
+          "pet ct",
+          "spect",
+          "scintigraphy",
+        ],
       },
       {
         name: "pathology",
-        aliases: ["histopathology", "whole slide imaging", "wsi", "biopsy histology", "histological", "pathological"],
+        aliases: [
+          "histopathology",
+          "whole slide imaging",
+          "wsi",
+          "biopsy histology",
+          "histological",
+          "pathological",
+        ],
       },
       {
         name: "dermoscopy",
-        aliases: ["dermoscopy", "dermatoscopy", "skin lesion imaging"],
+        aliases: [
+          "dermoscopy",
+          "dermatoscopy",
+          "skin lesion imaging",
+        ],
       },
     ],
   },
@@ -118,19 +208,44 @@ const MODALITY_CLUSTERS: ModalityCluster[] = [
     modalities: [
       {
         name: "protein_folding",
-        aliases: ["protein folding", "structure prediction", "alphafold", "esmfold", "rosettafold", "tertiary structure"],
+        aliases: [
+          "protein folding",
+          "structure prediction",
+          "alphafold",
+          "esmfold",
+          "rosettafold",
+          "tertiary structure",
+        ],
       },
       {
         name: "gene_editing",
-        aliases: ["crispr", "cas9", "cas12", "base editing", "prime editing", "guide rna"],
+        aliases: [
+          "crispr",
+          "cas9",
+          "cas12",
+          "base editing",
+          "prime editing",
+          "guide rna",
+        ],
       },
       {
         name: "single_cell",
-        aliases: ["single cell", "scrna", "snrna", "scrna seq", "single nucleus"],
+        aliases: [
+          "single cell",
+          "scrna",
+          "snrna",
+          "scrna seq",
+          "single nucleus",
+        ],
       },
       {
         name: "sequence_alignment",
-        aliases: ["multiple sequence alignment", "msa", "blast", "homology search"],
+        aliases: [
+          "multiple sequence alignment",
+          "msa",
+          "blast",
+          "homology search",
+        ],
       },
     ],
   },
@@ -139,23 +254,54 @@ const MODALITY_CLUSTERS: ModalityCluster[] = [
     modalities: [
       {
         name: "transformer",
-        aliases: ["transformer", "transformers", "self attention", "multi head attention", "attention mechanism"],
+        aliases: [
+          "transformer",
+          "transformers",
+          "self attention",
+          "multi head attention",
+          "attention mechanism",
+        ],
       },
       {
         name: "cnn",
-        aliases: ["convolutional neural", "cnn", "convnet", "u net", "resnet"],
+        aliases: [
+          "convolutional neural",
+          "cnn",
+          "convnet",
+          "u net",
+          "resnet",
+        ],
       },
       {
         name: "diffusion",
-        aliases: ["diffusion model", "diffusion models", "denoising diffusion", "score based generative"],
+        aliases: [
+          "diffusion model",
+          "diffusion models",
+          "denoising diffusion",
+          "score based generative",
+        ],
       },
       {
         name: "reinforcement_learning",
-        aliases: ["reinforcement learning", "q learning", "policy gradient", "actor critic", "ppo", "dqn", "mcts"],
+        aliases: [
+          "reinforcement learning",
+          "q learning",
+          "policy gradient",
+          "actor critic",
+          "ppo",
+          "dqn",
+          "mcts",
+        ],
       },
       {
         name: "graph_neural_networks",
-        aliases: ["graph neural", "gnn", "graph convolutional", "gat", "message passing neural"],
+        aliases: [
+          "graph neural",
+          "gnn",
+          "graph convolutional",
+          "gat",
+          "message passing neural",
+        ],
       },
     ],
   },
@@ -164,12 +310,111 @@ const MODALITY_CLUSTERS: ModalityCluster[] = [
     modalities: [
       {
         name: "surface_codes",
-        aliases: ["surface code", "surface codes", "quantum error correction", "qec", "topological code", "toric code", "fault tolerant quantum"],
+        aliases: [
+          "surface code",
+          "surface codes",
+          "quantum error correction",
+          "qec",
+          "topological code",
+          "toric code",
+          "fault tolerant quantum",
+        ],
       },
       {
         name: "classical_error_correction",
-        aliases: ["reed solomon", "ldpc code", "turbo code", "classical error correction", "hamming code", "bch code"],
+        aliases: [
+          "reed solomon",
+          "ldpc code",
+          "turbo code",
+          "classical error correction",
+          "hamming code",
+          "bch code",
+        ],
       },
+    ],
+  },
+];
+
+/**
+ * Generalized Cross-Discipline Concept Equivalence Sets
+ * Used to detect multi-concept queries and cross-synonym matching.
+ */
+export interface ConceptEquivalenceSet {
+  id: string;
+  category: "methodology" | "domain_target" | "clinical_task";
+  terms: string[];
+}
+
+export const CONCEPT_EQUIVALENCE_SETS: ConceptEquivalenceSet[] = [
+  {
+    id: "ai_machine_learning",
+    category: "methodology",
+    terms: [
+      "artificial intelligence",
+      "ai",
+      "machine learning",
+      "deep learning",
+      "deep neural",
+      "neural network",
+      "neural networks",
+      "convolutional neural",
+      "computer aided diagnosis",
+      "computer assisted",
+      "cad",
+      "radiomics",
+    ],
+  },
+  {
+    id: "ultrasound_imaging",
+    category: "domain_target",
+    terms: [
+      "ultrasound",
+      "ultrasonography",
+      "sonography",
+      "echocardiography",
+      "echography",
+      "endosonography",
+      "doppler",
+      "sonographic",
+      "pocus",
+    ],
+  },
+  {
+    id: "clinical_tasks",
+    category: "clinical_task",
+    terms: [
+      "diagnosis",
+      "diagnostic",
+      "classification",
+      "detection",
+      "segmentation",
+      "interpretation",
+      "screening",
+      "radiomics",
+    ],
+  },
+  {
+    id: "quantum_error_correction",
+    category: "methodology",
+    terms: [
+      "quantum error correction",
+      "qec",
+      "surface code",
+      "surface codes",
+      "topological code",
+      "fault tolerant quantum",
+    ],
+  },
+  {
+    id: "protein_structure",
+    category: "domain_target",
+    terms: [
+      "protein structure",
+      "protein folding",
+      "structure prediction",
+      "tertiary structure",
+      "alphafold",
+      "esmfold",
     ],
   },
 ];
@@ -200,7 +445,6 @@ export function tokenizeWords(text: string): string[] {
 export function getSubstantiveQueryTokens(query: string): string[] {
   const words = tokenizeWords(query);
   const substantive = words.filter((w) => !STOPWORDS.has(w));
-  // If all words were stopwords, fallback to all words of length >= 2
   return substantive.length > 0 ? substantive : words;
 }
 
@@ -238,7 +482,6 @@ export function detectQueryModalities(query: string): {
   for (const cluster of MODALITY_CLUSTERS) {
     for (const mod of cluster.modalities) {
       for (const alias of mod.aliases) {
-        // Word boundary match
         const regex = new RegExp(`(?:^|\\s)${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:$|\\s)`, "i");
         if (regex.test(normQuery)) {
           const competing = cluster.modalities.filter((m) => m.name !== mod.name);
@@ -248,13 +491,44 @@ export function detectQueryModalities(query: string): {
             matchedAlias: alias,
             competingModalities: competing,
           });
-          break; // Avoid duplicate detections for same modality
+          break;
         }
       }
     }
   }
 
   return detections;
+}
+
+/**
+ * Detects core concepts present in the search query.
+ */
+export function detectQueryConcepts(query: string): ConceptEquivalenceSet[] {
+  const normQuery = normalizeText(query);
+  const matched: ConceptEquivalenceSet[] = [];
+
+  for (const set of CONCEPT_EQUIVALENCE_SETS) {
+    for (const term of set.terms) {
+      const regex = new RegExp(`(?:^|\\s)${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:$|\\s)`, "i");
+      if (regex.test(normQuery)) {
+        matched.push(set);
+        break;
+      }
+    }
+  }
+
+  return matched;
+}
+
+/**
+ * Checks if a piece of text matches any term in a concept set.
+ */
+function textMatchesConcept(normText: string, conceptSet: ConceptEquivalenceSet): boolean {
+  for (const term of conceptSet.terms) {
+    const regex = new RegExp(`(?:^|\\s)${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:$|\\s)`, "i");
+    if (regex.test(normText)) return true;
+  }
+  return false;
 }
 
 /**
@@ -265,11 +539,13 @@ export interface RelevanceScoreDetails {
   titleScore: number;
   phraseScore: number;
   abstractScore: number;
+  conceptScore: number;
   modalityScore: number;
   consensusScore: number;
   authorityScore: number;
   matchedTitleTerms: string[];
   matchedAbstractTerms: string[];
+  matchedConcepts: string[];
   modalityAlignment: "ALIGNED" | "COMPETING_PENALTY" | "NEUTRAL";
 }
 
@@ -287,18 +563,19 @@ export function scoreScholarlyPaperRelevance(
       titleScore: 0,
       phraseScore: 0,
       abstractScore: 0,
+      conceptScore: 0,
       modalityScore: 0,
       consensusScore: 0,
       authorityScore: 0,
       matchedTitleTerms: [],
       matchedAbstractTerms: [],
+      matchedConcepts: [],
       modalityAlignment: "NEUTRAL",
     };
   }
 
   const normQuery = normalizeText(trimmedQuery);
   const queryTokens = getSubstantiveQueryTokens(trimmedQuery);
-  const queryTokenSet = new Set(queryTokens);
   const queryNGrams = getSubstantiveNGrams(queryTokens);
 
   const normTitle = normalizeText(paper.title || "");
@@ -309,10 +586,23 @@ export function scoreScholarlyPaperRelevance(
   const abstractTokens = tokenizeWords(paper.abstract || "");
   const abstractTokenSet = new Set(abstractTokens);
 
-  // 1. Title Query Term Coverage (up to 35 points)
+  // Concept Detection
+  const queryConcepts = detectQueryConcepts(trimmedQuery);
+  const queryModalityDetections = detectQueryModalities(trimmedQuery);
+
+  // 1. Title Query Term & Synonym Coverage (up to 35 points)
   let matchedTitleTerms: string[] = [];
   if (queryTokens.length > 0) {
-    matchedTitleTerms = queryTokens.filter((qt) => titleTokenSet.has(qt));
+    matchedTitleTerms = queryTokens.filter((qt) => {
+      if (titleTokenSet.has(qt)) return true;
+      // Synonym fallback: check if title matches a concept alias for this query token
+      for (const concept of queryConcepts) {
+        if (concept.terms.some((t) => t.includes(qt)) && textMatchesConcept(normTitle, concept)) {
+          return true;
+        }
+      }
+      return false;
+    });
   }
   const titleCoverageRatio = queryTokens.length > 0 ? matchedTitleTerms.length / queryTokens.length : 0;
   let titleScore = titleCoverageRatio * 30;
@@ -322,11 +612,9 @@ export function scoreScholarlyPaperRelevance(
 
   // 2. Exact Phrase and Multiword N-Gram Matches (up to 25 points)
   let phraseScore = 0;
-  // Full query phrase in title
   if (normQuery.length >= 5 && normTitle.includes(normQuery)) {
     phraseScore += 25;
   } else {
-    // Check substantive N-Grams in title
     let titleNgramMatches = 0;
     for (const ngram of queryNGrams) {
       if (normTitle.includes(ngram)) {
@@ -335,7 +623,6 @@ export function scoreScholarlyPaperRelevance(
     }
     phraseScore += Math.min(20, titleNgramMatches * 10);
 
-    // Full query in abstract
     if (normQuery.length >= 5 && normAbstract.includes(normQuery)) {
       phraseScore += 8;
     } else {
@@ -353,19 +640,64 @@ export function scoreScholarlyPaperRelevance(
   // 3. Abstract Query Term Coverage (up to 15 points)
   let matchedAbstractTerms: string[] = [];
   if (queryTokens.length > 0) {
-    matchedAbstractTerms = queryTokens.filter((qt) => abstractTokenSet.has(qt));
+    matchedAbstractTerms = queryTokens.filter((qt) => {
+      if (abstractTokenSet.has(qt)) return true;
+      for (const concept of queryConcepts) {
+        if (concept.terms.some((t) => t.includes(qt)) && textMatchesConcept(normAbstract, concept)) {
+          return true;
+        }
+      }
+      return false;
+    });
   }
   const abstractCoverageRatio = queryTokens.length > 0 ? matchedAbstractTerms.length / queryTokens.length : 0;
   const abstractScore = abstractCoverageRatio * 15;
 
-  // 4. Modality / Domain Technique Alignment (Boost or Distractor Penalty)
-  const queryModalityDetections = detectQueryModalities(trimmedQuery);
+  // 4. Multi-Concept Coverage & Intent Alignment (up to +15 pts or -25 pts demotion)
+  let conceptScore = 0;
+  const matchedConcepts: string[] = [];
+
+  if (queryConcepts.length >= 2) {
+    let conceptsInTitle = 0;
+    let conceptsInAbstract = 0;
+
+    for (const concept of queryConcepts) {
+      const inTitle = textMatchesConcept(normTitle, concept);
+      const inAbstract = textMatchesConcept(normAbstract, concept);
+      if (inTitle || inAbstract) {
+        matchedConcepts.push(concept.id);
+      }
+      if (inTitle) conceptsInTitle++;
+      if (inAbstract) conceptsInAbstract++;
+    }
+
+    if (conceptsInTitle === queryConcepts.length) {
+      conceptScore += 15; // Full multi-concept title alignment
+    } else if (matchedConcepts.length === queryConcepts.length) {
+      conceptScore += 8; // Full multi-concept coverage across title & abstract
+    }
+
+    // Target Domain Absence Guard:
+    // If the query specifies both a methodology (e.g. AI) and a domain target (e.g. ultrasound),
+    // and candidate paper COMPLETELY LACKS the domain target in both title and abstract,
+    // apply a severe intent mismatch demotion.
+    const domainConcept = queryConcepts.find((c) => c.category === "domain_target");
+    if (domainConcept) {
+      const hasDomainInTitle = textMatchesConcept(normTitle, domainConcept);
+      const hasDomainInAbstract = textMatchesConcept(normAbstract, domainConcept);
+      if (!hasDomainInTitle && !hasDomainInAbstract) {
+        conceptScore -= 25; // Severe penalty: missing queried domain entirely!
+      }
+    }
+  }
+
+  // 5. Modality / Domain Technique Alignment (Boost or Distractor Penalty)
   let modalityScore = 0;
   let modalityAlignment: "ALIGNED" | "COMPETING_PENALTY" | "NEUTRAL" = "NEUTRAL";
 
   if (queryModalityDetections.length > 0) {
     for (const detection of queryModalityDetections) {
-      // Check if title contains the queried modality alias
+      // Check if candidate paper contains queried modality alias
       const titleHasQueriedModality = detection.matchedAlias.length > 0 &&
         new RegExp(`(?:^|\\s)${detection.matchedAlias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:$|\\s)`, "i").test(normTitle);
 
@@ -381,7 +713,7 @@ export function scoreScholarlyPaperRelevance(
 
       // Check if title features an ALTERNATE / COMPETING modality from the same family
       // while lacking the queried modality in its title.
-      // Example: Query is "Ultrasound", candidate title is "MRI-based Radiomics..."
+      // Example: Query is "Ultrasound", candidate title is "Choroidal imaging..." or "MRI-based..."
       if (!titleHasQueriedModality) {
         let hasCompetingModalityInTitle = false;
         for (const comp of detection.competingModalities) {
@@ -404,7 +736,7 @@ export function scoreScholarlyPaperRelevance(
     }
   }
 
-  // 5. Multi-Provider Consensus & Verified Provenance (up to 7 points)
+  // 6. Multi-Provider Consensus & Verified Provenance (up to 7 points)
   let consensusScore = 0;
   if (paper.sourceProviders && paper.sourceProviders.length >= 3) {
     consensusScore += 5;
@@ -416,14 +748,21 @@ export function scoreScholarlyPaperRelevance(
   }
   consensusScore = Math.min(7, consensusScore);
 
-  // 6. Damped Citation Signal (up to 3 points prior)
+  // 7. Damped Citation Signal (up to 3 points prior)
   let authorityScore = 0;
   if (paper.citationCount && paper.citationCount > 0) {
     authorityScore = Math.min(3.0, Math.log10(1 + paper.citationCount) * 0.6);
   }
 
   // Raw Total Calculation
-  const rawTotal = titleScore + phraseScore + abstractScore + modalityScore + consensusScore + authorityScore;
+  const rawTotal =
+    titleScore +
+    phraseScore +
+    abstractScore +
+    conceptScore +
+    modalityScore +
+    consensusScore +
+    authorityScore;
   const totalScore = Math.max(0, Math.round(rawTotal * 1000) / 1000);
 
   return {
@@ -431,11 +770,13 @@ export function scoreScholarlyPaperRelevance(
     titleScore: Math.round(titleScore * 100) / 100,
     phraseScore: Math.round(phraseScore * 100) / 100,
     abstractScore: Math.round(abstractScore * 100) / 100,
+    conceptScore: Math.round(conceptScore * 100) / 100,
     modalityScore: Math.round(modalityScore * 100) / 100,
     consensusScore: Math.round(consensusScore * 100) / 100,
     authorityScore: Math.round(authorityScore * 100) / 100,
     matchedTitleTerms,
     matchedAbstractTerms,
+    matchedConcepts,
     modalityAlignment,
   };
 }
@@ -488,6 +829,7 @@ export function rankScholarlySearchResults(
       ...(sp.paper.rawProviderMetadata || {}),
       relevanceScore: sp.score,
       relevanceAlignment: sp.details.modalityAlignment,
+      relevanceConcepts: sp.details.matchedConcepts,
     },
   }));
 }

@@ -34,6 +34,13 @@ interface CachedResult {
 const SEARCH_CACHE = new Map<string, CachedResult>();
 const CACHE_TTL_MS = 60 * 1000;
 
+/**
+ * Resets in-memory query cache (useful in tests).
+ */
+export function clearSearchCache(): void {
+  SEARCH_CACHE.clear();
+}
+
 export class ScholarlyAggregator {
   private providers: ScholarlyProvider[];
 
@@ -67,14 +74,20 @@ export class ScholarlyAggregator {
       };
     }
 
-    // Cache check
-    const cacheKey = `${trimmedQuery.toLowerCase()}:${options.limitPerProvider || 10}:${(
-      options.enabledProviders || []
-    ).join(",")}`;
+    // Determine active providers first so cache key reflects exact active providers
+    const activeProviders = options.enabledProviders
+      ? this.providers.filter((p) => options.enabledProviders!.includes(p.name))
+      : this.providers;
+    const activeProviderNames = activeProviders.map((p) => p.name).sort();
+
+    // Cache check with active providers and query options
+    const cacheKey = `${trimmedQuery.toLowerCase()}:${options.limitPerProvider || 10}:${activeProviderNames.join(
+      ","
+    )}:${Boolean(options.openAccessOnly)}`;
     const cached = SEARCH_CACHE.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       // Re-hydrate local status in case database state changed since cache
-      const rehydratedPapers = await matchPapersAgainstLocalLibrary(cached.data.papers);
+      const rehydratedPapers = await matchPapersAgainstLocalLibrary(cached.data.papers, options.userId);
       return {
         ...cached.data,
         papers: rehydratedPapers,
@@ -82,11 +95,6 @@ export class ScholarlyAggregator {
     }
 
     const startTime = Date.now();
-
-    // Filter providers if specified
-    const activeProviders = options.enabledProviders
-      ? this.providers.filter((p) => options.enabledProviders!.includes(p.name))
-      : this.providers;
 
     // Concurrently invoke each provider with failure isolation
     const providerPromises = activeProviders.map(async (provider) => {
@@ -104,7 +112,9 @@ export class ScholarlyAggregator {
         const isRateLimit =
           err?.message?.includes("429") || err?.message?.toLowerCase().includes("rate limit");
         const isTimeout =
-          err?.name === "TimeoutError" || err?.message?.toLowerCase().includes("timeout");
+          err?.name === "TimeoutError" ||
+          err?.message?.toLowerCase().includes("timeout") ||
+          err?.message?.toLowerCase().includes("timed out");
 
         return {
           provider: provider.name,
@@ -163,11 +173,13 @@ export class ScholarlyAggregator {
       timingMs: Date.now() - startTime,
     };
 
-    // Update Cache
-    SEARCH_CACHE.set(cacheKey, {
-      timestamp: Date.now(),
-      data: searchResult,
-    });
+    // Update Cache only when non-empty results were retrieved
+    if (finalPapers.length > 0) {
+      SEARCH_CACHE.set(cacheKey, {
+        timestamp: Date.now(),
+        data: searchResult,
+      });
+    }
 
     return searchResult;
   }

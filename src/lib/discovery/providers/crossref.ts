@@ -34,7 +34,8 @@ export class CrossrefProvider implements ScholarlyProvider {
     const limit = options.limitPerProvider || 10;
     const timeoutMs = options.timeoutMs || 8000;
 
-    const searchUrl = `${CROSSREF_BASE}?query=${encodeURIComponent(
+    // Use query.bibliographic to target title, abstract, and authors rather than publisher/funder metadata
+    const searchUrl = `${CROSSREF_BASE}?query.bibliographic=${encodeURIComponent(
       query
     )}&rows=${limit}&select=DOI,title,author,published-print,published-online,container-title,abstract,is-referenced-by-count,URL,link,license`;
 
