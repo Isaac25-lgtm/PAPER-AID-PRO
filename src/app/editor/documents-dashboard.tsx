@@ -63,10 +63,10 @@ interface DocumentsDashboardProps {
 }
 
 const DOC_TYPE_LABELS: Record<DocumentType, { label: string; icon: any; color: string }> = {
-  DRAFT: { label: "Draft", icon: FileText, color: "bg-slate-100 text-slate-700 border-slate-200" },
-  MANUSCRIPT: { label: "Manuscript", icon: GraduationCap, color: "bg-purple-50 text-purple-700 border-purple-200" },
+  MANUSCRIPT: { label: "Original Research Manuscript", icon: GraduationCap, color: "bg-purple-50 text-purple-700 border-purple-200" },
   PROPOSAL: { label: "Research Proposal", icon: Award, color: "bg-amber-50 text-amber-700 border-amber-200" },
   LITERATURE_REVIEW: { label: "Literature Review", icon: Scroll, color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  DRAFT: { label: "Thesis / Dissertation", icon: BookOpen, color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
 };
 
 const countWords = (text: string | null) =>
@@ -674,19 +674,33 @@ export function DocumentsDashboard({ initialDocuments, user }: DocumentsDashboar
                         Document Type
                       </label>
                       <select
-                        value={guidedDocType}
+                        value={
+                          guidedDocType === DocumentType.LITERATURE_REVIEW && guidedStudyDesign.includes("Systematic")
+                            ? "SYSTEMATIC_REVIEW"
+                            : guidedDocType
+                        }
                         onChange={(e) => {
-                          const dt = e.target.value as DocumentType;
-                          setGuidedDocType(dt);
+                          const val = e.target.value;
                           setIsManualHeadings(false);
                           setIsManualObjectives(false);
-                          setGuidedStudyDesign("");
+                          if (val === "SYSTEMATIC_REVIEW") {
+                            setGuidedDocType(DocumentType.LITERATURE_REVIEW);
+                            setGuidedStudyDesign("PRISMA-Compliant Systematic Literature Review");
+                          } else if (val === "LITERATURE_REVIEW") {
+                            setGuidedDocType(DocumentType.LITERATURE_REVIEW);
+                            setGuidedStudyDesign("Critical Thematic Narrative Review");
+                          } else {
+                            setGuidedDocType(val as DocumentType);
+                            setGuidedStudyDesign("");
+                          }
                         }}
                         className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                       >
-                        <option value="MANUSCRIPT">Original Research (Manuscript)</option>
-                        <option value="PROPOSAL">Research Proposal (Grant/Protocol)</option>
+                        <option value="MANUSCRIPT">Original Research Manuscript</option>
+                        <option value="PROPOSAL">Research Proposal</option>
                         <option value="LITERATURE_REVIEW">Literature Review</option>
+                        <option value="SYSTEMATIC_REVIEW">Systematic Review (PRISMA)</option>
+                        <option value="DRAFT">Thesis / Dissertation</option>
                       </select>
                     </div>
 

@@ -128,8 +128,16 @@ export function EditorHeader({
               </h1>
             )}
 
-            <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200 uppercase tracking-wide">
-              {docType}
+            <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200 tracking-wide">
+              {docType === "DRAFT"
+                ? "Thesis / Dissertation"
+                : docType === "MANUSCRIPT"
+                ? "Original Research Manuscript"
+                : docType === "PROPOSAL"
+                ? "Research Proposal"
+                : docType === "LITERATURE_REVIEW"
+                ? "Literature Review"
+                : docType}
             </span>
             <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono text-slate-500 bg-slate-50 border border-slate-200">
               v{version}

@@ -535,4 +535,29 @@ test("Guided Research Document & Section-Aware Autocomplete Test Suite", async (
     assert.equal(reloaded.version, 2);
     assert.equal((reloaded.content as any).meta, undefined, "Meta remains undefined on legacy docs");
   });
+
+  await t.test("19. Academic Scope Enforcement: Thesis / Dissertation headings, objectives, and exclusion of commercial templates", () => {
+    // 1. Thesis / Dissertation study designs and canonical chapter structure
+    const dissertationHeadings = getDefaultHeadings(DocumentType.DRAFT, "Doctoral Dissertation (Monograph)");
+    assert.ok(dissertationHeadings.some((h) => h.includes("Chapter 1: Introduction")), "Dissertation must contain chapter scaffold");
+    assert.ok(dissertationHeadings.some((h) => h.includes("Chapter 5: Discussion & Scholarly Contributions")));
+
+    const thesisObj = getDefaultObjectives("Neuromorphic Architecture", DocumentType.DRAFT, "Doctoral Dissertation (Monograph)");
+    assert.ok(thesisObj.general.includes("Neuromorphic Architecture"));
+    assert.ok(thesisObj.general.includes("original scholarly contribution"));
+    assert.equal(thesisObj.specific.length, 3);
+
+    // 2. Strict negative check: zero commercial/business templates
+    const allDesigns = [
+      ...STUDY_DESIGN_OPTIONS.MANUSCRIPT,
+      ...STUDY_DESIGN_OPTIONS.PROPOSAL,
+      ...STUDY_DESIGN_OPTIONS.LITERATURE_REVIEW,
+      ...STUDY_DESIGN_OPTIONS.DRAFT,
+    ];
+    for (const d of allDesigns) {
+      assert.ok(!d.toLowerCase().includes("business"), `No business design permitted: ${d}`);
+      assert.ok(!d.toLowerCase().includes("commercial"), `No commercial design permitted: ${d}`);
+      assert.ok(!d.toLowerCase().includes("corporate"), `No corporate design permitted: ${d}`);
+    }
+  });
 });

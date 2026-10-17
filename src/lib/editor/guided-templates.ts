@@ -31,9 +31,10 @@ export const STUDY_DESIGN_OPTIONS: Record<DocumentType, string[]> = {
     "Meta-Analysis & Quantitative Synthesis",
   ],
   DRAFT: [
-    "Exploratory Research Note",
-    "Working Paper",
-    "Technical Memorandum",
+    "Doctoral Dissertation (Monograph)",
+    "Master's Thesis",
+    "Cumulative / Article-Based Dissertation Framework",
+    "Exploratory Academic Research Thesis",
   ],
 };
 
@@ -125,6 +126,29 @@ export function getDefaultHeadings(docType: DocumentType, studyDesign?: string):
         "References",
       ];
     case DocumentType.DRAFT:
+      if (designLower.includes("dissertation") || designLower.includes("thesis")) {
+        return [
+          "Abstract",
+          "Chapter 1: Introduction & Research Problem",
+          "Chapter 2: Literature Review & Theoretical Framework",
+          "Chapter 3: Methodology & Experimental Design",
+          "Chapter 4: Results & Empirical Findings",
+          "Chapter 5: Discussion & Scholarly Contributions",
+          "Chapter 6: Conclusions & Future Research Directions",
+          "References",
+          "Appendices",
+        ];
+      }
+      return [
+        "Abstract",
+        "Introduction & Research Problem",
+        "Literature Review",
+        "Methodological Approach",
+        "Findings & Empirical Observations",
+        "Discussion & Scholarly Implications",
+        "Conclusions",
+        "References",
+      ];
     default:
       return [
         "Introduction",
@@ -200,6 +224,17 @@ export function getDefaultObjectives(
     };
   }
 
+  if (docType === DocumentType.DRAFT) {
+    return {
+      general: `To make an original scholarly contribution by systematically investigating the theoretical foundations and empirical dynamics of ${cleanTopic}.`,
+      specific: [
+        `Critically synthesize foundational scholarship and establish the theoretical framework governing ${cleanTopic}.`,
+        `Design, validate, and execute an advanced methodological investigation of ${cleanTopic}.`,
+        `Formulate novel empirical insights, defend scholarly contributions, and discuss implications for the academic field.`,
+      ],
+    };
+  }
+
   // Default / MANUSCRIPT
   return {
     general: `To investigate, quantify, and empirically characterize the dynamics of ${cleanTopic}.`,
@@ -260,8 +295,8 @@ export function createGuidedTipTapContent(config: GuidedDocumentConfig) {
       : config.docType === DocumentType.PROPOSAL
       ? "Research Grant Proposal"
       : config.docType === DocumentType.LITERATURE_REVIEW
-      ? "Systematic Literature Review"
-      : "Research Draft";
+      ? "Literature Review"
+      : "Thesis / Dissertation";
 
   const content: any[] = [];
 
