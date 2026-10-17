@@ -52,6 +52,7 @@ export interface UserLibraryItem {
   storagePath?: string | null;
   pdfUrl?: string | null;
   doi?: string | null;
+  arxiv?: string | null;
   isOpenAccess?: boolean;
   isPreprint?: boolean;
   sourceProvenance?: any;
@@ -900,6 +901,7 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
       storagePath: paper.storagePath,
       pdfUrl: paper.pdfUrl || null,
       doi: paper.doi || prov?.canonicalDoi || null,
+      arxiv: paper.arxivId || prov?.arxivId || null,
       isOpenAccess: Boolean(paper.isOpenAccess),
       isPreprint: prov?.version === "submittedVersion" || prov?.isPreprint === true,
       sourceProvenance: prov || null,

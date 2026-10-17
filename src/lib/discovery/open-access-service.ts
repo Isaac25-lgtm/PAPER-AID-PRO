@@ -470,17 +470,22 @@ export async function discoverOpenAccessForDoi(
   if (pmcid) {
     const pmcPdfUrl = `https://www.ncbi.nlm.nih.gov/pmc/articles/${pmcid}/pdf/`;
     if (!seenUrls.has(pmcPdfUrl.toLowerCase())) {
+      // Inherit the most authoritative license found across locations for this DOI
+      const knownLicenseLoc = allLocations.find((l) => l.license !== null);
+      const effectiveLicense = knownLicenseLoc ? knownLicenseLoc.license : null;
+      const { isPermissive } = evaluateReusePermission(effectiveLicense, "repository");
+
       allLocations.push({
         pdfUrl: pmcPdfUrl,
         landingPageUrl: `https://www.ncbi.nlm.nih.gov/pmc/articles/${pmcid}/`,
         isDirectPdf: true,
         version: "publishedVersion",
-        license: "cc-by",
+        license: effectiveLicense,
         hostType: "repository",
         sourceName: "PubMed Central (PMC)",
-        isLawfullyAcquirable: true,
+        isLawfullyAcquirable: isPermissive,
         isPreprint: false,
-        provenance: `PubMed Central Open Access (PMCID: ${pmcid})`,
+        provenance: `PubMed Central (PMCID: ${pmcid}, License: ${effectiveLicense || "unspecified"})`,
       });
     }
   }

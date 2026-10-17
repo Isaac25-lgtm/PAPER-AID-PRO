@@ -19,6 +19,7 @@
 
 import * as dns from "dns";
 import { NormalizedExternalPaper, FullTextAvailabilityStatus } from "./types";
+import { evaluateReusePermission } from "./open-access-service";
 import { uploadPaperPdf } from "@/lib/storage";
 import { processPaperDocument } from "@/lib/pdf/pipeline";
 import { embedPaperChunks } from "@/lib/ai/embedding-pipeline";
@@ -226,7 +227,32 @@ export async function validateSafePdfUrlAsync(
  */
 export function resolveFullTextAvailability(
   paper: NormalizedExternalPaper
-): { status: FullTextAvailabilityStatus; url: string | null; source: string | null } {
+): { status: FullTextAvailabilityStatus; url: string | null; source: string | null; reason?: string } {
+  // If explicitly closed access, require manual user upload
+  if (paper.isOpenAccess === false && !paper.pmcid && !paper.arxivId && !paper.openAccessPdfUrl) {
+    return {
+      status: "USER_UPLOAD_REQUIRED",
+      url: null,
+      source: null,
+      reason: "Manuscript is not open access. Manual user upload is required.",
+    };
+  }
+
+  // License inspection: do not assume blanket permission.
+  // If license is specified and non-permissive (e.g. CC BY-NC, CC BY-NC-ND, Bronze, Closed, Unspecified),
+  // automated downloading is prohibited and manual user upload is required.
+  if (paper.license) {
+    const { isPermissive, canonicalLicense } = evaluateReusePermission(paper.license);
+    if (!isPermissive) {
+      return {
+        status: "USER_UPLOAD_REQUIRED",
+        url: null,
+        source: null,
+        reason: `Work license "${canonicalLicense || paper.license}" restricts automated platform storage. Manual user upload required.`,
+      };
+    }
+  }
+
   // 1. PubMed Central (PMC) — primary lawful route
   if (paper.pmcid) {
     return {
@@ -248,7 +274,7 @@ export function resolveFullTextAvailability(
     }
   }
 
-  // 3. Open Access ArXiv
+  // 3. Open Access ArXiv (preprints with permissive / unreserved distribution)
   if (paper.arxivId) {
     return {
       status: "FULL_TEXT_AVAILABLE",
@@ -262,6 +288,7 @@ export function resolveFullTextAvailability(
     status: "USER_UPLOAD_REQUIRED",
     url: null,
     source: null,
+    reason: "No direct open-access PDF located. Manual user upload required.",
   };
 }
 
@@ -313,6 +340,19 @@ export async function acquireAndIngestLawfulFullText(
       status: "FULL_TEXT_AVAILABLE",
       storagePath: paper.storagePath,
     };
+  }
+
+  // License verification: Ensure individual work's license permits automated platform downloading & processing
+  const licenseToCheck = options.license || prov.license || prov.canonicalLicense;
+  if (licenseToCheck) {
+    const { isPermissive, canonicalLicense } = evaluateReusePermission(licenseToCheck);
+    if (!isPermissive) {
+      return {
+        success: false,
+        status: "USER_UPLOAD_REQUIRED",
+        error: `Automated downloading and platform storage is restricted by license "${canonicalLicense || licenseToCheck}". Manual PDF upload is required.`,
+      };
+    }
   }
 
   // 1. Fetch PDF with manual redirect handling and per-hop DNS validation
@@ -500,6 +540,7 @@ export async function acquireAndIngestLawfulFullText(
     const updatedProv = {
       ...prov,
       acquisitionSource: options.sourceName || "LAWFULLY_ACQUIRED_OPEN_ACCESS",
+      sourceName: options.sourceName || "LAWFULLY_ACQUIRED_OPEN_ACCESS",
       acquiredAt: new Date().toISOString(),
       license: options.license || null,
       version: options.version || null,

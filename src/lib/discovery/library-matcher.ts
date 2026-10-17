@@ -119,6 +119,32 @@ export async function matchPapersAgainstLocalLibrary(
     }
   }
 
+  // Query user-specific bookmarks if userId is provided to ensure multi-tenant library isolation
+  const userLibraryPaperIds = new Set<string>();
+  if (userId) {
+    const candidatePaperIds = new Set<string>();
+    for (const p of safeMatchedPapers) {
+      candidatePaperIds.add(p.id);
+    }
+    if (localTitleMap) {
+      localTitleMap.forEach((p) => {
+        candidatePaperIds.add(p.id);
+      });
+    }
+    if (candidatePaperIds.size > 0) {
+      const bookmarks = await prisma.bookmark.findMany({
+        where: {
+          userId,
+          paperId: { in: Array.from(candidatePaperIds) },
+        },
+        select: { paperId: true },
+      });
+      for (const b of bookmarks) {
+        userLibraryPaperIds.add(b.paperId);
+      }
+    }
+  }
+
   // Hydrate each external paper with local library status
   return externalPapers.map((paper) => {
     let localMatch: typeof matchedPapers[0] | undefined;
@@ -152,8 +178,15 @@ export async function matchPapersAgainstLocalLibrary(
     let localStatus: LocalPaperStatus;
 
     if (localMatch) {
+      const prov = localMatch.sourceProvenance as any;
+      const isOwner = Boolean(
+        userId && (prov?.uploadedByUserId === userId || prov?.ownerId === userId)
+      );
+      const isBookmarkedByUser = Boolean(userId && userLibraryPaperIds.has(localMatch.id));
+      const isInUserLibrary = isOwner || isBookmarkedByUser;
+
       localStatus = {
-        inLibrary: true,
+        inLibrary: isInUserLibrary,
         paperId: localMatch.id,
         processingStatus: localMatch.status as any,
         hasFullText: Boolean(localMatch.storagePath) && localMatch.status === "COMPLETED",

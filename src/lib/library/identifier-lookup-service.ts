@@ -584,6 +584,7 @@ export async function discoverAndProcessPaperOpenAccess(
       id: true,
       title: true,
       doi: true,
+      arxivId: true,
       status: true,
       storagePath: true,
       sourceProvenance: true,
@@ -611,10 +612,43 @@ export async function discoverAndProcessPaperOpenAccess(
   }
 
   if (!paper.doi) {
+    if (paper.arxivId) {
+      const prov = (paper.sourceProvenance as any) || {};
+      const arxivUrl = `https://arxiv.org/pdf/${paper.arxivId}.pdf`;
+      const acq = await acquireAndIngestLawfulFullText(paper.id, arxivUrl, {
+        license: prov.license || prov.canonicalLicense || null,
+        version: "submittedVersion",
+        sourceName: "arXiv Open Access",
+        userId,
+      });
+
+      try {
+        revalidatePath("/library");
+        revalidatePath("/saved");
+        revalidatePath(`/papers/${paperId}`);
+      } catch {}
+
+      if (acq.success) {
+        return {
+          success: true,
+          status: "READY_FOR_AI",
+          message: "Open-access preprint acquired from arXiv and processed successfully!",
+          hasFullText: true,
+        };
+      } else {
+        return {
+          success: false,
+          status: "IMPORT_FAILED",
+          message: `arXiv acquisition failed: ${acq.error}`,
+          hasFullText: false,
+        };
+      }
+    }
+
     return {
       success: false,
       status: "REFERENCE_SAVED_FULL_TEXT_NEEDED",
-      message: "Paper does not have a DOI registered for automated open-access discovery. Manual PDF upload is required.",
+      message: "Paper does not have a DOI or arXiv ID registered for automated open-access discovery. Manual PDF upload is required.",
       hasFullText: false,
     };
   }

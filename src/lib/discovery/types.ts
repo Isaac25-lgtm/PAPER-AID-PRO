@@ -87,3 +87,12 @@ export interface ScholarlyProvider {
   search(query: string, options?: DiscoverySearchOptions): Promise<NormalizedExternalPaper[]>;
   getPaper?(identifier: { doi?: string; pmid?: string; semanticScholarId?: string }): Promise<NormalizedExternalPaper | null>;
 }
+
+export interface ImportPaperResult {
+  success: boolean;
+  paperId?: string;
+  isExisting?: boolean;
+  fullTextStatus?: string;
+  message?: string;
+  error?: string;
+}

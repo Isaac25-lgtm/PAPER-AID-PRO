@@ -104,6 +104,7 @@ export function DiscoveryInterface() {
   const [importSuccessMap, setImportSuccessMap] = React.useState<
     Record<string, { paperId: string; fullTextStatus?: string; message?: string }>
   >({});
+  const [importErrorMap, setImportErrorMap] = React.useState<Record<string, string>>({});
 
   const toggleProvider = (provider: SourceProvider) => {
     setSelectedProviders((prev) => {
@@ -189,6 +190,12 @@ export function DiscoveryInterface() {
     }
 
     setImportingPaperId(paper.id);
+    setImportErrorMap((prev) => {
+      const next = { ...prev };
+      delete next[paper.id];
+      return next;
+    });
+
     try {
       const res = await importPaperMetadataAction(paper, { attemptFullTextFetch });
       if (res.success && res.paperId) {
@@ -229,10 +236,16 @@ export function DiscoveryInterface() {
           setIsSavePromptOpen(true);
           return;
         }
-        alert(res.error || "Failed to import paper.");
+        setImportErrorMap((prev) => ({
+          ...prev,
+          [paper.id]: res.error || "Failed to save paper.",
+        }));
       }
     } catch (err: any) {
-      alert(`Import error: ${err?.message || "An unexpected error occurred."}`);
+      setImportErrorMap((prev) => ({
+        ...prev,
+        [paper.id]: err?.message || "An unexpected error occurred during save.",
+      }));
     } finally {
       setImportingPaperId(null);
     }
@@ -667,10 +680,12 @@ export function DiscoveryInterface() {
           const isExpanded = Boolean(expandedAbstracts[paper.id]);
           const isImporting = importingPaperId === paper.id;
           const importSuccess = importSuccessMap[paper.id];
+          const importError = importErrorMap[paper.id];
           const localStatus = paper.localStatus;
           const isInLibrary = Boolean(localStatus?.inLibrary) || Boolean(importSuccess);
-          const hasPmcFullText =
-            paper.fullTextAvailability === "FULL_TEXT_AVAILABLE" && paper.pmcid;
+          const hasLawfulFullText =
+            paper.fullTextAvailability === "FULL_TEXT_AVAILABLE" &&
+            Boolean(paper.pmcid || paper.openAccessPdfUrl || paper.arxivId);
 
           return (
             <Card
@@ -717,13 +732,17 @@ export function DiscoveryInterface() {
                       </Badge>
                     )}
 
-                    {/* PMC Full text badge */}
-                    {hasPmcFullText && (
+                    {/* Lawful Open Full Text badge */}
+                    {hasLawfulFullText && (
                       <Badge
                         variant="outline"
                         className="text-[10px] font-semibold border-indigo-200 bg-indigo-50 text-indigo-700"
                       >
-                        PMC Open Full Text Available
+                        {paper.pmcid
+                          ? "PMC Open Full Text Available"
+                          : paper.arxivId
+                          ? "arXiv Open Full Text Available"
+                          : "Open-Access Full Text Available"}
                       </Badge>
                     )}
                   </div>
@@ -859,7 +878,7 @@ export function DiscoveryInterface() {
                       </div>
                     ) : (
                       <div className="w-full sm:w-auto space-y-1">
-                        {hasPmcFullText ? (
+                        {hasLawfulFullText ? (
                           <>
                             <Button
                               size="sm"
@@ -870,7 +889,7 @@ export function DiscoveryInterface() {
                               {isImporting ? (
                                 <>
                                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  <span>Saving...</span>
+                                  <span>Saving &amp; Attaching...</span>
                                 </>
                               ) : (
                                 <>
@@ -909,6 +928,17 @@ export function DiscoveryInterface() {
                             )}
                           </Button>
                         )}
+                      </div>
+                    )}
+
+                    {/* Inline Error Feedback if save fails */}
+                    {importError && (
+                      <div
+                        role="alert"
+                        className="flex items-start gap-1.5 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-2 mt-1 w-full max-w-[240px] animate-in fade-in duration-150"
+                      >
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-500 mt-0.5" />
+                        <span className="leading-snug">{importError}</span>
                       </div>
                     )}
                   </div>

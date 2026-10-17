@@ -41,6 +41,8 @@ export interface ResearchSnapshot {
   isInsufficientEvidence: boolean;
   insufficientReason?: string;
   sourcesCount: number;
+  retrievedCount?: number;
+  citedCount?: number;
   generatedAt: string;
   cached: boolean;
 }

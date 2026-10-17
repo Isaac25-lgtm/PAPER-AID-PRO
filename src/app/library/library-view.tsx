@@ -145,9 +145,26 @@ export function LibraryView({
   const [discoveringOaId, setDiscoveringOaId] = React.useState<string | null>(null);
   const [oaActionFeedback, setOaActionFeedback] = React.useState<{
     paperId: string;
-    type: "success" | "error" | "info";
+    type: "success" | "error" | "info" | "warning";
     message: string;
   } | null>(null);
+
+  // Dedicated Direct PDF Attachment Modal (zero redundant metadata entry)
+  const [directAttachItem, setDirectAttachItem] =
+    React.useState<UserLibraryItem | null>(null);
+  const [directAttachFile, setDirectAttachFile] = React.useState<File | null>(
+    null
+  );
+  const [isDirectAttaching, setIsDirectAttaching] = React.useState(false);
+  const [directAttachError, setDirectAttachError] = React.useState<
+    string | null
+  >(null);
+
+  const openDirectAttachModal = (item: UserLibraryItem) => {
+    setDirectAttachItem(item);
+    setDirectAttachFile(null);
+    setDirectAttachError(null);
+  };
 
   // BibTeX / RIS Import state
   const [importMode, setImportMode] = React.useState<"paste" | "file">("file");
@@ -593,21 +610,27 @@ export function LibraryView({
         setOaActionFeedback({
           paperId,
           type: "success",
-          message: res.message || "Open-access PDF discovered and full text processed for AI analysis!",
+          message:
+            res.message ||
+            "Eligible open-access PDF acquired, license-verified, and indexed for AI analysis!",
         });
         router.refresh();
-      } else if (res.success) {
+      } else if (res.status === "OPEN_ACCESS_EXTERNAL_LINK_ONLY") {
         setOaActionFeedback({
           paperId,
           type: "info",
-          message: res.message || "External open-access reading link preserved. Manual PDF upload is available.",
+          message:
+            res.message ||
+            "Auto-import is restricted by publisher license terms. External full-text link provided. You can attach a personal copy using 'Upload My PDF'.",
         });
         router.refresh();
       } else {
         setOaActionFeedback({
           paperId,
-          type: "error",
-          message: res.message || "No legally accessible open-access PDF located.",
+          type: "warning",
+          message:
+            res.message ||
+            "No eligible open-access PDF located across academic providers. You can attach a personal copy using 'Upload My PDF'.",
         });
       }
     } catch (err: any) {
@@ -618,6 +641,56 @@ export function LibraryView({
       });
     } finally {
       setDiscoveringOaId(null);
+    }
+  };
+
+  const handleDirectAttachSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directAttachItem || !directAttachFile) {
+      setDirectAttachError("Please select a PDF manuscript file to attach.");
+      return;
+    }
+
+    setIsDirectAttaching(true);
+    setDirectAttachError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("pdfFile", directAttachFile);
+      formData.append("file", directAttachFile);
+      formData.append("targetPaperId", directAttachItem.id);
+      formData.append("title", directAttachItem.title);
+      if (directAttachItem.authors && directAttachItem.authors.length > 0) {
+        formData.append("authors", directAttachItem.authors.join(", "));
+      }
+      if (directAttachItem.institution) {
+        formData.append("institution", directAttachItem.institution);
+      }
+      if (directAttachItem.documentType) {
+        formData.append("documentType", directAttachItem.documentType);
+      }
+
+      const res = await uploadUserDocumentAction(formData);
+      if (res.success) {
+        const attachedId = directAttachItem.id;
+        setDirectAttachItem(null);
+        setDirectAttachFile(null);
+        setOaActionFeedback({
+          paperId: attachedId,
+          type: "success",
+          message:
+            "Authorized private copy attached successfully! Document indexed and ready for AI analysis.",
+        });
+        router.refresh();
+      } else {
+        setDirectAttachError(
+          res.error || "Failed to attach PDF to this saved reference."
+        );
+      }
+    } catch (err: any) {
+      setDirectAttachError(err?.message || "Error attaching PDF.");
+    } finally {
+      setIsDirectAttaching(false);
     }
   };
 
@@ -1327,9 +1400,68 @@ export function LibraryView({
 
               <CardContent className="p-5 pt-0 flex-1 flex flex-col justify-between">
                 {/* Abstract Excerpt */}
-                <p className="text-xs text-slate-600 leading-relaxed line-clamp-3 mb-4">
+                <p className="text-xs text-slate-600 leading-relaxed line-clamp-3 mb-3">
                   {item.abstract}
                 </p>
+
+                {/* Open Access & Attachment Status Feedback */}
+                {oaActionFeedback?.paperId === item.id && (
+                  <div
+                    className={`p-2.5 rounded-lg text-xs mb-3 flex flex-col gap-1.5 ${
+                      oaActionFeedback.type === "success"
+                        ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
+                        : oaActionFeedback.type === "info"
+                        ? "bg-sky-50 border border-sky-200 text-sky-800"
+                        : oaActionFeedback.type === "warning"
+                        ? "bg-amber-50 border border-amber-200 text-amber-900"
+                        : "bg-rose-50 border border-rose-200 text-rose-800"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-1.5">
+                      <div className="flex items-start gap-1.5">
+                        {oaActionFeedback.type === "success" ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+                        )}
+                        <span className="leading-snug">{oaActionFeedback.message}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setOaActionFeedback(null)}
+                        className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                        title="Dismiss"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    {/* Fallback actions when automatic full-text is restricted or unavailable */}
+                    {oaActionFeedback.type !== "success" && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200/60 mt-0.5">
+                        {item.pdfUrl && (
+                          <a
+                            href={item.pdfUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 hover:underline"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            <span>External Full Text</span>
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => openDirectAttachModal(item)}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-800 hover:text-indigo-700 bg-white px-2 py-0.5 rounded border border-slate-300 hover:border-indigo-300 shadow-2xs"
+                        >
+                          <FileUp className="h-3 w-3 text-indigo-600" />
+                          <span>Upload My PDF</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Footer Toolbar */}
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
@@ -1362,60 +1494,56 @@ export function LibraryView({
                       </Button>
                     ) : item.status === "METADATA_ONLY" ? (
                       <>
-                        {item.doi && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            type="button"
-                            onClick={() => handleDiscoverOpenAccess(item.id)}
-                            disabled={discoveringOaId === item.id}
-                            className="h-7 px-2 text-xs text-indigo-700 bg-indigo-50/50 border-indigo-200 hover:bg-indigo-100 gap-1 font-semibold"
-                            title="Search for open-access PDF to process for AI analysis"
-                          >
-                            {discoveringOaId === item.id ? (
-                              <RefreshCw className="h-3 w-3 animate-spin text-indigo-600" />
-                            ) : (
-                              <Sparkles className="h-3 w-3 text-indigo-600" />
-                            )}
-                            <span>Find OA</span>
-                          </Button>
-                        )}
+                        {/* Primary: Find & Attach Full Text */}
+                        <Button
+                          size="sm"
+                          type="button"
+                          onClick={() => handleDiscoverOpenAccess(item.id)}
+                          disabled={discoveringOaId === item.id}
+                          className="h-7 px-2.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold gap-1 shadow-2xs"
+                          title="Invoke authorized, license-checked acquisition workflow to find and attach eligible full text"
+                        >
+                          {discoveringOaId === item.id ? (
+                            <RefreshCw className="h-3 w-3 animate-spin text-white" />
+                          ) : (
+                            <Sparkles className="h-3 w-3 text-white" />
+                          )}
+                          <span>{discoveringOaId === item.id ? "Finding..." : "Find & Attach Full Text"}</span>
+                        </Button>
 
+                        {/* Secondary: Upload My PDF */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          type="button"
+                          onClick={() => openDirectAttachModal(item)}
+                          className="h-7 px-2 text-xs text-slate-700 hover:text-indigo-700 hover:bg-indigo-50/50 border-slate-300 gap-1 font-medium"
+                          title="Attach an authorized user-owned private PDF without entering metadata"
+                        >
+                          <FileUp className="h-3 w-3 text-indigo-600" />
+                          <span>Upload My PDF</span>
+                        </Button>
+
+                        {/* External Full Text Link (when known) */}
                         {item.pdfUrl && (
                           <a
                             href={item.pdfUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 h-7 px-2 text-xs text-slate-700 hover:text-indigo-600 hover:bg-slate-50 rounded-md border border-slate-200 transition-colors font-medium"
-                            title="Open external publisher or repository full text"
+                            className="inline-flex items-center gap-1 h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-md border border-slate-200 transition-colors font-medium"
+                            title="Open external publisher or repository full text in new tab"
                           >
-                            <ExternalLink className="h-3 w-3 text-slate-500" />
-                            <span>Open Full Text</span>
+                            <ExternalLink className="h-3 w-3 text-slate-400" />
+                            <span>External Link</span>
                           </a>
                         )}
 
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          type="button"
-                          onClick={() => {
-                            setTargetPaperId(item.id);
-                            setTitle(item.title);
-                            setDocType((item.documentType as any) || "OTHER_DOCUMENT");
-                            setIsUploadOpen(true);
-                          }}
-                          className="h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-100 gap-1"
-                          title="Attach manuscript PDF to this saved reference"
-                        >
-                          <FileUp className="h-3 w-3" />
-                          <span>Attach PDF</span>
-                        </Button>
-
+                        {/* Cite Paper */}
                         <Link href={`/tools/citation-generator?query=${encodeURIComponent(item.doi || item.title)}`}>
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-100 gap-1"
+                            className="h-7 px-2 text-xs text-slate-500 hover:text-indigo-600 hover:bg-slate-100 gap-1"
                             title="Cite this paper"
                           >
                             <Quote className="h-3 w-3" />
@@ -2648,6 +2776,178 @@ export function LibraryView({
                 )}
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================================ */}
+      {/* MODAL 7: DIRECT PDF ATTACHMENT (ZERO REDUNDANT METADATA)                      */}
+      {/* ============================================================================ */}
+      {directAttachItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-slate-200 p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <FileUp className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">
+                    Upload My PDF
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Attach an authorized private copy to this saved reference
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDirectAttachItem(null);
+                  setDirectAttachFile(null);
+                  setDirectAttachError(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Reused Reference Metadata Card (Read-Only) */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">
+                  Target Reference
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {directAttachItem.doi && (
+                    <Badge variant="outline" className="text-[9px] font-mono border-slate-300 text-slate-600">
+                      DOI: {directAttachItem.doi}
+                    </Badge>
+                  )}
+                  {directAttachItem.arxiv && (
+                    <Badge variant="outline" className="text-[9px] font-mono border-slate-300 text-slate-600">
+                      arXiv: {directAttachItem.arxiv}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              <h3 className="text-xs font-bold text-slate-900 leading-snug">
+                {directAttachItem.title}
+              </h3>
+
+              <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                {directAttachItem.authors && directAttachItem.authors.length > 0 && (
+                  <span>{directAttachItem.authors.join(", ")}</span>
+                )}
+                {directAttachItem.journal && (
+                  <span>· {directAttachItem.journal}</span>
+                )}
+                {directAttachItem.publicationDate && (
+                  <span>· {directAttachItem.publicationDate}</span>
+                )}
+              </div>
+            </div>
+
+            {directAttachError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{directAttachError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleDirectAttachSubmit} className="space-y-4 text-xs">
+              {/* PDF File Dropzone */}
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Local PDF File <span className="text-rose-500">*</span>
+                </label>
+                <div className="border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-xl p-5 text-center cursor-pointer transition-colors bg-slate-50/50">
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setDirectAttachFile(file);
+                        setDirectAttachError(null);
+                      }
+                    }}
+                    className="hidden"
+                    id="direct-attach-pdf-file"
+                  />
+                  <label
+                    htmlFor="direct-attach-pdf-file"
+                    className="cursor-pointer block"
+                  >
+                    <Upload className="mx-auto h-8 w-8 text-indigo-500 mb-1.5" />
+                    {directAttachFile ? (
+                      <div className="space-y-0.5">
+                        <div className="font-semibold text-slate-900 truncate max-w-xs mx-auto">
+                          {directAttachFile.name}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          {(directAttachFile.size / (1024 * 1024)).toFixed(2)} MB
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="font-semibold text-indigo-600 hover:underline">
+                          Choose your PDF manuscript
+                        </span>{" "}
+                        <span className="text-slate-500">or drag and drop</span>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          Maximum file size: 35 MB
+                        </p>
+                      </>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              {/* Scope & Privacy Guarantee */}
+              <div className="p-3 rounded-xl bg-indigo-50/60 border border-indigo-200/80 text-indigo-900 text-[11px] flex items-start gap-2">
+                <Lock className="h-3.5 w-3.5 text-indigo-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold">Private & Ownership-Isolated:</span> Attaching this PDF creates an authorized private copy for your library, preserving the canonical metadata and enabling AI chat without exposing your document or creating duplicate library records.
+                </div>
+              </div>
+
+              {/* Submit / Cancel Buttons */}
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setDirectAttachItem(null);
+                    setDirectAttachFile(null);
+                    setDirectAttachError(null);
+                  }}
+                  className="h-9 px-4 text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={!directAttachFile || isDirectAttaching}
+                  className="h-9 px-4 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold gap-1.5 shadow-sm"
+                >
+                  {isDirectAttaching ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-white" />
+                      <span>Attaching & Indexing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileUp className="h-3.5 w-3.5" />
+                      <span>Attach & Index PDF</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

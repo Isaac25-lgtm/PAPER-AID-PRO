@@ -177,7 +177,7 @@ export function AIResearchSnapshotCard({
               )}
             </div>
             <p className="text-[11px] text-slate-500 hidden sm:block">
-              Synthesized from {snapshot.sourcesCount} retrieved studies ({snapshot.wordCount} words)
+              Synthesized from {snapshot.citedCount ?? snapshot.citations.length} cited {snapshot.evidenceMode === "FULL_TEXT_EVIDENCE" ? "passages" : "abstracts"} ({snapshot.retrievedCount ?? snapshot.sourcesCount} retrieved studies) · {snapshot.wordCount} words
             </p>
           </div>
         </div>
@@ -192,7 +192,7 @@ export function AIResearchSnapshotCard({
           ) : (
             <Badge variant="outline" className="border-indigo-200 bg-indigo-50/70 text-indigo-700 text-[10px] font-semibold flex items-center gap-1 px-2.5 py-0.5 shadow-2xs">
               <BookOpen className="h-3 w-3 text-indigo-600" />
-              <span>Based on available abstracts</span>
+              <span>Abstract-Only Evidence (based on available abstracts)</span>
             </Badge>
           )}
 

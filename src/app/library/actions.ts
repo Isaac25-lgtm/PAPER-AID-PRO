@@ -60,7 +60,7 @@ export async function uploadUserDocumentAction(
   }
 
   try {
-    const file = formData.get("pdfFile") as File | null;
+    const file = (formData.get("pdfFile") || formData.get("file")) as File | null;
     if (!file || file.size === 0) {
       return {
         success: false,
