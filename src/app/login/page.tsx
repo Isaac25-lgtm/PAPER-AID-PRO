@@ -13,7 +13,7 @@ import { getSafeCallbackUrl } from "@/lib/auth/safe-redirect";
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const safeCallbackUrl = getSafeCallbackUrl(searchParams.get("callbackUrl"), "/");
+  const safeCallbackUrl = getSafeCallbackUrl(searchParams.get("callbackUrl"), "/dashboard");
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");

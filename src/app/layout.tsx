@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { Navbar } from "@/components/layout/navbar";
-import { Footer } from "@/components/layout/footer";
+import { AppShell } from "@/components/layout/app-shell";
 import { Providers } from "@/components/providers";
 import { OnboardingDialog } from "@/components/onboarding/onboarding-dialog";
 import { siteConfig } from "@/config/site";
@@ -44,10 +43,8 @@ export default async function RootLayout({
     <html lang="en" className="h-full scroll-smooth">
       <body className="flex min-h-full flex-col bg-slate-50/50 text-slate-900 font-sans antialiased">
         <Providers session={session}>
-          <Navbar />
+          <AppShell>{children}</AppShell>
           <OnboardingDialog />
-          <main className="flex-1">{children}</main>
-          <Footer />
         </Providers>
       </body>
     </html>

@@ -14,8 +14,10 @@ import {
   X,
   CheckCircle2,
   Layers,
+  Menu,
 } from "lucide-react";
 import { DocumentType } from "@prisma/client";
+import { useOptionalWorkspace } from "@/components/layout/workspace-context";
 
 export type SaveStatus = "saved" | "saving" | "unsaved" | "conflict";
 
@@ -58,6 +60,7 @@ export function EditorHeader({
   guidedMeta,
   liveHeadings,
 }: EditorHeaderProps) {
+  const workspace = useOptionalWorkspace();
   const [title, setTitle] = useState(initialTitle);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
@@ -97,8 +100,21 @@ export function EditorHeader({
   return (
     <>
       <header className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 py-2.5 flex items-center justify-between gap-4 shadow-sm">
-        {/* Left: Back & Document Metadata */}
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+        {/* Left: Mobile Nav, Back & Document Metadata */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          {/* Mobile Workspace Drawer Trigger (visible on screens < md) */}
+          {workspace && (
+            <button
+              type="button"
+              onClick={workspace.openMobileNav}
+              className="md:hidden p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors flex-shrink-0"
+              aria-label="Open workspace navigation"
+              title="Open workspace navigation"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+
           <Link
             href="/editor"
             className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors flex-shrink-0"

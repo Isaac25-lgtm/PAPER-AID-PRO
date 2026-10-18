@@ -154,6 +154,33 @@ export default async function HomePage({
         </div>
       )}
 
+      {/* Authenticated Workspace Banner */}
+      {isAuthenticated && (
+        <div className="mx-auto max-w-5xl px-4 pt-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-2xl border border-indigo-200/90 bg-indigo-50/80 p-4 text-xs sm:text-sm text-indigo-950 shadow-xs animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white font-bold text-sm shrink-0">
+                {session?.user?.name ? session.user.name[0].toUpperCase() : "R"}
+              </div>
+              <div className="space-y-0.5">
+                <span className="font-bold text-slate-900">
+                  Welcome back, {session?.user?.name || "Researcher"}
+                </span>
+                <p className="text-xs text-slate-600">
+                  Your active manuscripts, library sources, and research synthesis threads are ready.
+                </p>
+              </div>
+            </div>
+            <Button asChild size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 font-medium">
+              <Link href="/dashboard">
+                <span>Go to Dashboard</span>
+                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* 1. HERO SECTION                                                           */}
       {/* ========================================================================= */}
@@ -182,8 +209,8 @@ export default async function HomePage({
               size="lg"
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-7 shadow-md transition-all hover:shadow-lg"
             >
-              <Link href={isAuthenticated ? "/library" : "/register?callbackUrl=/library"}>
-                <span>Get Started</span>
+              <Link href={isAuthenticated ? "/dashboard" : "/register?callbackUrl=/dashboard"}>
+                <span>{isAuthenticated ? "Open Dashboard" : "Get Started"}</span>
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>

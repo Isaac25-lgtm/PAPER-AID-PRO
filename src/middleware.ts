@@ -33,6 +33,7 @@ export default withAuth(
 // Define which routes trigger the auth middleware
 export const config = {
   matcher: [
+    "/dashboard/:path*",
     "/library/:path*",
     "/editor/:path*",
     "/saved/:path*",
