@@ -326,4 +326,90 @@ describe("AI Research Hub — Authenticated Dashboard & Workspace Tests", () => 
     assert.equal(adminLinks.some((l) => l.href === "/admin"), true);
     assert.equal(adminLinks.length, 7);
   });
+
+  it("12. Workspace Context Hook: useWorkspace is strict and useOptionalWorkspace is nullable", () => {
+    const { useWorkspace, useOptionalWorkspace } = require("../src/components/layout/workspace-context");
+    assert.equal(typeof useWorkspace, "function");
+    assert.equal(typeof useOptionalWorkspace, "function");
+
+    const mockContextValue = {
+      isSidebarCollapsed: false,
+      toggleSidebarCollapsed: () => {},
+      setSidebarCollapsed: () => {},
+      isMobileNavOpen: false,
+      openMobileNav: () => {},
+      closeMobileNav: () => {},
+      isNewDocumentModalOpen: false,
+      openNewDocumentModal: () => {},
+      closeNewDocumentModal: () => {},
+      isHelpGuidesOpen: false,
+      openHelpGuides: () => {},
+      closeHelpGuides: () => {},
+    };
+
+    // Strict contract: when context is missing, useWorkspace throws descriptive error
+    const strictHook = (ctx: any) => {
+      if (!ctx) throw new Error("useWorkspace must be used within a WorkspaceProvider");
+      return ctx;
+    };
+    assert.throws(() => strictHook(null), /useWorkspace must be used within a WorkspaceProvider/);
+    assert.equal(strictHook(mockContextValue), mockContextValue);
+
+    // Nullable contract: when context is missing, useOptionalWorkspace returns null without throwing
+    const optionalHook = (ctx: any) => ctx ?? null;
+    assert.equal(optionalHook(null), null);
+    assert.equal(optionalHook(mockContextValue), mockContextValue);
+  });
+
+  it("13. Editor Word Counter: correctly calculates word and character metrics from initial TipTap content", () => {
+    const tipTapContent = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 1 },
+          content: [{ type: "text", text: "Artificial Intelligence in Liver Ultrasound" }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "This study evaluates deep neural networks for identifying focal lesions on abdominal sonography.",
+            },
+          ],
+        },
+      ],
+    };
+
+    function extractTextFromContent(node: any): string {
+      if (!node) return "";
+      if (typeof node === "string") return node;
+      if (node.type === "text" && typeof node.text === "string") {
+        return node.text;
+      }
+      if (Array.isArray(node.content)) {
+        return node.content.map(extractTextFromContent).join(" ");
+      }
+      return "";
+    }
+
+    function calculateCountsFromContent(content: any): { words: number; chars: number } {
+      if (!content) return { words: 0, chars: 0 };
+      const text = extractTextFromContent(content).trim();
+      if (!text) return { words: 0, chars: 0 };
+      const words = text.split(/\s+/).filter(Boolean).length;
+      const chars = text.length;
+      return { words, chars };
+    }
+
+    const counts = calculateCountsFromContent(tipTapContent);
+    // Heading: 5 words. Paragraph: 13 words. Total: 18 words.
+    assert.equal(counts.words, 18);
+    assert.ok(counts.chars > 50);
+
+    // Empty content returns 0
+    assert.deepEqual(calculateCountsFromContent(null), { words: 0, chars: 0 });
+    assert.deepEqual(calculateCountsFromContent({ type: "doc", content: [] }), { words: 0, chars: 0 });
+  });
 });

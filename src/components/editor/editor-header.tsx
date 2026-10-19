@@ -19,7 +19,7 @@ import {
 import { DocumentType } from "@prisma/client";
 import { useOptionalWorkspace } from "@/components/layout/workspace-context";
 
-export type SaveStatus = "saved" | "saving" | "unsaved" | "conflict";
+export type SaveStatus = "saved" | "saving" | "unsaved" | "conflict" | "error";
 
 interface EditorHeaderProps {
   documentId: string;
@@ -35,6 +35,7 @@ interface EditorHeaderProps {
   onToggleSources: () => void;
   onRename: (newTitle: string) => Promise<void>;
   onDocTypeChange?: (newType: DocumentType) => void;
+  onManualSave?: () => void;
   guidedMeta?: {
     researchTopic?: string;
     docType?: string;
@@ -57,6 +58,7 @@ export function EditorHeader({
   isSourcesOpen,
   onToggleSources,
   onRename,
+  onManualSave,
   guidedMeta,
   liveHeadings,
 }: EditorHeaderProps) {
@@ -204,10 +206,26 @@ export function EditorHeader({
               </span>
             )}
             {saveStatus === "unsaved" && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
+              <button
+                type="button"
+                onClick={onManualSave}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200/80 transition-colors cursor-pointer"
+                title="Unsaved changes. Click or press Ctrl+S to save immediately."
+              >
                 <Clock className="w-3 h-3 text-slate-400" />
                 <span>Unsaved changes</span>
-              </span>
+              </button>
+            )}
+            {saveStatus === "error" && (
+              <button
+                type="button"
+                onClick={onManualSave}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100 transition-colors shadow-2xs cursor-pointer animate-pulse"
+                title="Autosave failed. Click or press Ctrl+S to retry saving now."
+              >
+                <AlertCircle className="w-3 h-3 text-rose-600" />
+                <span>Save failed (Retry)</span>
+              </button>
             )}
             {saveStatus === "conflict" && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">

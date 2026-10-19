@@ -23,12 +23,14 @@ interface EditorToolbarProps {
   editor: Editor | null;
   onTriggerAiAutocomplete?: () => void;
   isAiGenerating?: boolean;
+  autocompleteMode?: "mock" | "live";
 }
 
 export function EditorToolbar({
   editor,
   onTriggerAiAutocomplete,
   isAiGenerating = false,
+  autocompleteMode = "mock",
 }: EditorToolbarProps) {
   if (!editor) {
     return null;
@@ -180,7 +182,22 @@ export function EditorToolbar({
 
       {/* AI Autocomplete Trigger */}
       {onTriggerAiAutocomplete && (
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex items-center gap-2">
+          {autocompleteMode === "live" ? (
+            <span
+              className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200"
+              title="Autocomplete model: GPT-6 Luna Live Pilot"
+            >
+              GPT-6 Luna (Live Pilot)
+            </span>
+          ) : (
+            <span
+              className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200"
+              title="Autocomplete mode: Deterministic Academic Mock (Offline / Zero Cost)"
+            >
+              Deterministic Mock
+            </span>
+          )}
           <button
             type="button"
             onClick={onTriggerAiAutocomplete}

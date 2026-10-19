@@ -19,6 +19,7 @@ import {
   UpdateDocumentInput,
   CreateDocumentInput,
 } from "@/lib/editor/document-service";
+import { toPlainTipTapJson } from "@/lib/editor/content-sanitizer";
 import {
   generateInlineAutocomplete,
   rewriteSelectedText,
@@ -76,10 +77,19 @@ export async function saveDocumentAction(
 ) {
   try {
     const userId = await requireAuthUserId();
-    const updated = await updateResearchDocument(userId, documentId, updates);
+    const sanitizedUpdates: UpdateDocumentInput = {
+      ...updates,
+      content: updates.content ? toPlainTipTapJson(updates.content) : undefined,
+    };
+    const updated = await updateResearchDocument(userId, documentId, sanitizedUpdates);
     return {
       success: true,
-      document: updated,
+      document: {
+        id: updated.id,
+        title: updated.title,
+        version: updated.version,
+        updatedAt: updated.updatedAt.toISOString(),
+      },
       version: updated.version,
       updatedAt: updated.updatedAt.toISOString(),
     };
@@ -189,6 +199,7 @@ export type AutocompleteActionResult =
   | {
       success: true;
       suggestion: string;
+      outcome?: "SUCCESS" | "INTENTIONAL_ABSTENTION" | "TOKEN_LIMIT_REACHED" | "MISSING_CONTEXT";
       provider: string;
       model: string;
       cost: any;
@@ -197,6 +208,7 @@ export type AutocompleteActionResult =
   | {
       success: false;
       error: string;
+      outcome?: "PROVIDER_ERROR" | "MISSING_CONTEXT";
       suggestion?: undefined;
       provider?: undefined;
       model?: undefined;

@@ -10,6 +10,7 @@ import { GhostSuggestion, ghostSuggestionPluginKey } from "./ghost-suggestion-ex
 import { EditorToolbar } from "./editor-toolbar";
 import { AiSelectionPopover } from "./ai-selection-popover";
 import { generateAutocompleteAction } from "@/app/editor/actions";
+import { toPlainTipTapJson } from "@/lib/editor/content-sanitizer";
 import { Sparkles, Check, X, CornerDownLeft } from "lucide-react";
 
 interface EditorCanvasProps {
@@ -32,6 +33,7 @@ export function EditorCanvas({
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [surroundingContext, setSurroundingContext] = useState<string>("");
   const [ghostSuggestion, setGhostSuggestion] = useState<string | null>(null);
+  const [suggestionMeta, setSuggestionMeta] = useState<{ model?: string; provider?: string } | null>(null);
   const [autocompleteNotice, setAutocompleteNotice] = useState<string | null>(null);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
@@ -76,7 +78,7 @@ export function EditorCanvas({
     onUpdate: ({ editor }) => {
       const json = editor.getJSON();
       const text = editor.getText();
-      onContentChange(json, text);
+      onContentChange(toPlainTipTapJson(json), text);
 
       // Compute word count & char count
       const words = text.trim() ? text.trim().split(/\s+/).length : 0;
@@ -157,17 +159,30 @@ export function EditorCanvas({
 
       if (res.success && res.suggestion) {
         setGhostSuggestion(res.suggestion);
+        setSuggestionMeta({ model: res.model, provider: res.provider });
         // Inject inline ProseMirror ghost suggestion decoration at cursor position
         editor.commands.setGhostSuggestion({
           pos: from,
           text: res.suggestion,
         });
+      } else if (res.success && !res.suggestion) {
+        setSuggestionMeta(null);
+        if (res.outcome === "TOKEN_LIMIT_REACHED") {
+          setAutocompleteNotice("Completion token limit reached during reasoning. No suggestion generated.");
+        } else if (res.outcome === "MISSING_CONTEXT") {
+          setAutocompleteNotice("Insufficient context. Please enter preceding text or select a section heading.");
+        } else {
+          setAutocompleteNotice("No safe continuation available without empirical data. Model conservatively abstained.");
+        }
+        setTimeout(() => setAutocompleteNotice(null), 4500);
       } else if (!res.success && res.error) {
+        setSuggestionMeta(null);
         setAutocompleteNotice(res.error);
         setTimeout(() => setAutocompleteNotice(null), 5000);
       }
     } catch (err: any) {
       console.error("Autocomplete failed:", err);
+      setSuggestionMeta(null);
       setAutocompleteNotice(err.message || "Autocomplete service unavailable.");
       setTimeout(() => setAutocompleteNotice(null), 5000);
     } finally {
@@ -180,6 +195,7 @@ export function EditorCanvas({
     if (!editor) return;
     editor.commands.acceptGhostSuggestion();
     setGhostSuggestion(null);
+    setSuggestionMeta(null);
   }, [editor]);
 
   // Reject ghost suggestion
@@ -187,6 +203,7 @@ export function EditorCanvas({
     if (!editor) return;
     editor.commands.clearGhostSuggestion();
     setGhostSuggestion(null);
+    setSuggestionMeta(null);
   }, [editor]);
 
   // Keyboard shortcut listener (Ctrl+J or Cmd+J for AI autocomplete, Tab for accept)
@@ -231,6 +248,7 @@ export function EditorCanvas({
         editor={editor}
         onTriggerAiAutocomplete={triggerAutocomplete}
         isAiGenerating={isAiGenerating}
+        autocompleteMode={suggestionMeta?.model === "gpt-6-luna" ? "live" : "mock"}
       />
 
       {/* Main Canvas Paper Sheet */}
@@ -245,6 +263,15 @@ export function EditorCanvas({
               <div className="flex items-center gap-2 min-w-0">
                 <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                 <span className="font-semibold text-indigo-900 shrink-0">AI Suggestion:</span>
+                {suggestionMeta?.model === "gpt-6-luna" ? (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-300 shrink-0">
+                    GPT-6 Luna (Live Pilot)
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-300 shrink-0">
+                    Deterministic Mock
+                  </span>
+                )}
                 <span className="text-slate-600 truncate italic">"{ghostSuggestion}"</span>
               </div>
 
