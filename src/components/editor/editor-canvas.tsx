@@ -7,11 +7,41 @@ import Underline from "@tiptap/extension-underline";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import Placeholder from "@tiptap/extension-placeholder";
 import { GhostSuggestion, ghostSuggestionPluginKey } from "./ghost-suggestion-extension";
+import { CitationExtension } from "./extensions/citation-extension";
+import { BibliographyExtension } from "./extensions/bibliography-extension";
 import { EditorToolbar } from "./editor-toolbar";
 import { AiSelectionPopover } from "./ai-selection-popover";
 import { generateAutocompleteAction } from "@/app/editor/actions";
 import { toPlainTipTapJson } from "@/lib/editor/content-sanitizer";
 import { Sparkles, Check, X, CornerDownLeft } from "lucide-react";
+
+export interface ExternalInsertCitation {
+  id: string | number;
+  citationId: string;
+  items: Array<{
+    paperId: string;
+    paperTitle?: string;
+    locator?: string;
+    label?: string;
+    prefix?: string;
+    suffix?: string;
+  }>;
+  renderedText: string;
+  styleId?: string;
+}
+
+export interface ExternalSetBibliography {
+  id: string | number;
+  styleId: string;
+  styleTitle: string;
+  entries: string[];
+}
+
+export interface ExternalUpdateAllCitations {
+  id: string | number;
+  renderedMap: Record<string, string>;
+  styleId: string;
+}
 
 interface EditorCanvasProps {
   documentId: string;
@@ -20,6 +50,12 @@ interface EditorCanvasProps {
   onCountsChange: (words: number, chars: number) => void;
   linkedPaperIds?: string[];
   externalInsertText?: { text: string; id: number } | null;
+  externalInsertCitation?: ExternalInsertCitation | null;
+  externalSetBibliography?: ExternalSetBibliography | null;
+  externalUpdateAllCitations?: ExternalUpdateAllCitations | null;
+  onCitationsIndexed?: (
+    citations: Array<{ citationId: string; items: any[]; renderedText: string }>
+  ) => void;
 }
 
 export function EditorCanvas({
@@ -29,6 +65,10 @@ export function EditorCanvas({
   onCountsChange,
   linkedPaperIds = [],
   externalInsertText,
+  externalInsertCitation,
+  externalSetBibliography,
+  externalUpdateAllCitations,
+  onCitationsIndexed,
 }: EditorCanvasProps) {
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [surroundingContext, setSurroundingContext] = useState<string>("");
@@ -56,6 +96,8 @@ export function EditorCanvas({
       Placeholder.configure({
         placeholder: "Start drafting your research manuscript, or press Ctrl+J for AI autocomplete...",
       }),
+      CitationExtension,
+      BibliographyExtension,
       GhostSuggestion.configure({
         onTrigger: () => {
           triggerAutocomplete();
@@ -89,6 +131,21 @@ export function EditorCanvas({
       if (ghostSuggestion) {
         setGhostSuggestion(null);
       }
+
+      // Index and notify present citations in real time
+      if (onCitationsIndexed) {
+        const foundCitations: Array<{ citationId: string; items: any[]; renderedText: string }> = [];
+        editor.state.doc.descendants((node) => {
+          if (node.type.name === "citation") {
+            foundCitations.push({
+              citationId: node.attrs.citationId,
+              items: node.attrs.items || [],
+              renderedText: node.attrs.renderedText || "",
+            });
+          }
+        });
+        onCitationsIndexed(foundCitations);
+      }
     },
     onSelectionUpdate: ({ editor }) => {
       // If cursor moved, verify whether ghost suggestion decoration was cleared
@@ -116,12 +173,53 @@ export function EditorCanvas({
     },
   });
 
-  // Handle external text insertion (e.g. from SourcesDrawer citations or summaries)
+  // Handle external text insertion (e.g. from summaries)
   useEffect(() => {
     if (editor && externalInsertText) {
       editor.chain().focus().insertContent(externalInsertText.text).run();
     }
   }, [editor, externalInsertText]);
+
+  // Handle external structured citation insertion
+  useEffect(() => {
+    if (editor && externalInsertCitation) {
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "citation",
+          attrs: {
+            citationId: externalInsertCitation.citationId,
+            items: externalInsertCitation.items,
+            renderedText: externalInsertCitation.renderedText,
+            styleId: externalInsertCitation.styleId || "apa",
+          },
+        })
+        .insertContent(" ")
+        .run();
+    }
+  }, [editor, externalInsertCitation]);
+
+  // Handle external bibliography insertion/update
+  useEffect(() => {
+    if (editor && externalSetBibliography) {
+      editor.commands.setBibliography({
+        styleId: externalSetBibliography.styleId,
+        styleTitle: externalSetBibliography.styleTitle,
+        entries: externalSetBibliography.entries,
+      });
+    }
+  }, [editor, externalSetBibliography]);
+
+  // Handle external update of all citations (e.g. style change)
+  useEffect(() => {
+    if (editor && externalUpdateAllCitations) {
+      editor.commands.updateAllCitations(
+        externalUpdateAllCitations.renderedMap,
+        externalUpdateAllCitations.styleId
+      );
+    }
+  }, [editor, externalUpdateAllCitations]);
 
   // Autocomplete generator
   const triggerAutocomplete = useCallback(async () => {

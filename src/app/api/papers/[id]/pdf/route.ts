@@ -84,8 +84,8 @@ export async function GET(
           storageErr.message
         );
         return NextResponse.json(
-          { error: "Stored manuscript file could not be retrieved." },
-          { status: 502 }
+          { error: "Stored manuscript file could not be retrieved from storage." },
+          { status: 404 }
         );
       }
     }
@@ -105,7 +105,7 @@ export async function GET(
       { status: 404 }
     );
   } catch (err: any) {
-    console.error("PDF endpoint error:", err);
+    console.warn("PDF endpoint error:", err);
     return NextResponse.json(
       { error: "Internal error retrieving paper PDF." },
       { status: 500 }

@@ -14,9 +14,12 @@ import {
   Check,
   AlertCircle,
   FileCheck2,
+  Copy,
+  Download,
 } from "lucide-react";
 import { UserLibraryItem } from "@/lib/library/user-library-service";
 import { getUserLibrarySourcesAction, attachSourcePaperAction, detachSourcePaperAction } from "@/app/editor/actions";
+import { parseAuthorName } from "@/lib/citations/csl/csl-mapper";
 
 interface LinkedPaper {
   id: string;
@@ -24,16 +27,35 @@ interface LinkedPaper {
   paper: {
     id: string;
     title: string;
-    abstract: string;
+    abstract?: string;
     doi?: string | null;
     arxivId?: string | null;
     journal?: string | null;
     publicationDate?: string | Date | null;
-    status: string;
-    authors: { author: { name: string } }[];
-    categories: { category: { name: string } }[];
+    status?: string;
+    authors?: (string | { name?: string; author?: { name: string } | null })[];
+    categories?: { category?: { name: string } | null }[];
     _count?: { chunks: number };
   };
+}
+
+function getSafeAuthorName(authorItem: any): string {
+  if (!authorItem) return "";
+  if (typeof authorItem === "string") return authorItem.trim();
+  if (authorItem.author && typeof authorItem.author.name === "string") {
+    return authorItem.author.name.trim();
+  }
+  if (typeof authorItem.name === "string") {
+    return authorItem.name.trim();
+  }
+  return "";
+}
+
+function getSafeAuthorLastName(authorItem: any): string {
+  const name = getSafeAuthorName(authorItem);
+  if (!name) return "Unknown";
+  const parsed = parseAuthorName(name);
+  return parsed.family || parsed.literal || name;
 }
 
 interface DocumentCitationItem {
@@ -58,9 +80,18 @@ interface SourcesDrawerProps {
   onClose: () => void;
   linkedPapers: LinkedPaper[];
   citations: DocumentCitationItem[];
-  onInsertCitationText: (text: string, paperId: string, citationData?: any) => void;
+  onInsertCitationText?: (text: string, paperId: string, citationData?: any) => void;
+  onInsertStructuredCitation?: (params: {
+    paperId: string;
+    paperTitle: string;
+    locator?: string;
+  }) => void;
   onSummarizeEvidenceRequest: (paperId: string, paperTitle: string) => void;
   onRefreshDocument: () => Promise<void>;
+  activeStyleId?: string;
+  activeStyleName?: string;
+  bibliographyEntries?: string[];
+  onInsertBibliographyToCanvas?: () => void;
 }
 
 export function SourcesDrawer({
@@ -70,14 +101,24 @@ export function SourcesDrawer({
   linkedPapers,
   citations,
   onInsertCitationText,
+  onInsertStructuredCitation,
   onSummarizeEvidenceRequest,
   onRefreshDocument,
+  activeStyleId = "apa",
+  activeStyleName = "APA 7th",
+  bibliographyEntries = [],
+  onInsertBibliographyToCanvas,
 }: SourcesDrawerProps) {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [libraryItems, setLibraryItems] = useState<UserLibraryItem[]>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Citation Locator modal state
+  const [locatorTarget, setLocatorTarget] = useState<{ id: string; title: string } | null>(null);
+  const [locatorValue, setLocatorValue] = useState("");
+  const [copiedBib, setCopiedBib] = useState(false);
 
   // Load library items when picker modal opens
   useEffect(() => {
@@ -124,36 +165,47 @@ export function SourcesDrawer({
         await onRefreshDocument();
       }
     } catch (err: any) {
-      console.error("Failed to detach paper:", err);
+      console.warn("Failed to detach paper:", err);
     }
   };
 
-  // Helper to construct APA formatted in-text citation string: e.g. (Vaswani et al., 2017)
+  // Helper to construct APA formatted in-text citation string: e.g. (Vaswani et al., 2017) or (Fink & Hoyka, 2026)
   const formatCitationText = (paper: LinkedPaper["paper"]) => {
-    const firstAuthor = paper.authors[0]?.author?.name || "Unknown";
-    const lastName = firstAuthor.split(" ").pop() || firstAuthor;
+    if (!paper) return "(Unknown, n.d.)";
+    const authors = Array.isArray(paper.authors) ? paper.authors : [];
     const year = paper.publicationDate
       ? new Date(paper.publicationDate).getFullYear()
       : "n.d.";
 
-    if (paper.authors.length > 2) {
-      return `(${lastName} et al., ${year})`;
-    } else if (paper.authors.length === 2) {
-      const secondLastName =
-        paper.authors[1]?.author?.name.split(" ").pop() || "Author";
-      return `(${lastName} & ${secondLastName}, ${year})`;
+    if (authors.length === 0) {
+      return `(Unknown, ${year})`;
     }
-    return `(${lastName}, ${year})`;
+
+    const firstLastName = getSafeAuthorLastName(authors[0]);
+
+    if (authors.length > 2) {
+      return `(${firstLastName} et al., ${year})`;
+    } else if (authors.length === 2) {
+      const secondLastName = getSafeAuthorLastName(authors[1]);
+      return `(${firstLastName} & ${secondLastName}, ${year})`;
+    }
+    return `(${firstLastName}, ${year})`;
   };
 
   if (!isOpen) return null;
 
-  const linkedPaperIds = new Set(linkedPapers.map((lp) => lp.paper.id));
-  const filteredLibrary = libraryItems.filter(
-    (item) =>
-      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.authors.some((a) => a.toLowerCase().includes(searchQuery.toLowerCase()))
+  const linkedPaperIds = new Set(
+    linkedPapers
+      .map((lp) => lp?.paper?.id)
+      .filter((id): id is string => Boolean(id))
   );
+  const filteredLibrary = libraryItems.filter((item) => {
+    if (!item) return false;
+    const title = (item.title || "").toLowerCase();
+    const q = searchQuery.toLowerCase();
+    const authors = Array.isArray(item.authors) ? item.authors : [];
+    return title.includes(q) || authors.some((a) => (a || "").toLowerCase().includes(q));
+  });
 
   return (
     <>
@@ -217,7 +269,9 @@ export function SourcesDrawer({
             linkedPapers.map((lp) => {
               const p = lp.paper;
               const hasFullText = p.status === "COMPLETED" || (p._count?.chunks || 0) > 0;
-              const authorsList = p.authors.map((a) => a.author.name).join(", ");
+              const authorsList = Array.isArray(p.authors)
+                ? p.authors.map(getSafeAuthorName).filter(Boolean).join(", ")
+                : "";
               const citationString = formatCitationText(p);
 
               return (
@@ -265,17 +319,22 @@ export function SourcesDrawer({
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        onInsertCitationText(citationString, p.id, {
-                          paperId: p.id,
-                          citationText: citationString,
-                        })
-                      }
+                      onClick={() => {
+                        if (onInsertStructuredCitation) {
+                          setLocatorTarget({ id: p.id, title: p.title });
+                          setLocatorValue("");
+                        } else if (onInsertCitationText) {
+                          onInsertCitationText(citationString, p.id, {
+                            paperId: p.id,
+                            citationText: citationString,
+                          });
+                        }
+                      }}
                       className="px-2 py-1 text-[11px] font-medium rounded bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors flex items-center gap-1"
-                      title={`Insert ${citationString} at cursor`}
+                      title="Insert structured citation with optional locator"
                     >
                       <Quote className="w-3 h-3 text-slate-500" />
-                      <span>Cite</span>
+                      <span>Cite in Manuscript</span>
                     </button>
 
                     <button
@@ -293,32 +352,82 @@ export function SourcesDrawer({
             })
           )}
 
-          {/* Section: Inserted Citations & Bibliography */}
-          {citations.length > 0 && (
-            <div className="pt-4 border-t border-slate-200 space-y-2">
+          {/* Section: Bibliography & Inserted Citations */}
+          {(citations.length > 0 || bibliographyEntries.length > 0) && (
+            <div className="pt-4 border-t border-slate-200 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-slate-900 uppercase tracking-wider">
-                  Document Bibliography ({citations.length})
+                  Bibliography ({bibliographyEntries.length || citations.length})
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {activeStyleName}
                 </span>
               </div>
-              <div className="space-y-1.5">
-                {citations.map((c) => (
-                  <div
-                    key={c.id}
-                    className="p-2 rounded bg-slate-50 border border-slate-100 text-[11px] text-slate-700"
+
+              {/* Action: Insert Bibliography into Canvas */}
+              {onInsertBibliographyToCanvas && bibliographyEntries.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onInsertBibliographyToCanvas}
+                    className="flex-1 px-2.5 py-1.5 text-xs font-medium rounded-md bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                    title="Insert or update the References section in the manuscript"
                   >
-                    <span className="font-semibold text-indigo-700">
-                      {c.citationText}
-                    </span>{" "}
-                    — <span className="italic">{c.paper?.title}</span>
-                    {c.section && (
-                      <span className="text-slate-400 block text-[10px] mt-0.5">
-                        Section: {c.section} {c.pageNumber ? `(p. ${c.pageNumber})` : ""}
-                      </span>
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Insert into Manuscript</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const text = bibliographyEntries.join("\n\n");
+                      navigator.clipboard.writeText(text).catch(() => {});
+                      setCopiedBib(true);
+                      setTimeout(() => setCopiedBib(false), 2000);
+                    }}
+                    className="px-2 py-1.5 text-xs font-medium rounded-md border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors flex items-center gap-1"
+                    title="Copy formatted references to clipboard"
+                  >
+                    {copiedBib ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
                     )}
-                  </div>
-                ))}
-              </div>
+                  </button>
+                </div>
+              )}
+
+              {/* Formatted Bibliography Preview */}
+              {bibliographyEntries.length > 0 ? (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {bibliographyEntries.map((entry, idx) => (
+                    <div
+                      key={idx}
+                      className="p-2.5 rounded bg-slate-50 border border-slate-200/80 text-[11px] text-slate-700 leading-relaxed font-serif"
+                    >
+                      {entry}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {citations.map((c) => (
+                    <div
+                      key={c.id}
+                      className="p-2 rounded bg-slate-50 border border-slate-100 text-[11px] text-slate-700"
+                    >
+                      <span className="font-semibold text-indigo-700">
+                        {c.citationText}
+                      </span>{" "}
+                      — <span className="italic">{c.paper?.title}</span>
+                      {c.section && (
+                        <span className="text-slate-400 block text-[10px] mt-0.5">
+                          Section: {c.section} {c.pageNumber ? `(p. ${c.pageNumber})` : ""}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -388,7 +497,9 @@ export function SourcesDrawer({
                           {item.title}
                         </h4>
                         <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
-                          {item.authors.join(", ") || "Unknown Authors"}
+                          {Array.isArray(item.authors)
+                            ? item.authors.map(getSafeAuthorName).filter(Boolean).join(", ")
+                            : (getSafeAuthorName(item.authors) || "Unknown Authors")}
                         </p>
                         <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1">
                           <span
@@ -442,6 +553,95 @@ export function SourcesDrawer({
                 className="px-4 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-200 transition-colors"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Citation Locator Dialog */}
+      {locatorTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <Quote className="w-4 h-4 text-indigo-600" />
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Insert Citation
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setLocatorTarget(null);
+                  setLocatorValue("");
+                }}
+                className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-slate-600 font-medium line-clamp-2">
+                {locatorTarget.title}
+              </p>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                  Page or Locator <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 42 or 12-15"
+                  value={locatorValue}
+                  onChange={(e) => setLocatorValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      onInsertStructuredCitation?.({
+                        paperId: locatorTarget.id,
+                        paperTitle: locatorTarget.title,
+                        locator: locatorValue.trim() || undefined,
+                      });
+                      setLocatorTarget(null);
+                      setLocatorValue("");
+                    }
+                  }}
+                  autoFocus
+                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  CSL formats the locator according to the active style rules (e.g. p. 42).
+                </span>
+              </div>
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setLocatorTarget(null);
+                  setLocatorValue("");
+                }}
+                className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onInsertStructuredCitation?.({
+                    paperId: locatorTarget.id,
+                    paperTitle: locatorTarget.title,
+                    locator: locatorValue.trim() || undefined,
+                  });
+                  setLocatorTarget(null);
+                  setLocatorValue("");
+                }}
+                className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-md shadow-xs transition-colors"
+              >
+                Insert Citation
               </button>
             </div>
           </div>

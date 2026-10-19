@@ -393,6 +393,10 @@ export async function insertDocumentCitation(
   documentId: string,
   input: InsertCitationInput
 ) {
+  if (!input.paperId || input.paperId.trim() === "" || input.paperId === "unknown-ref") {
+    throw new Error("A valid paperId is required to create a document citation.");
+  }
+
   // 1. Verify document ownership
   const doc = await prisma.researchDocument.findUnique({
     where: { id: documentId },

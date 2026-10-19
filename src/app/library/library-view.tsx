@@ -35,6 +35,7 @@ import {
   Edit3,
   Filter,
   Quote,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +68,8 @@ import {
   previewReferenceImportAction,
   executeReferenceImportAction,
 } from "./actions";
+import { CitePaperModal } from "@/components/citations/cite-paper-modal";
+import { BulkExportModal } from "@/components/citations/bulk-export-modal";
 
 interface LibraryViewProps {
   initialItems: UserLibraryItem[];
@@ -208,6 +211,10 @@ export function LibraryView({
 
   // Multi-paper selection state for Phase 6 Multi-Paper Chat
   const [selectedPaperIds, setSelectedPaperIds] = React.useState<string[]>([]);
+
+  // CSL Citation & Bulk Export state
+  const [citingItem, setCitingItem] = React.useState<UserLibraryItem | null>(null);
+  const [isExportingSelected, setIsExportingSelected] = React.useState(false);
 
   const togglePaperSelection = (id: string) => {
     setSelectedPaperIds((prev) =>
@@ -1118,6 +1125,16 @@ export function LibraryView({
             <Button
               size="sm"
               variant="outline"
+              onClick={() => setIsExportingSelected(true)}
+              className="bg-indigo-800 text-white hover:bg-indigo-700 border-indigo-600 text-xs gap-1.5 shadow-xs"
+              title="Export selected references to BibTeX, RIS, or formatted CSL bibliography"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Export References</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               onClick={clearSelection}
               className="bg-transparent text-indigo-200 hover:text-white hover:bg-indigo-800 border-indigo-700 text-xs"
             >
@@ -1538,32 +1555,47 @@ export function LibraryView({
                           </a>
                         )}
 
-                        {/* Cite Paper */}
-                        <Link href={`/tools/citation-generator?query=${encodeURIComponent(item.doi || item.title)}`}>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-2 text-xs text-slate-500 hover:text-indigo-600 hover:bg-slate-100 gap-1"
-                            title="Cite this paper"
-                          >
-                            <Quote className="h-3 w-3" />
-                            <span>Cite</span>
-                          </Button>
-                        </Link>
+                        {/* Cite Paper (Metadata Only) */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          type="button"
+                          onClick={() => setCitingItem(item)}
+                          className="h-7 px-2 text-xs text-slate-500 hover:text-indigo-600 hover:bg-slate-100 gap-1 font-medium"
+                          title="Cite this reference"
+                        >
+                          <Quote className="h-3 w-3" />
+                          <span>Cite</span>
+                        </Button>
                       </>
                     ) : null}
 
                     {item.hasPdf && (
-                      <a
-                        href={`/api/papers/${item.id}/pdf`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-md border border-slate-200 transition-colors"
-                        title="View Manuscript PDF"
-                      >
-                        <FileText className="h-3 w-3" />
-                        <span>PDF</span>
-                      </a>
+                      <>
+                        <a
+                          href={`/api/papers/${item.id}/pdf`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-md border border-slate-200 transition-colors"
+                          title="View Manuscript PDF"
+                        >
+                          <FileText className="h-3 w-3" />
+                          <span>PDF</span>
+                        </a>
+
+                        {/* Cite Paper (Full Text) */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          type="button"
+                          onClick={() => setCitingItem(item)}
+                          className="h-7 px-2 text-xs text-slate-500 hover:text-indigo-600 hover:bg-slate-100 gap-1 font-medium"
+                          title="Cite this reference"
+                        >
+                          <Quote className="h-3 w-3" />
+                          <span>Cite</span>
+                        </Button>
+                      </>
                     )}
 
                     {/* Quick Select for Multi-Paper Chat */}
@@ -2951,6 +2983,20 @@ export function LibraryView({
           </div>
         </div>
       )}
+
+      {/* CSL Cite Paper Modal */}
+      <CitePaperModal
+        isOpen={Boolean(citingItem)}
+        onClose={() => setCitingItem(null)}
+        paper={citingItem}
+      />
+
+      {/* CSL Bulk Reference Export Modal */}
+      <BulkExportModal
+        isOpen={isExportingSelected}
+        onClose={() => setIsExportingSelected(false)}
+        items={items.filter((it) => selectedPaperIds.includes(it.id))}
+      />
     </div>
   );
 }

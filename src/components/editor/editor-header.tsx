@@ -15,9 +15,12 @@ import {
   CheckCircle2,
   Layers,
   Menu,
+  Quote,
+  ChevronDown,
 } from "lucide-react";
 import { DocumentType } from "@prisma/client";
 import { useOptionalWorkspace } from "@/components/layout/workspace-context";
+import { StyleSelectorModal } from "@/components/citations/style-selector-modal";
 
 export type SaveStatus = "saved" | "saving" | "unsaved" | "conflict" | "error";
 
@@ -44,6 +47,10 @@ interface EditorHeaderProps {
     headings?: string[];
   };
   liveHeadings?: string[];
+  activeStyleId?: string;
+  activeStyleName?: string;
+  onSelectStyle?: (styleId: string) => void;
+  onStyleChange?: (styleId: string) => void;
 }
 
 export function EditorHeader({
@@ -61,11 +68,16 @@ export function EditorHeader({
   onManualSave,
   guidedMeta,
   liveHeadings,
+  activeStyleId = "apa",
+  activeStyleName,
+  onSelectStyle,
+  onStyleChange,
 }: EditorHeaderProps) {
   const workspace = useOptionalWorkspace();
   const [title, setTitle] = useState(initialTitle);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
+  const [isStyleModalOpen, setIsStyleModalOpen] = useState(false);
 
   useEffect(() => {
     setTitle(initialTitle);
@@ -235,6 +247,20 @@ export function EditorHeader({
             )}
           </div>
 
+          {/* Citation Style Selector Button */}
+          <button
+            type="button"
+            onClick={() => setIsStyleModalOpen(true)}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center gap-1.5 shadow-2xs"
+            title="Change academic citation style (CSL)"
+          >
+            <Quote className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="max-w-[110px] truncate sm:max-w-none">
+              {activeStyleName || activeStyleId.toUpperCase()}
+            </span>
+            <ChevronDown className="w-3 h-3 text-slate-400" />
+          </button>
+
           {/* Sources Drawer Button */}
           <button
             type="button"
@@ -376,6 +402,17 @@ export function EditorHeader({
           </div>
         </div>
       )}
+
+      {/* CSL Style Selector Modal */}
+      <StyleSelectorModal
+        isOpen={isStyleModalOpen}
+        onClose={() => setIsStyleModalOpen(false)}
+        activeStyleId={activeStyleId}
+        onSelectStyle={(newStyleId) => {
+          if (onStyleChange) onStyleChange(newStyleId);
+          if (onSelectStyle) onSelectStyle(newStyleId);
+        }}
+      />
     </>
   );
 }

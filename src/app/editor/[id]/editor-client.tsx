@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { DocumentType } from "@prisma/client";
+import { DocumentType, CitationType } from "@prisma/client";
 import { EditorHeader, SaveStatus } from "@/components/editor/editor-header";
 import { EditorCanvas } from "@/components/editor/editor-canvas";
 import { SourcesDrawer } from "@/components/editor/sources-drawer";
@@ -12,8 +12,18 @@ import {
   saveDocumentAction,
   renameDocumentAction,
   getDocumentAction,
+  insertCitationAction,
 } from "@/app/editor/actions";
 import { toPlainTipTapJson } from "@/lib/editor/content-sanitizer";
+import {
+  ExternalInsertCitation,
+  ExternalSetBibliography,
+  ExternalUpdateAllCitations,
+} from "@/components/editor/editor-canvas";
+import {
+  formatDocumentCsl,
+  loadStyleXmlClient,
+} from "@/lib/citations/csl/csl-client-formatter";
 import { AlertCircle, RefreshCw, Save, ShieldAlert } from "lucide-react";
 
 interface EditorClientProps {
@@ -70,8 +80,12 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
   const [wordCount, setWordCount] = useState<number>(initialCounts.words);
   const [charCount, setCharCount] = useState<number>(initialCounts.chars);
 
-  // Guided Document metadata and live outline synchronization
-  const guidedMetaRef = useRef<any>((initialDocument.content as any)?.meta || null);
+  // Guided Document metadata, citation style, and live outline synchronization
+  const initialCitationStyle = (initialDocument.content as any)?.meta?.citationStyle || "apa";
+  const guidedMetaRef = useRef<any>({
+    ...((initialDocument.content as any)?.meta || {}),
+    citationStyle: initialCitationStyle,
+  });
   const [liveHeadings, setLiveHeadings] = useState<string[]>(() =>
     extractHeadingsFromContent(initialDocument.content)
   );
@@ -96,6 +110,31 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
     text: string;
     id: number;
   } | null>(null);
+
+  // Citation Style Language (CSL) System State
+  const [citationStyle, setCitationStyle] = useState<string>(
+    () => (initialDocument.content as any)?.meta?.citationStyle || "apa"
+  );
+  const [styleTitle, setStyleTitle] = useState<string>("APA 7th");
+  const [bibliographyEntries, setBibliographyEntries] = useState<string[]>([]);
+  const [activeCitationsInDoc, setActiveCitationsInDoc] = useState<
+    Array<{ citationId: string; items: any[]; renderedText: string }>
+  >([]);
+
+  // TipTap External CSL Bridges
+  const [externalInsertCitation, setExternalInsertCitation] =
+    useState<ExternalInsertCitation | null>(null);
+  const [externalSetBibliography, setExternalSetBibliography] =
+    useState<ExternalSetBibliography | null>(null);
+  const [externalUpdateAllCitations, setExternalUpdateAllCitations] =
+    useState<ExternalUpdateAllCitations | null>(null);
+
+  // Load active style title on mount
+  useEffect(() => {
+    loadStyleXmlClient(citationStyle).then((def) => {
+      setStyleTitle(def.title);
+    });
+  }, [citationStyle]);
 
   // Refs for debounced autosave and latest draft snapshot
   const pendingUpdatesRef = useRef<{
@@ -245,11 +284,14 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
         setLiveHeadings(currentHeadings);
       }
 
-      // Preserve guided metadata even if TipTap's getJSON() drops it
-      const rawContentToSave =
-        guidedMetaRef.current && contentJson && !contentJson.meta
-          ? { ...contentJson, meta: guidedMetaRef.current }
-          : contentJson;
+      // Preserve guided metadata and document-level citation style even if TipTap's getJSON() drops it
+      const mergedMeta = {
+        ...(guidedMetaRef.current || {}),
+        citationStyle: guidedMetaRef.current?.citationStyle || citationStyle || "apa",
+      };
+      const rawContentToSave = contentJson
+        ? { ...contentJson, meta: { ...(contentJson.meta || {}), ...mergedMeta } }
+        : { type: "doc", content: [{ type: "paragraph" }], meta: mergedMeta };
       const contentToSave = toPlainTipTapJson(rawContentToSave);
 
       latestDraftRef.current = {
@@ -323,7 +365,7 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
     }
   };
 
-  // Handle external citation text injection
+  // Handle external citation text injection (legacy fallback)
   const handleInsertCitationText = (
     citationText: string,
     paperId: string,
@@ -334,6 +376,196 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
       id: Date.now(),
     });
   };
+
+  // Real-time Citation Indexing & Sequential Numbering / Disambiguation Sync
+  const handleCitationsIndexed = useCallback(
+    async (citations: Array<{ citationId: string; items: any[]; renderedText: string }>) => {
+      try {
+        setActiveCitationsInDoc(citations);
+        if (citations.length === 0) {
+          setBibliographyEntries([]);
+          return;
+        }
+
+        const res = await formatDocumentCsl({
+          styleId: citationStyle,
+          linkedPapers: researchDocument.linkedPapers || [],
+          clusters: citations,
+        });
+
+        setBibliographyEntries(res.bibliographyEntries);
+        setStyleTitle(res.styleTitle);
+
+        // Check if sequential numbers or disambiguations changed
+        let hasMismatch = false;
+        for (const cit of citations) {
+          const expected = res.renderedClusters.get(cit.citationId);
+          if (expected && expected !== cit.renderedText) {
+            hasMismatch = true;
+            break;
+          }
+        }
+
+        if (hasMismatch) {
+          setExternalUpdateAllCitations({
+            id: Date.now(),
+            renderedMap: Object.fromEntries(res.renderedClusters),
+            styleId: citationStyle,
+          });
+        }
+      } catch (err) {
+        console.warn("handleCitationsIndexed encountered error:", err);
+      }
+    },
+    [citationStyle, researchDocument.linkedPapers]
+  );
+
+  // Handle Dynamic CSL Style Switching
+  const handleStyleChange = useCallback(
+    async (newStyleId: string) => {
+      try {
+        const res = await formatDocumentCsl({
+          styleId: newStyleId,
+          linkedPapers: researchDocument.linkedPapers || [],
+          clusters: activeCitationsInDoc,
+        });
+
+        // Only commit new style after successful CSL resolution & formatting
+        setCitationStyle(newStyleId);
+        setStyleTitle(res.styleTitle);
+        setBibliographyEntries(res.bibliographyEntries);
+
+        // Update in-text citations across document
+        setExternalUpdateAllCitations({
+          id: Date.now(),
+          renderedMap: Object.fromEntries(res.renderedClusters),
+          styleId: newStyleId,
+        });
+
+        // Update bibliography block if present
+        setExternalSetBibliography({
+          id: Date.now(),
+          styleId: newStyleId,
+          styleTitle: res.styleTitle,
+          entries: res.bibliographyEntries,
+        });
+
+        // Save style preference in metadata and trigger autosave
+        guidedMetaRef.current = {
+          ...(guidedMetaRef.current || {}),
+          citationStyle: newStyleId,
+        };
+
+        const baseContent = latestDraftRef.current.content || researchDocument.content || {
+          type: "doc",
+          content: [{ type: "paragraph" }],
+        };
+        const updatedContent = {
+          ...baseContent,
+          type: baseContent.type || "doc",
+          content: baseContent.content || [{ type: "paragraph" }],
+          meta: {
+            ...(baseContent.meta || {}),
+            citationStyle: newStyleId,
+          },
+        };
+
+        handleContentChange(updatedContent, latestDraftRef.current.textContent || "");
+      } catch (err: any) {
+        console.warn(`Citation style change to '${newStyleId}' could not be completed:`, err.message);
+        // Safety Guarantee: Do not crash editor, and do not silently substitute the wrong format
+      }
+    },
+    [activeCitationsInDoc, researchDocument.linkedPapers, researchDocument.content, handleContentChange]
+  );
+
+  // Handle Structured Citation Insertion with CSL Formatting & Locator
+  const handleInsertStructuredCitation = useCallback(
+    async (params: { paperId: string; paperTitle: string; locator?: string }) => {
+      const citationId = `csl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const cslClusterItems = [
+        {
+          id: params.paperId,
+          locator: params.locator || undefined,
+          label: params.locator ? "page" : undefined,
+        },
+      ];
+
+      const canvasItems = [
+        {
+          paperId: params.paperId,
+          paperTitle: params.paperTitle,
+          locator: params.locator || undefined,
+          label: params.locator ? "page" : undefined,
+        },
+      ];
+
+      const updatedClusters = [
+        ...activeCitationsInDoc,
+        { citationId, items: cslClusterItems, renderedText: "" },
+      ];
+
+      const res = await formatDocumentCsl({
+        styleId: citationStyle,
+        linkedPapers: researchDocument.linkedPapers || [],
+        clusters: updatedClusters,
+      });
+
+      const renderedText =
+        res.renderedClusters.get(citationId) ||
+        (citationStyle === "apa" ? "(Author, Year)" : `[${updatedClusters.length}]`);
+
+      setExternalInsertCitation({
+        id: Date.now(),
+        citationId,
+        items: canvasItems,
+        renderedText,
+        styleId: citationStyle,
+      });
+
+      setBibliographyEntries(res.bibliographyEntries);
+      setStyleTitle(res.styleTitle);
+
+      // If existing citations shifted (e.g. numeric ordering), update them
+      if (res.renderedClusters.size > 1) {
+        setExternalUpdateAllCitations({
+          id: Date.now(),
+          renderedMap: Object.fromEntries(res.renderedClusters),
+          styleId: citationStyle,
+        });
+      }
+
+      // Persist DocumentCitation in database
+      if (!params.paperId || params.paperId.trim() === "" || params.paperId === "unknown-ref") {
+        console.warn("Cannot persist citation without a valid paperId");
+        return;
+      }
+
+      const parsedPage = params.locator ? parseInt(params.locator.replace(/\D/g, "")) : undefined;
+      insertCitationAction(researchDocument.id, {
+        paperId: params.paperId,
+        citationText: renderedText,
+        citationType: CitationType.BIBLIOGRAPHIC,
+        pageNumber: isNaN(parsedPage as any) ? undefined : parsedPage,
+      }).then(() => {
+        handleRefreshDocument();
+      }).catch((err) => {
+        console.warn("Failed to persist citation record:", err);
+      });
+    },
+    [activeCitationsInDoc, citationStyle, researchDocument.linkedPapers, researchDocument.id, handleRefreshDocument]
+  );
+
+  // Handle Bibliography Insertion into Writing Canvas
+  const handleInsertBibliographyToCanvas = useCallback(() => {
+    if (bibliographyEntries.length === 0) return;
+    setExternalSetBibliography({
+      id: Date.now(),
+      styleId: citationStyle,
+      styleTitle,
+      entries: bibliographyEntries,
+    });
+  }, [bibliographyEntries, citationStyle, styleTitle]);
 
   // Handle Summarize Evidence Modal Request
   const handleSummarizeEvidenceRequest = (paperId: string, paperTitle: string) => {
@@ -474,6 +706,9 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
         onManualSave={() => executeSave(false)}
         guidedMeta={(researchDocument.content as any)?.meta || guidedMetaRef.current}
         liveHeadings={liveHeadings}
+        activeStyleId={citationStyle}
+        activeStyleName={styleTitle}
+        onStyleChange={handleStyleChange}
       />
 
       {/* Concurrency Conflict Alert Banner */}
@@ -538,6 +773,10 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
           onCountsChange={handleCountsChange}
           linkedPaperIds={linkedPaperIds}
           externalInsertText={externalInsertText}
+          externalInsertCitation={externalInsertCitation}
+          externalSetBibliography={externalSetBibliography}
+          externalUpdateAllCitations={externalUpdateAllCitations}
+          onCitationsIndexed={handleCitationsIndexed}
         />
 
         {/* My Library & Verified Sources Slide-Over Drawer */}
@@ -548,8 +787,13 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
           linkedPapers={researchDocument.linkedPapers || []}
           citations={researchDocument.citations || []}
           onInsertCitationText={handleInsertCitationText}
+          onInsertStructuredCitation={handleInsertStructuredCitation}
           onSummarizeEvidenceRequest={handleSummarizeEvidenceRequest}
           onRefreshDocument={handleRefreshDocument}
+          activeStyleId={citationStyle}
+          activeStyleName={styleTitle}
+          bibliographyEntries={bibliographyEntries}
+          onInsertBibliographyToCanvas={handleInsertBibliographyToCanvas}
         />
       </div>
 

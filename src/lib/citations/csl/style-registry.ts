@@ -1,0 +1,229 @@
+import fs from "fs";
+import path from "path";
+import { BUNDLED_STYLES, BundledStyleDefinition } from "./styles/bundled-styles";
+import { CslStyleMetadata, CslCitationFormat } from "./types";
+
+// In-memory cache for loaded and resolved style XMLs
+const styleXmlCache = new Map<string, { xml: string; title: string; format: CslCitationFormat }>();
+
+// Pre-populate cache with bundled styles
+for (const [id, def] of Object.entries(BUNDLED_STYLES)) {
+  styleXmlCache.set(id, {
+    xml: def.xml,
+    title: def.title,
+    format: def.format,
+  });
+}
+
+// Load styles index lazily on server
+let stylesIndexCache: CslStyleMetadata[] | null = null;
+
+export function getStylesIndex(): CslStyleMetadata[] {
+  if (stylesIndexCache) return stylesIndexCache;
+
+  try {
+    const indexPath = path.join(process.cwd(), "src", "lib", "citations", "csl", "styles-index.json");
+    if (fs.existsSync(indexPath)) {
+      const data = fs.readFileSync(indexPath, "utf-8");
+      stylesIndexCache = JSON.parse(data);
+      return stylesIndexCache || [];
+    }
+  } catch (err: any) {
+    console.warn("Failed to load styles-index.json:", err.message);
+  }
+
+  // Fallback to bundled styles list
+  return Object.values(BUNDLED_STYLES).map((s) => ({
+    id: s.id,
+    title: s.title,
+    format: s.format,
+    dependent: false,
+    prominent: true,
+  }));
+}
+
+/**
+ * Searches the 10,000+ style catalog by keyword, format, or prominent filter.
+ */
+export function searchStyles(query: {
+  q?: string;
+  format?: "all" | CslCitationFormat;
+  limit?: number;
+  offset?: number;
+}): { styles: CslStyleMetadata[]; total: number } {
+  const allStyles = getStylesIndex();
+  const search = (query.q || "").toLowerCase().trim();
+  const formatFilter = query.format && query.format !== "all" ? query.format : null;
+  const limit = Math.min(query.limit || 30, 100);
+  const offset = query.offset || 0;
+
+  let filtered = allStyles;
+
+  if (formatFilter) {
+    filtered = filtered.filter((s) => s.format === formatFilter);
+  }
+
+  if (search) {
+    const tokens = search.split(/\s+/).filter(Boolean);
+    filtered = filtered.filter((s) => {
+      const target = (s.title + " " + s.id).toLowerCase();
+      return tokens.every((tok) => target.includes(tok));
+    });
+
+    // Score and rank matches: exact title match or prefix match first
+    filtered.sort((a, b) => {
+      const aTitle = a.title.toLowerCase();
+      const bTitle = b.title.toLowerCase();
+      const aExact = aTitle === search;
+      const bExact = bTitle === search;
+      if (aExact && !bExact) return -1;
+      if (!aExact && bExact) return 1;
+
+      const aStarts = aTitle.startsWith(search) || a.id.startsWith(search);
+      const bStarts = bTitle.startsWith(search) || b.id.startsWith(search);
+      if (aStarts && !bStarts) return -1;
+      if (!aStarts && bStarts) return 1;
+
+      // Prominent styles ranked higher
+      if (a.prominent && !b.prominent) return -1;
+      if (!a.prominent && b.prominent) return 1;
+
+      return a.title.localeCompare(b.title);
+    });
+  } else {
+    // If no search query, prominent styles first, then alphabetical
+    filtered = [...filtered].sort((a, b) => {
+      if (a.prominent && !b.prominent) return -1;
+      if (!a.prominent && b.prominent) return 1;
+      return a.title.localeCompare(b.title);
+    });
+  }
+
+  const total = filtered.length;
+  const paginated = filtered.slice(offset, offset + limit);
+
+  return { styles: paginated, total };
+}
+
+/**
+ * Validates style ID to prevent path traversal or SSRF.
+ */
+export function sanitizeStyleId(rawId: string): string {
+  const clean = (rawId || "").toLowerCase().trim().replace(/[^a-z0-9-_]/g, "");
+  if (!clean) {
+    throw new Error("Invalid style ID.");
+  }
+  return clean;
+}
+
+/**
+ * Resolves and loads the CSL XML for any requested style (bundled, independent, or dependent).
+ * Performs parent resolution automatically if the style is dependent on an independent parent.
+ */
+export async function getStyleXml(styleId: string): Promise<{
+  xml: string;
+  id: string;
+  title: string;
+  format: CslCitationFormat;
+  isDependent: boolean;
+  parentId?: string;
+}> {
+  const cleanId = sanitizeStyleId(styleId);
+
+  // 1. Check in-memory cache
+  if (styleXmlCache.has(cleanId)) {
+    const cached = styleXmlCache.get(cleanId)!;
+    return {
+      xml: cached.xml,
+      id: cleanId,
+      title: cached.title,
+      format: cached.format,
+      isDependent: false,
+    };
+  }
+
+  // 2. Fetch from GitHub raw repository
+  let rawXml = "";
+  let isDependent = false;
+  let resolvedParentId: string | undefined = undefined;
+
+  // Try independent style first
+  const independentUrl = `https://raw.githubusercontent.com/citation-style-language/styles/master/${cleanId}.csl`;
+  let res = await fetch(independentUrl, { next: { revalidate: 86400 } });
+
+  if (res.ok) {
+    rawXml = await res.text();
+  } else {
+    // Try dependent style
+    const dependentUrl = `https://raw.githubusercontent.com/citation-style-language/styles/master/dependent/${cleanId}.csl`;
+    res = await fetch(dependentUrl, { next: { revalidate: 86400 } });
+    if (res.ok) {
+      rawXml = await res.text();
+      isDependent = true;
+    } else {
+      throw new Error(`CSL Style '${cleanId}' not found in official repository.`);
+    }
+  }
+
+  // Basic validation of CSL XML structure
+  if (!rawXml.includes("<style") || !rawXml.includes("</style>")) {
+    throw new Error(`Invalid CSL XML content retrieved for style '${cleanId}'.`);
+  }
+
+  // Extract title
+  const titleMatch = rawXml.match(/<title>([^<]+)<\/title>/i);
+  const title = titleMatch ? titleMatch[1].trim() : cleanId;
+
+  // Extract format
+  let format: CslCitationFormat = "numeric";
+  const formatMatch = rawXml.match(/<category[^>]+citation-format=["']([^"']+)["']/i);
+  if (formatMatch) {
+    const f = formatMatch[1].toLowerCase();
+    if (f === "author-date" || f === "numeric" || f === "note" || f === "label") {
+      format = f as CslCitationFormat;
+    }
+  }
+
+  // If dependent, resolve parent
+  if (isDependent) {
+    const parentMatch =
+      rawXml.match(/rel=["']independent-parent["'][^>]+href=["']https?:\/\/(?:www\.)?zotero\.org\/styles\/([^"'\s]+)["']/i) ||
+      rawXml.match(/href=["']https?:\/\/(?:www\.)?zotero\.org\/styles\/([^"'\s]+)["'][^>]+rel=["']independent-parent["']/i);
+
+    if (parentMatch && parentMatch[1]) {
+      resolvedParentId = parentMatch[1];
+      // Recursively fetch parent XML
+      const parentStyle = await getStyleXml(resolvedParentId);
+      // Cache this dependent style pointing to parent XML
+      styleXmlCache.set(cleanId, {
+        xml: parentStyle.xml,
+        title,
+        format: parentStyle.format,
+      });
+
+      return {
+        xml: parentStyle.xml,
+        id: cleanId,
+        title,
+        format: parentStyle.format,
+        isDependent: true,
+        parentId: resolvedParentId,
+      };
+    }
+  }
+
+  // Cache independent style
+  styleXmlCache.set(cleanId, {
+    xml: rawXml,
+    title,
+    format,
+  });
+
+  return {
+    xml: rawXml,
+    id: cleanId,
+    title,
+    format,
+    isDependent: false,
+  };
+}
