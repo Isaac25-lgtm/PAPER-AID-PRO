@@ -18,7 +18,46 @@ export function setStorageClientOverride(client: any): void {
   storageClientOverride = client;
 }
 
+import fs from "fs";
+import path from "path";
+
+const MOCK_STORAGE_ROOT =
+  process.env.MOCK_STORAGE_DIR || path.join(process.cwd(), ".mock-storage");
+
+function getSafeMockDiskPath(bucketName: string, filePath: string): string {
+  const cleanBucket = bucketName.replace(/[\\/]/g, "").trim();
+  const cleanFilePath = filePath.replace(/^[\\/]+/, "");
+  const targetDir = path.resolve(MOCK_STORAGE_ROOT, cleanBucket);
+  const resolved = path.resolve(targetDir, cleanFilePath);
+  if (resolved !== targetDir && !resolved.startsWith(targetDir + path.sep)) {
+    throw new Error(`Path traversal attempt detected in mock storage: ${filePath}`);
+  }
+  return resolved;
+}
+
 let mockStorageBuckets = new Map<string, Map<string, Buffer>>();
+
+/**
+ * For test isolation: clears the in-memory mock storage cache.
+ * Leaves disk persistence intact to verify cold-start retrieval.
+ */
+export function clearMockStorageMemoryCache(): void {
+  if (process.env.NODE_ENV === "production") return;
+  mockStorageBuckets.clear();
+}
+
+/**
+ * For test isolation: resets both in-memory cache and persisted files in mock storage.
+ */
+export function resetMockStorage(): void {
+  if (process.env.NODE_ENV === "production") return;
+  mockStorageBuckets.clear();
+  try {
+    if (fs.existsSync(MOCK_STORAGE_ROOT)) {
+      fs.rmSync(MOCK_STORAGE_ROOT, { recursive: true, force: true });
+    }
+  } catch {}
+}
 
 function getOrCreateMockStorageClient() {
   return {
@@ -29,31 +68,88 @@ function getOrCreateMockStorageClient() {
         }
         const bucket = mockStorageBuckets.get(bucketName)!;
         return {
-          upload: async (filePath: string, fileBody: Buffer | Uint8Array) => {
-            const buf = Buffer.isBuffer(fileBody) ? fileBody : Buffer.from(fileBody);
-            bucket.set(filePath, buf);
+          upload: async (
+            filePath: string,
+            fileBody: Buffer | Uint8Array | ArrayBuffer | string
+          ) => {
+            let buf: Buffer;
+            if (Buffer.isBuffer(fileBody)) {
+              buf = fileBody;
+            } else if (fileBody instanceof ArrayBuffer) {
+              buf = Buffer.from(fileBody);
+            } else if (ArrayBuffer.isView(fileBody)) {
+              buf = Buffer.from(fileBody.buffer, fileBody.byteOffset, fileBody.byteLength);
+            } else if (typeof fileBody === "string") {
+              buf = Buffer.from(fileBody, "utf-8");
+            } else {
+              buf = Buffer.from(fileBody as any);
+            }
+
+            const cleanPath = filePath.replace(/^[\\/]+/, "");
+            bucket.set(cleanPath, buf);
+
+            try {
+              const diskPath = getSafeMockDiskPath(bucketName, cleanPath);
+              const parentDir = path.dirname(diskPath);
+              if (!fs.existsSync(parentDir)) {
+                fs.mkdirSync(parentDir, { recursive: true });
+              }
+              fs.writeFileSync(diskPath, buf);
+            } catch (err: any) {
+              console.warn(`[mockStorage] Failed to persist ${cleanPath} to disk:`, err.message);
+            }
+
             return { data: { path: filePath }, error: null };
           },
           download: async (filePath: string) => {
-            if (!bucket.has(filePath)) {
-              return { data: null, error: { message: `Object not found in mock storage: ${filePath}` } };
+            const cleanPath = filePath.replace(/^[\\/]+/, "");
+            let buf = bucket.get(cleanPath);
+
+            if (!buf) {
+              try {
+                const diskPath = getSafeMockDiskPath(bucketName, cleanPath);
+                if (fs.existsSync(diskPath)) {
+                  buf = fs.readFileSync(diskPath);
+                  bucket.set(cleanPath, buf);
+                }
+              } catch (err: any) {
+                console.warn(`[mockStorage] Failed to read ${cleanPath} from disk:`, err.message);
+              }
             }
-            const buf = bucket.get(filePath)!;
+
+            if (!buf) {
+              return {
+                data: null,
+                error: { message: `Object not found in mock storage: ${filePath}` },
+              };
+            }
+
             return {
               data: {
-                arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
+                arrayBuffer: async () =>
+                  buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
               },
               error: null,
             };
           },
           remove: async (filePaths: string[]) => {
             for (const p of filePaths) {
-              bucket.delete(p);
+              const cleanPath = p.replace(/^[\\/]+/, "");
+              bucket.delete(cleanPath);
+              try {
+                const diskPath = getSafeMockDiskPath(bucketName, cleanPath);
+                if (fs.existsSync(diskPath)) {
+                  fs.unlinkSync(diskPath);
+                }
+              } catch (err: any) {
+                console.warn(`[mockStorage] Failed to delete ${cleanPath} from disk:`, err.message);
+              }
             }
             return { data: filePaths, error: null };
           },
           createSignedUrl: async (filePath: string) => {
-            return { data: { signedUrl: `/mock-storage/${filePath}` }, error: null };
+            const cleanPath = filePath.replace(/^[\\/]+/, "");
+            return { data: { signedUrl: `/mock-storage/${cleanPath}` }, error: null };
           },
         };
       },

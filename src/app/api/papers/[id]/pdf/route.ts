@@ -72,6 +72,7 @@ export async function GET(
           headers: {
             "Content-Type": "application/pdf",
             "Content-Disposition": `inline; filename="${safeTitle || "manuscript"}.pdf"`,
+            "Content-Length": buffer.length.toString(),
             "Cache-Control": "private, no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
             "Expires": "0",
