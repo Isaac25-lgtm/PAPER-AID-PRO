@@ -963,56 +963,24 @@ export function DiscoveryInterface() {
                       </div>
                     ) : (
                       <div className="w-full sm:w-auto space-y-1">
-                        {hasLawfulFullText ? (
-                          <>
-                            <Button
-                              size="sm"
-                              disabled={isImporting}
-                              onClick={() => handleImport(paper, true)}
-                              className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 h-8"
-                            >
-                              {isImporting ? (
-                                <>
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  <span>Saving &amp; Attaching...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Download className="h-3.5 w-3.5" />
-                                  <span>Save &amp; Get Full Text</span>
-                                </>
-                              )}
-                            </Button>
-                            <button
-                              type="button"
-                              disabled={isImporting}
-                              onClick={() => handleImport(paper, false)}
-                              className="text-[10px] text-slate-500 hover:text-slate-800 underline block text-center sm:text-right"
-                            >
-                              Save metadata only
-                            </button>
-                          </>
-                        ) : (
-                          <Button
-                            size="sm"
-                            disabled={isImporting}
-                            onClick={() => handleImport(paper, false)}
-                            variant="outline"
-                            className="w-full sm:w-auto border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold text-xs flex items-center justify-center gap-1.5 h-8"
-                          >
-                            {isImporting ? (
-                              <>
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                <span>Saving...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Bookmark className="h-3.5 w-3.5" />
-                                <span>Save to My Library</span>
-                              </>
-                            )}
-                          </Button>
-                        )}
+                        <Button
+                          size="sm"
+                          disabled={isImporting}
+                          onClick={() => handleImport(paper, false)}
+                          className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 h-8"
+                        >
+                          {isImporting ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              <span>Saving...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Bookmark className="h-3.5 w-3.5" />
+                              <span>Save to My Library</span>
+                            </>
+                          )}
+                        </Button>
                       </div>
                     )}
 
