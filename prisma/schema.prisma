@@ -382,6 +382,11 @@ model ResearchDocument {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
+  // CSL Citation Settings & Immutability
+  cslStyleId     String?             @default("apa")
+  cslRevisionSha String?
+  cslRevision    CslCatalogRevision? @relation(fields: [cslRevisionSha], references: [revisionSha], onDelete: SetNull)
+
   // Relationships
   user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   citations    DocumentCitation[]
@@ -389,6 +394,7 @@ model ResearchDocument {
 
   @@index([userId])
   @@index([updatedAt])
+  @@index([cslRevisionSha])
   @@map("research_documents")
 }
 
@@ -432,4 +438,83 @@ model DocumentPaper {
   @@index([paperId])
   @@map("document_papers")
 }
+
+// ==========================================
+// CSL CITATION CATALOG & VERSIONING
+// ==========================================
+
+model CslCatalogRevision {
+  id               String             @id @default(cuid())
+  revisionSha      String             @unique
+  parentSha        String?
+  sourceBranch     String             @default("v1.0.2")
+  status           String             @default("ARCHIVED")
+  isActive         Boolean            @default(false)
+  stylesCount      Int                @default(0)
+  addedCount       Int                @default(0)
+  modifiedCount    Int                @default(0)
+  removedCount     Int                @default(0)
+  validationErrors Json?
+  lastCheckedAt    DateTime           @default(now())
+  createdAt        DateTime           @default(now())
+  activatedAt      DateTime?
+
+  // Relationships
+  styles           CslStyleRecord[]
+  documents        ResearchDocument[]
+
+  @@index([isActive])
+  @@index([createdAt])
+  @@map("csl_catalog_revisions")
+}
+
+model CslStyleContent {
+  id         String           @id @default(cuid())
+  checksum   String           @unique
+  xmlContent String           @db.Text
+  byteSize   Int?
+  createdAt  DateTime         @default(now())
+
+  // Relationships
+  records    CslStyleRecord[]
+
+  @@map("csl_style_contents")
+}
+
+model CslStyleRecord {
+  id             String             @id @default(cuid())
+  revisionId     String
+  styleId        String
+  title          String
+  styleType      String             @default("INDEPENDENT")
+  parentStyleId  String?
+  citationFormat String?
+  contentId      String?
+  isDeprecated   Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  // Relationships
+  revision       CslCatalogRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  content        CslStyleContent?   @relation(fields: [contentId], references: [id], onDelete: SetNull)
+
+  @@unique([revisionId, styleId])
+  @@index([revisionId])
+  @@index([styleId])
+  @@index([contentId])
+  @@map("csl_style_records")
+}
+
+model CslSyncLock {
+  id        String    @id @default("singleton")
+  isLocked  Boolean   @default(false)
+  lockedBy  String?
+  lockedAt  DateTime?
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("csl_sync_locks")
+}
+
 

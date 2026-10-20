@@ -76,6 +76,12 @@ export default async function AdminLayout({
         >
           Processing Pipeline
         </Link>
+        <Link
+          href="/admin/citations"
+          className="px-3 py-1.5 rounded-md hover:bg-slate-100 hover:text-slate-900 transition-colors"
+        >
+          Citation Styles
+        </Link>
       </div>
 
       <div>{children}</div>

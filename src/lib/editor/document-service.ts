@@ -127,6 +127,9 @@ export async function createResearchDocument(
     textContent = `${title}\nStart drafting your research manuscript...`;
   }
 
+  const initialStyleId = (content as any)?.meta?.citationStyle || "apa";
+  const initialRevisionSha = (content as any)?.meta?.citationStyleRevision || "v1.0.2-baseline-catalog";
+
   return await prisma.researchDocument.create({
     data: {
       userId,
@@ -135,6 +138,8 @@ export async function createResearchDocument(
       content,
       textContent,
       version: 1,
+      cslStyleId: initialStyleId,
+      cslRevisionSha: initialRevisionSha,
     },
   });
 }
@@ -278,6 +283,12 @@ export async function updateResearchDocument(
         ...(finalContent as any),
         meta: mergedMeta,
       };
+      if (mergedMeta.citationStyle) {
+        dataToUpdate.cslStyleId = mergedMeta.citationStyle;
+      }
+      if (mergedMeta.citationStyleRevision) {
+        dataToUpdate.cslRevisionSha = mergedMeta.citationStyleRevision;
+      }
     }
     dataToUpdate.content = finalContent;
   }

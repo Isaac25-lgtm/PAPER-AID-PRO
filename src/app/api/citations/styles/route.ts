@@ -19,8 +19,12 @@ export async function GET(req: NextRequest) {
       offset: isNaN(offset) ? 0 : offset,
     });
 
+    const { CslCatalogManager } = await import("@/lib/citations/csl/updater/catalog-storage");
+    const activeRev = await CslCatalogManager.getAdapter().getActiveRevision();
+
     return NextResponse.json({
       success: true,
+      activeRevision: activeRev?.gitSha || "v1.0.2-baseline-catalog",
       styles: result.styles,
       total: result.total,
     });

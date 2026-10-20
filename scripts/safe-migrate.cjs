@@ -23,6 +23,7 @@ const ALLOWED_COMMANDS = {
   generate: ["prisma", "generate"],
   validate: ["prisma", "validate"],
   studio: ["prisma", "studio"],
+  resolve: ["prisma", "migrate", "resolve"],
 };
 
 const FORBIDDEN_KEYWORDS = [

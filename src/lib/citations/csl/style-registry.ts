@@ -120,55 +120,174 @@ export function sanitizeStyleId(rawId: string): string {
  * Resolves and loads the CSL XML for any requested style (bundled, independent, or dependent).
  * Performs parent resolution automatically if the style is dependent on an independent parent.
  */
-export async function getStyleXml(styleId: string): Promise<{
+/**
+ * Resolves and loads the CSL XML for any requested style (bundled, independent, or dependent).
+ * Performs parent resolution automatically if the style is dependent on an independent parent.
+ * Resolves from runtime persistent catalog manager, or falls back to pinned v1.0.2 upstream / bundled styles.
+ */
+export async function getStyleXml(
+  styleId: string,
+  revisionSha?: string
+): Promise<{
   xml: string;
   id: string;
   title: string;
   format: CslCitationFormat;
   isDependent: boolean;
   parentId?: string;
+  revisionSha?: string;
 }> {
   const cleanId = sanitizeStyleId(styleId);
+  const cacheKey = revisionSha ? `${revisionSha}:${cleanId}` : cleanId;
 
   // 1. Check in-memory cache
-  if (styleXmlCache.has(cleanId)) {
-    const cached = styleXmlCache.get(cleanId)!;
+  if (styleXmlCache.has(cacheKey)) {
+    const cached = styleXmlCache.get(cacheKey)!;
     return {
       xml: cached.xml,
       id: cleanId,
       title: cached.title,
       format: cached.format,
       isDependent: false,
+      revisionSha,
     };
   }
 
-  // 2. Fetch from GitHub raw repository
+  // 2. Direct check for bundled styles when no historical revision is requested
+  const bundled = (BUNDLED_STYLES as any)[cleanId];
+  if (bundled && !revisionSha) {
+    return {
+      xml: bundled.xml,
+      id: cleanId,
+      title: bundled.title,
+      format: bundled.format,
+      isDependent: false,
+      revisionSha: "bundled",
+    };
+  }
+
+  // 3. Resolve from persistent catalog manager (Prisma or InMemory adapter)
+  try {
+    const { CslCatalogManager } = await import("./updater/catalog-storage");
+    const catalogEntry = await CslCatalogManager.resolveStyleXml(cleanId, revisionSha);
+    if (catalogEntry && catalogEntry.xml && catalogEntry.xml.includes("<style")) {
+      const titleMatch = catalogEntry.xml.match(/<title>([^<]+)<\/title>/i);
+      const title = titleMatch ? titleMatch[1].trim() : catalogEntry.title || cleanId;
+
+      let format: CslCitationFormat = "numeric";
+      const formatMatch = catalogEntry.xml.match(/<category[^>]+citation-format=["']([^"']+)["']/i);
+      if (formatMatch) {
+        const f = formatMatch[1].toLowerCase();
+        if (f === "author-date" || f === "numeric" || f === "note" || f === "label") {
+          format = f as CslCitationFormat;
+        }
+      }
+
+      const isDependent = catalogEntry.xml.includes('rel="independent-parent"');
+      let parentId: string | undefined = undefined;
+
+      if (isDependent) {
+        const parentMatch =
+          catalogEntry.xml.match(/rel=["']independent-parent["'][^>]+href=["']https?:\/\/(?:www\.)?zotero\.org\/styles\/([^"'\s]+)["']/i) ||
+          catalogEntry.xml.match(/href=["']https?:\/\/(?:www\.)?zotero\.org\/styles\/([^"'\s]+)["'][^>]+rel=["']independent-parent["']/i);
+
+        if (parentMatch && parentMatch[1]) {
+          parentId = parentMatch[1];
+          const parentStyle = await getStyleXml(parentId, revisionSha || catalogEntry.revisionSha);
+          styleXmlCache.set(cacheKey, {
+            xml: parentStyle.xml,
+            title,
+            format: parentStyle.format,
+          });
+
+          return {
+            xml: parentStyle.xml,
+            id: cleanId,
+            title,
+            format: parentStyle.format,
+            isDependent: true,
+            parentId,
+            revisionSha: catalogEntry.revisionSha,
+          };
+        }
+      }
+
+      styleXmlCache.set(cacheKey, {
+        xml: catalogEntry.xml,
+        title,
+        format,
+      });
+
+      return {
+        xml: catalogEntry.xml,
+        id: cleanId,
+        title,
+        format,
+        isDependent: false,
+        revisionSha: catalogEntry.revisionSha,
+      };
+    }
+  } catch (err: any) {
+    // If catalog manager lookup fails, proceed to upstream/bundled fallback
+  }
+
+  // 4. Fetch from official GitHub repository pinned to branch v1.0.2 or specific commit SHA
+  const branchOrSha = revisionSha || "v1.0.2";
   let rawXml = "";
   let isDependent = false;
   let resolvedParentId: string | undefined = undefined;
 
-  // Try independent style first
-  const independentUrl = `https://raw.githubusercontent.com/citation-style-language/styles/master/${cleanId}.csl`;
-  let res = await fetch(independentUrl, { next: { revalidate: 86400 } });
+  try {
+    const independentUrl = `https://raw.githubusercontent.com/citation-style-language/styles/${branchOrSha}/${cleanId}.csl`;
+    let res = await fetch(independentUrl, { next: { revalidate: 86400 } });
 
-  if (res.ok) {
-    rawXml = await res.text();
-  } else {
-    // Try dependent style
-    const dependentUrl = `https://raw.githubusercontent.com/citation-style-language/styles/master/dependent/${cleanId}.csl`;
-    res = await fetch(dependentUrl, { next: { revalidate: 86400 } });
     if (res.ok) {
       rawXml = await res.text();
-      isDependent = true;
     } else {
-      throw new Error(`CSL Style '${cleanId}' not found in official repository.`);
+      const dependentUrl = `https://raw.githubusercontent.com/citation-style-language/styles/${branchOrSha}/dependent/${cleanId}.csl`;
+      res = await fetch(dependentUrl, { next: { revalidate: 86400 } });
+      if (res.ok) {
+        rawXml = await res.text();
+        isDependent = true;
+      }
     }
+  } catch (fetchErr: any) {
+    // Network failure
   }
 
-  // Basic validation of CSL XML structure
-  if (!rawXml.includes("<style") || !rawXml.includes("</style>")) {
-    throw new Error(`Invalid CSL XML content retrieved for style '${cleanId}'.`);
+  // 5. If fetch failed or yielded invalid XML:
+  if (!rawXml || !rawXml.includes("<style") || !rawXml.includes("</style>")) {
+    // If a specific historical revision was requested, NEVER return newer bundled styles
+    if (revisionSha) {
+      throw new Error(`CSL Style '${cleanId}' is unavailable in requested historical revision '${revisionSha}'.`);
+    }
+
+    if (bundled) {
+      return {
+        xml: bundled.xml,
+        id: cleanId,
+        title: bundled.title,
+        format: bundled.format,
+        isDependent: false,
+        revisionSha: "bundled-fallback",
+      };
+    }
+
+    // Emergency core fallback to APA 7th ONLY for unversioned live requests
+    const fallbackApa = BUNDLED_STYLES["apa"];
+    return {
+      xml: fallbackApa.xml,
+      id: "apa",
+      title: "American Psychological Association 7th edition (Fallback)",
+      format: "author-date",
+      isDependent: false,
+      revisionSha: "bundled-fallback",
+    };
   }
+
+  // Security validation: Prohibit XXE, SYSTEM/PUBLIC entities, oversized XML
+  const { validateCslXmlSecurity } = await import("./updater/xml-validator");
+  validateCslXmlSecurity(rawXml);
 
   // Extract title
   const titleMatch = rawXml.match(/<title>([^<]+)<\/title>/i);
@@ -192,10 +311,8 @@ export async function getStyleXml(styleId: string): Promise<{
 
     if (parentMatch && parentMatch[1]) {
       resolvedParentId = parentMatch[1];
-      // Recursively fetch parent XML
-      const parentStyle = await getStyleXml(resolvedParentId);
-      // Cache this dependent style pointing to parent XML
-      styleXmlCache.set(cleanId, {
+      const parentStyle = await getStyleXml(resolvedParentId, revisionSha);
+      styleXmlCache.set(cacheKey, {
         xml: parentStyle.xml,
         title,
         format: parentStyle.format,
@@ -208,12 +325,13 @@ export async function getStyleXml(styleId: string): Promise<{
         format: parentStyle.format,
         isDependent: true,
         parentId: resolvedParentId,
+        revisionSha,
       };
     }
   }
 
   // Cache independent style
-  styleXmlCache.set(cleanId, {
+  styleXmlCache.set(cacheKey, {
     xml: rawXml,
     title,
     format,
@@ -225,5 +343,6 @@ export async function getStyleXml(styleId: string): Promise<{
     title,
     format,
     isDependent: false,
+    revisionSha,
   };
 }

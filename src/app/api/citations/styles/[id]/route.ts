@@ -9,7 +9,9 @@ export async function GET(
 ) {
   try {
     const styleId = sanitizeStyleId(params.id);
-    const style = await getStyleXml(styleId);
+    const { searchParams } = new URL(req.url);
+    const revisionSha = searchParams.get("revision") || undefined;
+    const style = await getStyleXml(styleId, revisionSha);
 
     return NextResponse.json({
       success: true,
@@ -20,6 +22,7 @@ export async function GET(
         xml: style.xml,
         isDependent: style.isDependent,
         parentId: style.parentId,
+        revisionSha: style.revisionSha,
         license: "CC BY-SA 3.0 (Citation Style Language)",
       },
     });
