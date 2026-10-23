@@ -310,6 +310,8 @@ export function ResearchInterface({ initialThreadId, initialPaperIds }: Research
           disagreements: cit.disagreements || [],
           limitations: cit.limitations || [],
           selectedPapers: cit.selectedPapers || [],
+          supportingPapers: cit.supportingPapers || (cit.selectedPapers || []).filter((p: any) => p.isSupporting),
+          candidatePapersCount: cit.candidatePapersCount ?? (cit.selectedPapers || []).length,
           totalEvidenceChunks: (cit.selectedPapers || []).reduce(
             (acc: number, p: any) => acc + (p.chunksContributed || 0),
             0
@@ -416,6 +418,8 @@ export function ResearchInterface({ initialThreadId, initialPaperIds }: Research
               disagreements: response.data!.disagreements,
               limitations: response.data!.limitations,
               selectedPapers: response.data!.selectedPapers,
+              supportingPapers: response.data!.supportingPapers,
+              candidatePapersCount: response.data!.candidatePapersCount,
               libraryScopeNote: response.data!.libraryScopeNote,
               insufficientEvidence: response.data!.insufficientEvidence,
               omittedSourcesNotice: response.data!.omittedSourcesNotice,
@@ -731,41 +735,61 @@ export function ResearchInterface({ initialThreadId, initialPaperIds }: Research
           {currentResult && (
             <div className="space-y-6">
               {/* Scope & Selected Papers Bar */}
-              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-900">
-                      {currentResult.selectedPapers.length === 0
-                        ? "0 Relevant Papers Found"
-                        : currentResult.selectedPapers.length === 1
-                        ? "Based on 1 relevant paper in the current library"
-                        : `Synthesized across ${currentResult.selectedPapers.length} relevant papers in library`}
-                    </span>
-                    <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-600">
-                      {currentResult.totalEvidenceChunks} chunks analyzed
-                    </Badge>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    Question: &ldquo;{currentResult.question}&rdquo;
-                  </p>
-                </div>
+              {(() => {
+                const supportingPapers =
+                  currentResult.supportingPapers ||
+                  currentResult.selectedPapers.filter((p) => p.isSupporting);
+                const candidateCount =
+                  currentResult.candidatePapersCount ?? currentResult.selectedPapers.length;
+                const supportingCount = supportingPapers.length;
 
-                {/* Badges for selected papers */}
-                <div className="flex flex-wrap gap-1.5 max-w-lg">
-                  {currentResult.selectedPapers.map((p) => (
-                    <Link key={p.paperId} href={`/papers/${p.paperId}`}>
-                      <Badge
-                        variant="secondary"
-                        className="text-[10px] bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 max-w-[220px] truncate"
-                        title={p.paperTitle}
-                      >
-                        <FileText className="h-2.5 w-2.5 mr-1 shrink-0" />
-                        <span className="truncate">{p.paperTitle}</span>
-                      </Badge>
-                    </Link>
-                  ))}
-                </div>
-              </div>
+                return (
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-900">
+                          {supportingCount === 0
+                            ? `0 Supporting Papers (${candidateCount} candidate ${candidateCount === 1 ? "paper" : "papers"} reviewed)`
+                            : supportingCount === 1
+                            ? `Grounded in 1 supporting paper (${candidateCount} candidate ${candidateCount === 1 ? "paper" : "papers"} reviewed)`
+                            : `Grounded in ${supportingCount} supporting papers (${candidateCount} candidate papers reviewed)`}
+                        </span>
+                        <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-600">
+                          {currentResult.totalEvidenceChunks} chunks analyzed
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Question: &ldquo;{currentResult.question}&rdquo;
+                      </p>
+                    </div>
+
+                    {/* Badges for supporting papers (with un-cited candidate count disclosure) */}
+                    <div className="flex flex-wrap items-center gap-1.5 max-w-lg">
+                      {supportingPapers.map((p) => (
+                        <Link key={p.paperId} href={`/papers/${p.paperId}`}>
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300 max-w-[220px] truncate"
+                            title={`Supporting Evidence: ${p.paperTitle}`}
+                          >
+                            <CheckCircle2 className="h-2.5 w-2.5 mr-1 shrink-0 text-emerald-600" />
+                            <span className="truncate">{p.paperTitle}</span>
+                          </Badge>
+                        </Link>
+                      ))}
+                      {candidateCount > supportingCount && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] bg-slate-50 text-slate-500 border-slate-200"
+                          title={`${candidateCount - supportingCount} candidate papers reviewed without direct supporting citations`}
+                        >
+                          +{candidateCount - supportingCount} un-cited context {candidateCount - supportingCount === 1 ? "source" : "sources"}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Omitted / Inaccessible Sources Notice */}
               {currentResult.omittedSourcesNotice && (

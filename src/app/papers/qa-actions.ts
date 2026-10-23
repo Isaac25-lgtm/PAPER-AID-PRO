@@ -197,6 +197,7 @@ export async function getPaperConversationAction(
     const messagesView: ConversationMessageView[] = conversation.messages.map((m) => {
       let citations: GroundedCitationAnchor[] = [];
       let claims: any[] | undefined = undefined;
+      let evidenceType: any = undefined;
 
       if (m.citations) {
         try {
@@ -206,6 +207,7 @@ export async function getPaperConversationAction(
           } else if (parsed && typeof parsed === "object") {
             citations = parsed.anchors || [];
             claims = parsed.claims || undefined;
+            evidenceType = parsed.evidenceType || undefined;
           }
         } catch {
           citations = [];
@@ -218,6 +220,7 @@ export async function getPaperConversationAction(
         content: m.content,
         claims,
         citations,
+        evidenceType,
         createdAt: m.createdAt.toISOString(),
       };
     });

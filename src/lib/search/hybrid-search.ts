@@ -340,6 +340,7 @@ async function fetchSemanticCandidates(
       JOIN "paper_categories" pc ON p.id = pc."paperId"
       JOIN "categories" cat ON pc."categoryId" = cat.id
       WHERE c.embedding IS NOT NULL
+        AND (c."embeddingModel" IS NULL OR c."embeddingModel" != 'mock-sha256')
         AND cat.slug = ${categorySlug}
       ORDER BY c.embedding <=> ${vectorString}::vector ASC
       LIMIT 50;
@@ -357,6 +358,7 @@ async function fetchSemanticCandidates(
       FROM "paper_chunks" c
       JOIN "papers" p ON c."paperId" = p.id
       WHERE c.embedding IS NOT NULL
+        AND (c."embeddingModel" IS NULL OR c."embeddingModel" != 'mock-sha256')
       ORDER BY c.embedding <=> ${vectorString}::vector ASC
       LIMIT 50;
     `;

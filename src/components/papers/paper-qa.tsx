@@ -317,9 +317,13 @@ export function PaperQA({
                               {claim.citations && claim.citations.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 pt-0.5">
                                   {claim.citations.map((cite, cIdx) => {
-                                    const pageText =
-                                      cite.pageNumber !== null ? `p. ${cite.pageNumber}` : "Main Text";
-                                    const sectionText = cite.section ? `§ ${cite.section}` : "Section";
+                                    const isAbstract = cite.evidenceType === "ABSTRACT" || cite.chunkId.startsWith("abstract-");
+                                    const pageText = isAbstract
+                                      ? "Abstract"
+                                      : cite.pageNumber !== null
+                                      ? `p. ${cite.pageNumber}`
+                                      : "Page unrecorded";
+                                    const sectionText = isAbstract ? "Abstract" : cite.section ? `§ ${cite.section}` : "Section";
                                     const isExpanded = expandedCitationId === `${clmIdx}-${cite.chunkId}`;
 
                                     return (
@@ -332,13 +336,18 @@ export function PaperQA({
                                             )
                                           }
                                           className={cn(
-                                            "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium font-mono transition-all cursor-pointer border",
+                                            "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium font-mono transition-all cursor-pointer border",
                                             isExpanded
                                               ? "bg-indigo-600 text-white border-indigo-700 shadow-xs"
+                                              : isAbstract
+                                              ? "bg-amber-50/70 hover:bg-amber-100/70 text-amber-800 border-amber-200"
                                               : "bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200"
                                           )}
                                         >
-                                          <FileText className="h-2.5 w-2.5 text-indigo-500" />
+                                          <FileText className={cn("h-2.5 w-2.5", isAbstract ? "text-amber-600" : "text-indigo-500")} />
+                                          <span className="font-sans font-semibold text-[8px] uppercase tracking-wider px-1 py-0.2 rounded bg-black/5">
+                                            {isAbstract ? "Abstract" : "Full-Text"}
+                                          </span>
                                           <span>
                                             {sectionText} · {pageText}
                                           </span>
@@ -354,12 +363,22 @@ export function PaperQA({
                                         {isExpanded && (
                                           <div className="mt-2 p-3.5 bg-white rounded-xl border border-indigo-200 shadow-lg text-left text-xs space-y-2 animate-in fade-in-50 zoom-in-95 z-20">
                                             <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                                              <span className="font-semibold text-slate-800 text-[11px]">
-                                                {sectionText} — {pageText}
-                                              </span>
-                                              <span className="text-[10px] font-mono text-slate-400">
-                                                Chunk #{cite.chunkIndex}
-                                              </span>
+                                              <div className="flex items-center gap-1.5">
+                                                <span className={cn(
+                                                  "px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold uppercase tracking-wider",
+                                                  isAbstract ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                )}>
+                                                  {isAbstract ? "Abstract Evidence" : "Full-Text Evidence"}
+                                                </span>
+                                                <span className="font-semibold text-slate-800 text-[11px]">
+                                                  {sectionText} — {pageText}
+                                                </span>
+                                              </div>
+                                              {!isAbstract && cite.chunkIndex !== undefined && (
+                                                <span className="text-[10px] font-mono text-slate-400">
+                                                  Chunk #{cite.chunkIndex}
+                                                </span>
+                                              )}
                                             </div>
 
                                             <blockquote className="text-[11px] text-slate-700 italic bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed font-normal">
@@ -370,14 +389,16 @@ export function PaperQA({
                                               <span className="text-slate-400 truncate max-w-[200px]">
                                                 {paperTitle}
                                               </span>
-                                              <Link
-                                                href={`/api/papers/${paperId}/pdf`}
-                                                target="_blank"
-                                                className="text-indigo-600 hover:text-indigo-800 font-semibold inline-flex items-center gap-1"
-                                              >
-                                                View Original PDF
-                                                <ExternalLink className="h-3 w-3" />
-                                              </Link>
+                                              {!isAbstract && (
+                                                <Link
+                                                  href={`/api/papers/${paperId}/pdf`}
+                                                  target="_blank"
+                                                  className="text-indigo-600 hover:text-indigo-800 font-semibold inline-flex items-center gap-1"
+                                                >
+                                                  View Original PDF
+                                                  <ExternalLink className="h-3 w-3" />
+                                                </Link>
+                                              )}
                                             </div>
                                           </div>
                                         )}
@@ -403,9 +424,13 @@ export function PaperQA({
 
                           <div className="flex flex-wrap gap-1.5">
                             {msg.citations.map((cite, cIdx) => {
-                              const pageText =
-                                cite.pageNumber !== null ? `Page ${cite.pageNumber}` : "Main Text";
-                              const sectionText = cite.section ? `§ ${cite.section}` : "Section";
+                              const isAbstract = cite.evidenceType === "ABSTRACT" || cite.chunkId.startsWith("abstract-");
+                              const pageText = isAbstract
+                                ? "Abstract"
+                                : cite.pageNumber !== null
+                                ? `Page ${cite.pageNumber}`
+                                : "Page unrecorded";
+                              const sectionText = isAbstract ? "Abstract" : cite.section ? `§ ${cite.section}` : "Section";
                               const isExpanded = expandedCitationId === cite.chunkId;
 
                               return (
@@ -419,10 +444,15 @@ export function PaperQA({
                                       "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium font-mono transition-all cursor-pointer shadow-2xs border",
                                       isExpanded
                                         ? "bg-indigo-600 text-white border-indigo-700 shadow-xs"
+                                        : isAbstract
+                                        ? "bg-amber-50/70 hover:bg-amber-100/70 text-amber-800 border-amber-200"
                                         : "bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200"
                                     )}
                                   >
-                                    <FileText className="h-3 w-3 text-indigo-500" />
+                                    <FileText className={cn("h-3 w-3", isAbstract ? "text-amber-600" : "text-indigo-500")} />
+                                    <span className="font-sans font-semibold text-[8px] uppercase tracking-wider px-1 py-0.2 rounded bg-black/5">
+                                      {isAbstract ? "Abstract" : "Full-Text"}
+                                    </span>
                                     <span>
                                       [{cIdx + 1}] {sectionText} · {pageText}
                                     </span>
@@ -438,12 +468,22 @@ export function PaperQA({
                                   {isExpanded && (
                                     <div className="mt-2 p-3.5 bg-white rounded-xl border border-indigo-200 shadow-lg text-left text-xs space-y-2 animate-in fade-in-50 zoom-in-95">
                                       <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                        <span className="font-semibold text-slate-800 text-[11px]">
-                                          {sectionText} — {pageText}
-                                        </span>
-                                        <span className="text-[10px] font-mono text-slate-400">
-                                          Chunk #{cite.chunkIndex}
-                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                          <span className={cn(
+                                            "px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold uppercase tracking-wider",
+                                            isAbstract ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                          )}>
+                                            {isAbstract ? "Abstract Evidence" : "Full-Text Evidence"}
+                                          </span>
+                                          <span className="font-semibold text-slate-800 text-[11px]">
+                                            {sectionText} — {pageText}
+                                          </span>
+                                        </div>
+                                        {!isAbstract && cite.chunkIndex !== undefined && (
+                                          <span className="text-[10px] font-mono text-slate-400">
+                                            Chunk #{cite.chunkIndex}
+                                          </span>
+                                        )}
                                       </div>
 
                                       <blockquote className="text-[11px] text-slate-700 italic bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed font-normal">
@@ -454,14 +494,16 @@ export function PaperQA({
                                         <span className="text-slate-400 truncate max-w-[200px]">
                                           {paperTitle}
                                         </span>
-                                        <Link
-                                          href={`/api/papers/${paperId}/pdf`}
-                                          target="_blank"
-                                          className="text-indigo-600 hover:text-indigo-800 font-semibold inline-flex items-center gap-1"
-                                        >
-                                          View Original PDF
-                                          <ExternalLink className="h-3 w-3" />
-                                        </Link>
+                                        {!isAbstract && (
+                                          <Link
+                                            href={`/api/papers/${paperId}/pdf`}
+                                            target="_blank"
+                                            className="text-indigo-600 hover:text-indigo-800 font-semibold inline-flex items-center gap-1"
+                                          >
+                                            View Original PDF
+                                            <ExternalLink className="h-3 w-3" />
+                                          </Link>
+                                        )}
                                       </div>
                                     </div>
                                   )}

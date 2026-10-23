@@ -76,7 +76,19 @@ export interface MultiPaperSynthesisResult {
     journal: string | null;
     chunksContributed: number;
     isMetadataOnly?: boolean;
+    isSupporting?: boolean;
   }>;
+  supportingPapers?: Array<{
+    paperId: string;
+    paperTitle: string;
+    authors: string[];
+    doi: string | null;
+    publicationDate: string | null;
+    journal: string | null;
+    chunksContributed: number;
+    isMetadataOnly?: boolean;
+  }>;
+  candidatePapersCount?: number;
   totalEvidenceChunks: number;
   insufficientEvidence: boolean;
   libraryScopeNote: string;

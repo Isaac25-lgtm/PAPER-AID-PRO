@@ -284,7 +284,7 @@ export async function synthesizeResearchQuestion(
                 paperId: mp.id,
                 chunkIndex: 0,
                 section: "Abstract (Metadata Only)",
-                pageNumber: 1,
+                pageNumber: null,
                 text: mp.abstract,
                 similarity: 0.8,
               },
@@ -374,7 +374,10 @@ export async function synthesizeResearchQuestion(
             journal: s.journal,
             chunksContributed: 0,
             isMetadataOnly: Boolean(s.isMetadataOnly),
+            isSupporting: false,
           })),
+          supportingPapers: [],
+          candidatePapersCount: evidenceResult.evidenceSets.length,
           libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
           insufficientEvidence: true,
         },
@@ -399,7 +402,10 @@ export async function synthesizeResearchQuestion(
         journal: s.journal,
         chunksContributed: 0,
         isMetadataOnly: Boolean(s.isMetadataOnly),
+        isSupporting: false,
       })),
+      supportingPapers: [],
+      candidatePapersCount: evidenceResult.evidenceSets.length,
       totalEvidenceChunks: 0,
       insufficientEvidence: true,
       libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
@@ -475,7 +481,25 @@ export async function synthesizeResearchQuestion(
   // 8. Server-Side Validation and Hydration
   const validation = validateMultiPaperSynthesis(modelOutput, evidenceResult.evidenceSets, cleanQuestion);
 
-  // Construct selected papers metadata summary
+  // FIX 1: Derive supporting-paper IDs strictly from retained, validated claims, disagreements, and limitations
+  const citedSupportingPaperIds = new Set<string>();
+  for (const c of validation.claims) {
+    for (const a of c.citations) {
+      if (a.paperId) citedSupportingPaperIds.add(a.paperId);
+    }
+  }
+  for (const d of validation.disagreements) {
+    for (const a of d.citations) {
+      if (a.paperId) citedSupportingPaperIds.add(a.paperId);
+    }
+  }
+  for (const l of validation.limitations) {
+    for (const a of l.citations) {
+      if (a.paperId) citedSupportingPaperIds.add(a.paperId);
+    }
+  }
+
+  // Construct selected papers metadata summary distinguishing candidate context from supporting evidence
   const selectedPapersMeta = evidenceResult.evidenceSets.map((s) => ({
     paperId: s.paperId,
     paperTitle: s.paperTitle,
@@ -485,11 +509,15 @@ export async function synthesizeResearchQuestion(
     journal: s.journal,
     chunksContributed: s.isMetadataOnly ? 0 : s.chunks.length,
     isMetadataOnly: Boolean(s.isMetadataOnly),
+    isSupporting: citedSupportingPaperIds.has(s.paperId),
   }));
+
+  const supportingPapersMeta = selectedPapersMeta.filter((p) => p.isSupporting);
+  const isInsufficient = validation.insufficientEvidence || validation.claims.length === 0;
 
   // Assemble human-readable content string for fallback/search display
   let contentText: string;
-  if (validation.insufficientEvidence || validation.claims.length === 0) {
+  if (isInsufficient) {
     contentText = MULTI_PAPER_INSUFFICIENT_EVIDENCE_FALLBACK;
   } else {
     const claimParas = validation.claims.map((c) => {
@@ -505,8 +533,10 @@ export async function synthesizeResearchQuestion(
     disagreements: validation.disagreements,
     limitations: validation.limitations,
     selectedPapers: selectedPapersMeta,
+    supportingPapers: supportingPapersMeta,
+    candidatePapersCount: evidenceResult.evidenceSets.length,
     libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
-    insufficientEvidence: validation.insufficientEvidence,
+    insufficientEvidence: isInsufficient,
     omittedSourcesNotice,
   };
 
@@ -535,8 +565,10 @@ export async function synthesizeResearchQuestion(
     disagreements: validation.disagreements,
     limitations: validation.limitations,
     selectedPapers: selectedPapersMeta,
+    supportingPapers: supportingPapersMeta,
+    candidatePapersCount: evidenceResult.evidenceSets.length,
     totalEvidenceChunks: evidenceResult.totalChunks,
-    insufficientEvidence: validation.insufficientEvidence,
+    insufficientEvidence: isInsufficient,
     libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
     rejectedCitationCount: validation.rejectedCitationCount,
     rejectedClaimsCount: validation.rejectedClaimsCount,

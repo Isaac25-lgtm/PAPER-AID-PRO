@@ -156,10 +156,46 @@ export async function askPaperQuestion(params: AskPaperParams): Promise<PaperQAR
 
   try {
     // 4. Retrieve Paper Evidence (Strictly paper-scoped and authorized)
-    const { paperTitle, evidenceChunks } = await retrievePaperEvidence(paperId, cleanQuestion, {
+    const evidenceResult = await retrievePaperEvidence(paperId, cleanQuestion, {
       limit: 8,
       user,
     });
+
+    const { paperTitle, evidenceChunks, insufficientEvidence, evidenceType } = evidenceResult;
+
+    // Short-circuit if no accessible evidence was found
+    if (insufficientEvidence || evidenceChunks.length === 0) {
+      const assistantMessage = await prisma.aIMessage.create({
+        data: {
+          conversationId: conversation.id,
+          role: AIMessageRole.ASSISTANT,
+          content: INSUFFICIENT_EVIDENCE_FALLBACK,
+          citations: {
+            claims: [],
+            anchors: [],
+            evidenceType: evidenceType || "ABSTRACT",
+            insufficientEvidence: true,
+          } as any,
+        },
+      });
+
+      await prisma.aIConversation.update({
+        where: { id: conversation.id },
+        data: { updatedAt: new Date() },
+      });
+
+      return {
+        success: true,
+        conversationId: conversation.id,
+        userMessageId: userMessage.id,
+        assistantMessageId: assistantMessage.id,
+        answer: INSUFFICIENT_EVIDENCE_FALLBACK,
+        claims: [],
+        citations: [],
+        insufficientEvidence: true,
+        evidenceType: evidenceType || "ABSTRACT",
+      };
+    }
 
     // 5. Load recent conversation history (last 4 messages prior to the current user message)
     const recentHistory = await prisma.aIMessage.findMany({
@@ -227,6 +263,8 @@ export async function askPaperQuestion(params: AskPaperParams): Promise<PaperQAR
         citations: {
           claims: validatedResult.claims,
           anchors: validatedResult.citations,
+          evidenceType: validatedResult.evidenceType || evidenceType,
+          insufficientEvidence: validatedResult.insufficientEvidence,
         } as any,
       },
     });
@@ -246,6 +284,7 @@ export async function askPaperQuestion(params: AskPaperParams): Promise<PaperQAR
       claims: validatedResult.claims,
       citations: validatedResult.citations,
       insufficientEvidence: validatedResult.insufficientEvidence,
+      evidenceType: validatedResult.evidenceType || evidenceType,
     };
   } catch (err: any) {
     const rawError = err instanceof Error ? err.message : String(err);

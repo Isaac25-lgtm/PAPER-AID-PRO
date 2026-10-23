@@ -1,47 +1,61 @@
 import "server-only";
 import { prisma } from "../prisma";
 import { generateEmbedding } from "../ai/embeddings";
-import { RetrievedEvidenceChunk } from "./types";
-import { authorizePaperAccess, UserContext } from "../auth/paper-authorization";
+import { RetrievedEvidenceChunk, EvidenceType, RetrievalMethod, PermissionScope } from "./types";
+import { authorizePaperAccess, UserContext, classifyPaper } from "../auth/paper-authorization";
+import { createHash } from "crypto";
 
 export interface RetrievePaperEvidenceOptions {
   limit?: number; // Final fused evidence count (default: 8, max: 12)
   user?: UserContext | null; // User context for authorization
+  allowAbstractFallback?: boolean; // Defaults to true
+}
+
+export interface RetrievedPaperEvidenceResult {
+  paperTitle: string;
+  evidenceChunks: RetrievedEvidenceChunk[];
+  totalAvailableChunks: number;
+  evidenceType: EvidenceType;
+  retrievalMethod: RetrievalMethod;
+  insufficientEvidence: boolean;
+  isMockEmbeddingFallback: boolean;
 }
 
 const RRF_K = 60;
 
 /**
- * Retrieves relevant manuscript chunks strictly scoped to a single paper.
+ * Retrieves relevant manuscript evidence strictly scoped to a single paper.
  * 
  * Guarantees:
- * 1. Filtering by paperId occurs strictly inside the PostgreSQL queries.
- * 2. Semantic vector cosine similarity (pgvector <=> operator).
- * 3. In-paper lexical keyword search (ILIKE on chunk text and section).
- * 4. Deterministic Reciprocal Rank Fusion (RRF) combining semantic + lexical ranks.
- * 5. Returns only verified PaperChunk records belonging to the requested paperId.
- * 6. Access Control: Verifies caller authorization prior to chunk retrieval.
+ * 1. Filtering by paperId occurs strictly inside PostgreSQL queries.
+ * 2. Abstract Fallback: When full-text chunks are not present, securely provides
+ *    explicitly labeled ABSTRACT evidence without fabricating unrecorded sections.
+ * 3. Mock Embedding Safety: When only mock-sha256 or unindexed chunks exist, falls back
+ *    to lexical retrieval and never treats pseudo-vector similarity as meaningful.
+ * 4. Genuine Semantic Retrieval: When true semantic embeddings exist, executes pgvector <=>
+ *    cosine distance combined with lexical search via Reciprocal Rank Fusion (RRF).
+ * 5. Evidence Provenance: Tags every chunk with evidenceType, pageNumber (or null), section,
+ *    sourceTitle, DOI, and permissionScope.
+ * 6. Access Control: Evaluates authorizePaperAccess before retrieving any evidence.
  */
 export async function retrievePaperEvidence(
   paperId: string,
   question: string,
   options: RetrievePaperEvidenceOptions = {}
-): Promise<{
-  paperTitle: string;
-  evidenceChunks: RetrievedEvidenceChunk[];
-  totalAvailableChunks: number;
-}> {
+): Promise<RetrievedPaperEvidenceResult> {
   const finalLimit = Math.min(Math.max(options.limit || 8, 1), 12);
   const cleanQuestion = question.trim().slice(0, 500);
 
-  // 1. Verify Paper exists, check authorization, and verify chunk readiness
+  // 1. Verify Paper exists, check authorization, and determine permission scope
   const paper = await prisma.paper.findUnique({
     where: { id: paperId },
     select: {
       id: true,
       title: true,
+      abstract: true,
       storagePath: true,
       pdfUrl: true,
+      isOpenAccess: true,
       sourceProvenance: true,
       doi: true,
       arxivId: true,
@@ -64,28 +78,171 @@ export async function retrievePaperEvidence(
     throw new Error(`Unauthorized: Access to document evidence for paper "${paper.title}" is restricted.`);
   }
 
+  const classification = classifyPaper(paper);
+  const permissionScope: PermissionScope =
+    classification === "PRIVATE_USER_DOCUMENT"
+      ? "PRIVATE_USER"
+      : classification === "ADMIN_TEST_FIXTURE" || classification === "AMBIGUOUS_HISTORICAL"
+      ? "RESTRICTED"
+      : (paper.isOpenAccess ? "PUBLIC_OPEN_ACCESS" : "PUBLIC_METADATA_ONLY");
+
+  // 2. ABSTRACT-ONLY EVIDENCE FALLBACK
+  // When no full-text chunks have been ingested (e.g. metadata-only catalog entry)
   if (paper._count.chunks === 0) {
-    throw new Error("Paper text has not been processed yet.");
+    const rawAbstract = paper.abstract?.trim() || "";
+    if (rawAbstract.length > 0 && options.allowAbstractFallback !== false) {
+      const hash = createHash("sha256").update(rawAbstract).digest("hex");
+      const abstractChunk: RetrievedEvidenceChunk = {
+        id: `abstract-${paper.id}`,
+        paperId: paper.id,
+        chunkIndex: 0,
+        section: "Abstract",
+        pageNumber: null, // Null accurately, never synthetic
+        text: rawAbstract,
+        evidenceType: "ABSTRACT",
+        sourceTitle: paper.title,
+        doi: paper.doi,
+        retrievalMethod: "ABSTRACT_FALLBACK",
+        permissionScope,
+        contentChecksum: hash,
+        isMockEmbedding: false,
+      };
+
+      return {
+        paperTitle: paper.title,
+        evidenceChunks: [abstractChunk],
+        totalAvailableChunks: 0,
+        evidenceType: "ABSTRACT",
+        retrievalMethod: "ABSTRACT_FALLBACK",
+        insufficientEvidence: false,
+        isMockEmbeddingFallback: false,
+      };
+    }
+
+    // Neither full-text chunks nor abstract exist
+    return {
+      paperTitle: paper.title,
+      evidenceChunks: [],
+      totalAvailableChunks: 0,
+      evidenceType: "ABSTRACT",
+      retrievalMethod: "ABSTRACT_FALLBACK",
+      insufficientEvidence: true,
+      isMockEmbeddingFallback: false,
+    };
   }
 
-  // Check embedded chunk count for this paper
-  const embeddedResult: Array<{ count: bigint }> = await prisma.$queryRaw`
-    SELECT COUNT(*) as count
+  // 3. FULL-TEXT RETRIEVAL: Inspect embedding state
+  const embeddingStats: Array<{
+    genuineCount: bigint;
+    mockCount: bigint;
+    totalEmbedded: bigint;
+  }> = await prisma.$queryRaw`
+    SELECT 
+      COUNT(*) FILTER (WHERE embedding IS NOT NULL AND ("embeddingModel" IS NULL OR "embeddingModel" != 'mock-sha256')) as "genuineCount",
+      COUNT(*) FILTER (WHERE "embeddingModel" = 'mock-sha256') as "mockCount",
+      COUNT(*) FILTER (WHERE embedding IS NOT NULL) as "totalEmbedded"
     FROM "paper_chunks"
-    WHERE "paperId" = ${paperId} AND "embedding" IS NOT NULL;
+    WHERE "paperId" = ${paperId};
   `;
-  const embeddedCount = Number(embeddedResult[0]?.count ?? 0);
 
-  if (embeddedCount === 0) {
-    throw new Error("This paper is not ready for research Q&A yet.");
+  const genuineCount = Number(embeddingStats[0]?.genuineCount ?? 0);
+  const mockCount = Number(embeddingStats[0]?.mockCount ?? 0);
+
+  // Extract query keywords for lexical matching (>= 3 chars, not stopwords)
+  const queryWords = cleanQuestion
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !["what", "were", "with", "this", "that", "from", "have", "about", "which", "there"].includes(w));
+
+  // 4. MOCK EMBEDDING / UNINDEXED SAFETY (Task 4)
+  // If genuine embeddings do NOT exist, execute pure lexical/text-based retrieval fallback.
+  // Never treat mock vector similarity as meaningful and never invoke paid embedding APIs.
+  if (genuineCount === 0) {
+    let lexicalRows: Array<{
+      id: string;
+      paperId: string;
+      chunkIndex: number;
+      section: string | null;
+      pageNumber: number | null;
+      text: string;
+    }> = [];
+
+    if (queryWords.length > 0) {
+      const primaryTerm = queryWords.slice(0, 3).join(" ");
+      const singleTerm = queryWords[0];
+
+      lexicalRows = await prisma.$queryRaw`
+        SELECT 
+          c.id,
+          c."paperId",
+          c."chunkIndex",
+          c.section,
+          c."pageNumber",
+          c.text
+        FROM "paper_chunks" c
+        WHERE c."paperId" = ${paperId}
+          AND (
+            c.text ILIKE ${'%' + primaryTerm + '%'}
+            OR c.text ILIKE ${'%' + singleTerm + '%'}
+            OR c.section ILIKE ${'%' + singleTerm + '%'}
+          )
+        ORDER BY c."chunkIndex" ASC
+        LIMIT ${finalLimit};
+      `;
+    }
+
+    // If keyword matching yielded zero rows or question had no keywords, fetch initial sequence chunks
+    if (lexicalRows.length === 0) {
+      lexicalRows = await prisma.$queryRaw`
+        SELECT 
+          c.id,
+          c."paperId",
+          c."chunkIndex",
+          c.section,
+          c."pageNumber",
+          c.text
+        FROM "paper_chunks" c
+        WHERE c."paperId" = ${paperId}
+        ORDER BY c."chunkIndex" ASC
+        LIMIT ${finalLimit};
+      `;
+    }
+
+    const lexicalChunks: RetrievedEvidenceChunk[] = lexicalRows.map((row, idx) => ({
+      id: row.id,
+      paperId: row.paperId,
+      chunkIndex: row.chunkIndex,
+      section: row.section,
+      pageNumber: row.pageNumber, // Accurate page number, null if unrecorded
+      text: row.text,
+      evidenceType: "FULL_TEXT",
+      sourceTitle: paper.title,
+      doi: paper.doi,
+      retrievalMethod: "LEXICAL",
+      permissionScope,
+      contentChecksum: createHash("sha256").update(row.text).digest("hex"),
+      isMockEmbedding: mockCount > 0,
+      lexicalRank: idx + 1,
+      semanticRank: null,
+      rrfScore: 1.0 / (RRF_K + (idx + 1)),
+    }));
+
+    return {
+      paperTitle: paper.title,
+      evidenceChunks: lexicalChunks,
+      totalAvailableChunks: paper._count.chunks,
+      evidenceType: "FULL_TEXT",
+      retrievalMethod: "LEXICAL",
+      insufficientEvidence: lexicalChunks.length === 0,
+      isMockEmbeddingFallback: true,
+    };
   }
 
-  // 2. Generate Query Vector Embedding
+  // 5. GENUINE SEMANTIC + LEXICAL RETRIEVAL (pgvector <=> operator + RRF)
   const queryVector = await generateEmbedding(cleanQuestion);
   const vectorString = `[${queryVector.join(",")}]`;
 
-  // 3. Execute Paper-Scoped Semantic Retrieval (pgvector cosine distance)
-  // STRICT FILTER: WHERE "paperId" = ${paperId} in the SQL query itself
   const semanticRows: Array<{
     id: string;
     paperId: string;
@@ -106,17 +263,10 @@ export async function retrievePaperEvidence(
     FROM "paper_chunks" c
     WHERE c."paperId" = ${paperId}
       AND c.embedding IS NOT NULL
+      AND (c."embeddingModel" IS NULL OR c."embeddingModel" != 'mock-sha256')
     ORDER BY c.embedding <=> ${vectorString}::vector ASC
     LIMIT 10;
   `;
-
-  // 4. Execute Paper-Scoped Lexical Retrieval (terms from question)
-  // Extract informative search terms (min 3 chars, alphanumeric)
-  const queryWords = cleanQuestion
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length >= 3 && !["what", "were", "with", "this", "that", "from", "have", "about"].includes(w));
 
   let lexicalRows: Array<{
     id: string;
@@ -128,7 +278,6 @@ export async function retrievePaperEvidence(
   }> = [];
 
   if (queryWords.length > 0) {
-    // Pick the most distinctive keywords or contiguous phrase for substring search
     const primaryTerm = queryWords.slice(0, 3).join(" ");
     const singleTerm = queryWords[0];
 
@@ -151,7 +300,7 @@ export async function retrievePaperEvidence(
     `;
   }
 
-  // 5. Deterministic Reciprocal Rank Fusion (RRF) within the single paper
+  // Reciprocal Rank Fusion (RRF)
   const candidateScores = new Map<
     string,
     {
@@ -162,7 +311,6 @@ export async function retrievePaperEvidence(
     }
   >();
 
-  // Process semantic candidates
   semanticRows.forEach((row, idx) => {
     const rank = idx + 1;
     const score = 1.0 / (RRF_K + rank);
@@ -174,6 +322,13 @@ export async function retrievePaperEvidence(
         section: row.section,
         pageNumber: row.pageNumber,
         text: row.text,
+        evidenceType: "FULL_TEXT",
+        sourceTitle: paper.title,
+        doi: paper.doi,
+        retrievalMethod: "HYBRID_RRF",
+        permissionScope,
+        contentChecksum: createHash("sha256").update(row.text).digest("hex"),
+        isMockEmbedding: false,
         similarity: row.similarity,
         semanticRank: rank,
         lexicalRank: null,
@@ -184,7 +339,6 @@ export async function retrievePaperEvidence(
     });
   });
 
-  // Process lexical candidates
   lexicalRows.forEach((row, idx) => {
     const rank = idx + 1;
     const score = 1.0 / (RRF_K + rank);
@@ -202,6 +356,13 @@ export async function retrievePaperEvidence(
           section: row.section,
           pageNumber: row.pageNumber,
           text: row.text,
+          evidenceType: "FULL_TEXT",
+          sourceTitle: paper.title,
+          doi: paper.doi,
+          retrievalMethod: "HYBRID_RRF",
+          permissionScope,
+          contentChecksum: createHash("sha256").update(row.text).digest("hex"),
+          isMockEmbedding: false,
           semanticRank: null,
           lexicalRank: rank,
         },
@@ -212,7 +373,6 @@ export async function retrievePaperEvidence(
     }
   });
 
-  // Sort by combined RRF score descending
   const sortedChunks: RetrievedEvidenceChunk[] = Array.from(candidateScores.values())
     .sort((a, b) => b.rrfScore - a.rrfScore)
     .slice(0, finalLimit)
@@ -225,5 +385,10 @@ export async function retrievePaperEvidence(
     paperTitle: paper.title,
     evidenceChunks: sortedChunks,
     totalAvailableChunks: paper._count.chunks,
+    evidenceType: "FULL_TEXT",
+    retrievalMethod: "HYBRID_RRF",
+    insufficientEvidence: sortedChunks.length === 0,
+    isMockEmbeddingFallback: false,
   };
 }
+

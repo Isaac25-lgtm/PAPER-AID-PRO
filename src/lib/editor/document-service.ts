@@ -421,6 +421,7 @@ export async function insertDocumentCitation(
   await assertPaperAccess(userId, input.paperId);
 
   // 3. If chunkId provided, verify it belongs strictly to this paper
+  let verifiedChunkId: string | null = null;
   if (input.chunkId) {
     const chunk = await prisma.paperChunk.findUnique({
       where: { id: input.chunkId },
@@ -431,6 +432,7 @@ export async function insertDocumentCitation(
         `Chunk '${input.chunkId}' does not belong to paper '${input.paperId}'. Provenance mismatch.`
       );
     }
+    verifiedChunkId = input.chunkId;
   }
 
   // 4. Ensure paper is in linkedPapers tray
@@ -448,15 +450,21 @@ export async function insertDocumentCitation(
     },
   });
 
-  // 5. Create citation
+  // 5. Enforce passage-verified distinction:
+  // A citation can ONLY be PASSAGE_VERIFIED if an authenticated, valid chunk is linked.
+  const finalCitationType = verifiedChunkId
+    ? (input.citationType || CitationType.PASSAGE_VERIFIED)
+    : CitationType.BIBLIOGRAPHIC;
+
+  // 6. Create citation
   return await prisma.documentCitation.create({
     data: {
       documentId,
       paperId: input.paperId,
-      chunkId: input.chunkId || null,
+      chunkId: verifiedChunkId,
       citationKey: input.citationKey || null,
       citationText: input.citationText,
-      citationType: input.citationType || (input.chunkId ? CitationType.PASSAGE_VERIFIED : CitationType.BIBLIOGRAPHIC),
+      citationType: finalCitationType,
       pageNumber: input.pageNumber || null,
       section: input.section || null,
       prefix: input.prefix || null,
@@ -504,3 +512,6 @@ export async function deleteDocumentCitation(
     where: { id: citationId },
   });
 }
+
+export const addDocumentCitation = insertDocumentCitation;
+

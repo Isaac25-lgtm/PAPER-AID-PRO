@@ -79,8 +79,25 @@ export async function retrieveMultiPaperEvidence(
 
     const candidateLimit = Math.min(paperLimit * 4, 16);
 
-    // STRICT PAPER-SCOPED QUERY with reference/bibliography exclusion:
-    const rows: Array<{
+    // Inspect chunk embedding state for this paper:
+    const embeddingStats: Array<{
+      genuineCount: bigint;
+      mockCount: bigint;
+      totalChunks: bigint;
+    }> = await prisma.$queryRaw`
+      SELECT 
+        COUNT(*) FILTER (WHERE embedding IS NOT NULL AND ("embeddingModel" IS NULL OR "embeddingModel" != 'mock-sha256')) as "genuineCount",
+        COUNT(*) FILTER (WHERE "embeddingModel" = 'mock-sha256') as "mockCount",
+        COUNT(*) as "totalChunks"
+      FROM "paper_chunks"
+      WHERE "paperId" = ${paper.paperId};
+    `;
+
+    const genuineCount = Number(embeddingStats[0]?.genuineCount ?? 0);
+    const mockCount = Number(embeddingStats[0]?.mockCount ?? 0);
+    const totalChunks = Number(embeddingStats[0]?.totalChunks ?? 0);
+
+    let selectedRows: Array<{
       id: string;
       paperId: string;
       chunkIndex: number;
@@ -88,65 +105,195 @@ export async function retrieveMultiPaperEvidence(
       pageNumber: number | null;
       text: string;
       similarity: number;
-    }> = await prisma.$queryRaw`
-      SELECT 
-        c.id,
-        c."paperId",
-        c."chunkIndex",
-        c.section,
-        c."pageNumber",
-        c.text,
-        1 - (c.embedding <=> ${vectorString}::vector) AS similarity
-      FROM "paper_chunks" c
-      WHERE c."paperId" = ${paper.paperId}
-        AND c.embedding IS NOT NULL
-        AND (c.section IS NULL OR (
-          c.section NOT ILIKE '%reference%' 
-          AND c.section NOT ILIKE '%bibliography%' 
-          AND c.section NOT ILIKE '%citation%'
-        ))
-      ORDER BY c.embedding <=> ${vectorString}::vector ASC
-      LIMIT ${candidateLimit};
-    `;
+      isLexical: boolean;
+    }> = [];
 
-    // Filter out reference-like content and third-party literature reviews
-    const nonRefRows = rows.filter(
-      (r) => !isReferenceChunk(r.section, r.text) && !isThirdPartyLiteratureChunk(r.section, r.text)
-    );
+    // Extract query keywords for lexical matching (>= 3 chars, not common stopwords)
+    const queryWords = question
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter(
+        (w) =>
+          w.length >= 3 &&
+          !["what", "were", "with", "this", "that", "from", "have", "about", "which", "there", "does", "when", "their", "these"].includes(w)
+      );
 
-    // Distinguish empirical sections (Results, Discussion, Methods, Conclusion, Abstract)
-    // from introductory background (Background, Introduction)
-    const empiricalRows = nonRefRows.filter(
-      (r) => r.section && /result|discussion|method|conclusion|abstract/i.test(r.section)
-    );
-    const backgroundRows = nonRefRows.filter(
-      (r) => !r.section || /background|intro/i.test(r.section)
-    );
+    if (totalChunks > 0 && genuineCount === 0) {
+      // FIX 3: LEXICAL FALLBACK for mock-sha256 or unindexed chunks
+      // Never compute vector distance on mock hashes or missing vectors.
+      let lexicalDbRows: Array<{
+        id: string;
+        paperId: string;
+        chunkIndex: number;
+        section: string | null;
+        pageNumber: number | null;
+        text: string;
+      }> = [];
 
-    const selectedRows: typeof rows = [];
+      if (queryWords.length > 0) {
+        const primaryTerm = queryWords.slice(0, 3).join(" ");
+        const singleTerm = queryWords[0];
 
-    // Prioritize empirical chunks that directly describe the study's own findings/methods
-    if (empiricalRows.length > 0) {
-      selectedRows.push(...empiricalRows.slice(0, paperLimit));
-    }
-
-    // Only if empirical rows were insufficient to reach paperLimit, allow background chunks for context
-    const remainingSlots = paperLimit - selectedRows.length;
-    if (remainingSlots > 0 && backgroundRows.length > 0) {
-      selectedRows.push(...backgroundRows.slice(0, Math.min(remainingSlots, 1)));
-    }
-
-    // If still under quota, fill from any remaining non-reference chunks
-    for (const r of nonRefRows) {
-      if (selectedRows.length >= paperLimit) break;
-      if (!selectedRows.some((s) => s.id === r.id)) {
-        selectedRows.push(r);
+        lexicalDbRows = await prisma.$queryRaw`
+          SELECT 
+            c.id,
+            c."paperId",
+            c."chunkIndex",
+            c.section,
+            c."pageNumber",
+            c.text
+          FROM "paper_chunks" c
+          WHERE c."paperId" = ${paper.paperId}
+            AND (
+              c.text ILIKE ${'%' + primaryTerm + '%'}
+              OR c.text ILIKE ${'%' + singleTerm + '%'}
+              OR c.section ILIKE ${'%' + singleTerm + '%'}
+            )
+            AND (c.section IS NULL OR (
+              c.section NOT ILIKE '%reference%' 
+              AND c.section NOT ILIKE '%bibliography%' 
+              AND c.section NOT ILIKE '%citation%'
+            ))
+          ORDER BY c."chunkIndex" ASC
+          LIMIT ${candidateLimit};
+        `;
       }
+
+      // If keyword matching yielded zero rows or question had no keywords, fetch initial sequence chunks
+      if (lexicalDbRows.length === 0) {
+        lexicalDbRows = await prisma.$queryRaw`
+          SELECT 
+            c.id,
+            c."paperId",
+            c."chunkIndex",
+            c.section,
+            c."pageNumber",
+            c.text
+          FROM "paper_chunks" c
+          WHERE c."paperId" = ${paper.paperId}
+            AND (c.section IS NULL OR (
+              c.section NOT ILIKE '%reference%' 
+              AND c.section NOT ILIKE '%bibliography%' 
+              AND c.section NOT ILIKE '%citation%'
+            ))
+          ORDER BY c."chunkIndex" ASC
+          LIMIT ${candidateLimit};
+        `;
+      }
+
+      // Filter out reference-like and third-party literature survey chunks
+      const filteredLexical = lexicalDbRows.filter(
+        (r) => !isReferenceChunk(r.section, r.text) && !isThirdPartyLiteratureChunk(r.section, r.text)
+      );
+
+      // Prioritize empirical rows
+      const empiricalRows = filteredLexical.filter(
+        (r) => r.section && /result|discussion|method|conclusion|abstract/i.test(r.section)
+      );
+      const backgroundRows = filteredLexical.filter(
+        (r) => !r.section || /background|intro/i.test(r.section)
+      );
+
+      if (empiricalRows.length > 0) {
+        selectedRows.push(
+          ...empiricalRows.slice(0, paperLimit).map((r, idx) => ({
+            ...r,
+            similarity: 0.85 - idx * 0.05,
+            isLexical: true,
+          }))
+        );
+      }
+
+      const remainingSlots = paperLimit - selectedRows.length;
+      if (remainingSlots > 0 && backgroundRows.length > 0) {
+        selectedRows.push(
+          ...backgroundRows.slice(0, Math.min(remainingSlots, 1)).map((r, idx) => ({
+            ...r,
+            similarity: 0.75 - idx * 0.05,
+            isLexical: true,
+          }))
+        );
+      }
+
+      for (const r of filteredLexical) {
+        if (selectedRows.length >= paperLimit) break;
+        if (!selectedRows.some((s) => s.id === r.id)) {
+          selectedRows.push({
+            ...r,
+            similarity: 0.7 - selectedRows.length * 0.05,
+            isLexical: true,
+          });
+        }
+      }
+    } else if (genuineCount > 0) {
+      // GENUINE SEMANTIC RETRIEVAL with pgvector
+      const semanticDbRows: Array<{
+        id: string;
+        paperId: string;
+        chunkIndex: number;
+        section: string | null;
+        pageNumber: number | null;
+        text: string;
+        similarity: number;
+      }> = await prisma.$queryRaw`
+        SELECT 
+          c.id,
+          c."paperId",
+          c."chunkIndex",
+          c.section,
+          c."pageNumber",
+          c.text,
+          1 - (c.embedding <=> ${vectorString}::vector) AS similarity
+        FROM "paper_chunks" c
+        WHERE c."paperId" = ${paper.paperId}
+          AND c.embedding IS NOT NULL
+          AND (c."embeddingModel" IS NULL OR c."embeddingModel" != 'mock-sha256')
+          AND (c.section IS NULL OR (
+            c.section NOT ILIKE '%reference%' 
+            AND c.section NOT ILIKE '%bibliography%' 
+            AND c.section NOT ILIKE '%citation%'
+          ))
+        ORDER BY c.embedding <=> ${vectorString}::vector ASC
+        LIMIT ${candidateLimit};
+      `;
+
+      // Filter out reference-like content and third-party literature reviews
+      const nonRefRows = semanticDbRows.filter(
+        (r) => !isReferenceChunk(r.section, r.text) && !isThirdPartyLiteratureChunk(r.section, r.text)
+      );
+
+      const empiricalRows = nonRefRows.filter(
+        (r) => r.section && /result|discussion|method|conclusion|abstract/i.test(r.section)
+      );
+      const backgroundRows = nonRefRows.filter(
+        (r) => !r.section || /background|intro/i.test(r.section)
+      );
+
+      if (empiricalRows.length > 0) {
+        selectedRows.push(
+          ...empiricalRows.slice(0, paperLimit).map((r) => ({ ...r, isLexical: false }))
+        );
+      }
+
+      const remainingSlots = paperLimit - selectedRows.length;
+      if (remainingSlots > 0 && backgroundRows.length > 0) {
+        selectedRows.push(
+          ...backgroundRows.slice(0, Math.min(remainingSlots, 1)).map((r) => ({ ...r, isLexical: false }))
+        );
+      }
+
+      for (const r of nonRefRows) {
+        if (selectedRows.length >= paperLimit) break;
+        if (!selectedRows.some((s) => s.id === r.id)) {
+          selectedRows.push({ ...r, isLexical: false });
+        }
+      }
+
+      selectedRows.sort((a, b) => b.similarity - a.similarity);
     }
 
-    // Sort selected chunks descending by vector similarity
-    selectedRows.sort((a, b) => b.similarity - a.similarity);
-
+    // Tag selected chunks with full evidence provenance
     const paperChunks: RetrievedEvidenceChunk[] = selectedRows.map((r, idx) => ({
       id: r.id,
       paperId: r.paperId,
@@ -154,9 +301,45 @@ export async function retrieveMultiPaperEvidence(
       section: r.section,
       pageNumber: r.pageNumber,
       text: r.text,
+      evidenceType: "FULL_TEXT",
+      sourceTitle: paper.title,
+      doi: paper.doi,
+      retrievalMethod: r.isLexical ? "LEXICAL" : "SEMANTIC",
       similarity: Number(r.similarity),
-      semanticRank: idx + 1,
+      semanticRank: r.isLexical ? null : idx + 1,
+      lexicalRank: r.isLexical ? idx + 1 : null,
+      isMockEmbedding: r.isLexical || mockCount > 0,
     }));
+
+    let isMetadataOnly = false;
+    let abstractText: string | undefined = undefined;
+
+    // Abstract-only fallback: When no full-text chunks could be retrieved for this selected paper
+    if (paperChunks.length === 0) {
+      const paperRecord = await prisma.paper.findUnique({
+        where: { id: paper.paperId },
+        select: { abstract: true, doi: true, title: true },
+      });
+      const rawAbstract = paperRecord?.abstract?.trim();
+      if (rawAbstract && rawAbstract.length > 0) {
+        abstractText = rawAbstract;
+        isMetadataOnly = true;
+        const abstractChunk: RetrievedEvidenceChunk = {
+          id: `abstract-${paper.paperId}`,
+          paperId: paper.paperId,
+          chunkIndex: 0,
+          section: "Abstract",
+          pageNumber: null, // Accurately unrecorded, never synthetic
+          text: rawAbstract,
+          evidenceType: "ABSTRACT",
+          sourceTitle: paper.title,
+          doi: paper.doi,
+          retrievalMethod: "ABSTRACT_FALLBACK",
+          similarity: 0.75,
+        };
+        paperChunks.push(abstractChunk);
+      }
+    }
 
     evidenceSets.push({
       paperId: paper.paperId,
@@ -167,6 +350,8 @@ export async function retrieveMultiPaperEvidence(
       journal: paper.journal,
       citationCount: paper.citationCount,
       chunks: paperChunks,
+      abstract: abstractText,
+      isMetadataOnly,
     });
 
     for (const c of paperChunks) {
@@ -182,3 +367,4 @@ export async function retrieveMultiPaperEvidence(
     allChunks,
   };
 }
+

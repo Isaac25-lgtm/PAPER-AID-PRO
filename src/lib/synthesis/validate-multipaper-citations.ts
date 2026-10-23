@@ -915,6 +915,7 @@ export function validateMultiPaperSynthesis(
       pageNumber: number | null;
       section: string | null;
       text: string;
+      evidenceType?: "FULL_TEXT" | "ABSTRACT";
     }>;
   }
 
@@ -926,6 +927,7 @@ export function validateMultiPaperSynthesis(
       pageNumber: number | null;
       section: string | null;
       text: string;
+      evidenceType?: "FULL_TEXT" | "ABSTRACT";
     }>();
 
     for (const chunk of set.chunks) {
@@ -934,6 +936,7 @@ export function validateMultiPaperSynthesis(
         pageNumber: chunk.pageNumber,
         section: chunk.section,
         text: chunk.text,
+        evidenceType: chunk.evidenceType || (set.isMetadataOnly || chunk.section?.toLowerCase().includes("abstract") ? "ABSTRACT" : "FULL_TEXT"),
       });
     }
 
@@ -1030,6 +1033,7 @@ export function validateMultiPaperSynthesis(
           section: chunkMeta.section,
           snippet: formatSnippet(chunkMeta.text),
           fullText: chunkMeta.text,
+          evidenceType: chunkMeta.evidenceType || (chunkMeta.pageNumber === null ? "ABSTRACT" : "FULL_TEXT"),
         });
       }
     }
@@ -1095,6 +1099,7 @@ export function validateMultiPaperSynthesis(
           section: chunkMeta.section,
           snippet: formatSnippet(chunkMeta.text),
           fullText: chunkMeta.text,
+          evidenceType: chunkMeta.evidenceType || (chunkMeta.pageNumber === null ? "ABSTRACT" : "FULL_TEXT"),
         });
       }
     }
@@ -1220,6 +1225,7 @@ export function validateMultiPaperSynthesis(
           section: chunkMeta.section,
           snippet: formatSnippet(chunkMeta.text),
           fullText: chunkMeta.text,
+          evidenceType: chunkMeta.evidenceType || (chunkMeta.pageNumber === null ? "ABSTRACT" : "FULL_TEXT"),
         });
       }
     }
