@@ -48,12 +48,19 @@ export function createMockStorageClient() {
         const bucket = mockStorageBuckets.get(bucketName)!;
 
         return {
+          _bucket: bucket,
+          has: (filePath: string) => {
+            const clean = filePath.replace(/^[\\/]+/, "");
+            return bucket.has(clean) || bucket.has(filePath);
+          },
           upload: async (
             filePath: string,
             fileBody: Buffer | Uint8Array,
             _options?: any
           ) => {
+            const clean = filePath.replace(/^[\\/]+/, "");
             const buf = Buffer.isBuffer(fileBody) ? fileBody : Buffer.from(fileBody);
+            bucket.set(clean, buf);
             bucket.set(filePath, buf);
             return { data: { path: filePath }, error: null };
           },

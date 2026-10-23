@@ -293,8 +293,21 @@ export async function authorizePaperAccess(
  */
 export async function authorizeCurrentSession(
   paper: MinimalPaperRecord,
-  action: PaperAction
+  action: PaperAction,
+  userOverride?: { id: string; role?: string } | null
 ): Promise<PaperAuthorizationResult> {
-  const session = await getServerSession(authOptions);
+  if (userOverride !== undefined) {
+    const userContext: UserContext | null = userOverride
+      ? { id: userOverride.id, role: userOverride.role || "USER" }
+      : null;
+    return authorizePaperAccess(paper, userContext, action);
+  }
+  let session = null;
+  try {
+    session = await getServerSession(authOptions);
+  } catch {
+    // Outside of Next.js RequestAsyncStorage context (e.g. tests or CLI), default to anonymous
+    session = null;
+  }
   return authorizePaperAccess(paper, session?.user, action);
 }

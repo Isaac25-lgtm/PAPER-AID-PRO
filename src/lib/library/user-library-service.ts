@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { uploadPaperPdf, deletePaperPdf } from "@/lib/storage";
+import { uploadPaperPdf, deletePaperPdf, isLocalPdfAvailable } from "@/lib/storage";
+import { validateSafePdfUrl } from "@/lib/discovery/full-text-service";
 import { processPaperDocument } from "@/lib/pdf/pipeline";
 import { embedPaperChunks } from "@/lib/ai/embedding-pipeline";
 import { revalidatePath } from "next/cache";
@@ -49,6 +50,9 @@ export interface UserLibraryItem {
   documentType: string;
   status: PaperProcessingStatus;
   hasPdf: boolean;
+  hasLocalPdf?: boolean;
+  localPdfAvailable?: boolean;
+  externalPdfUrl?: string | null;
   storagePath?: string | null;
   pdfUrl?: string | null;
   doi?: string | null;
@@ -886,6 +890,40 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
     const collectionNames: string[] =
       paper.collections?.map((cp: any) => cp.collection.name) || [];
 
+    // Distinct Availability Semantics:
+    // 1. Local storage check (zero network overhead, instant synchronous disk/memory lookup)
+    const localPdfAvailable = isLocalPdfAvailable(paper.storagePath);
+
+    // 2. Verified external reading link (only for lawful open-access papers with trusted provenance)
+    let externalPdfUrl: string | null = null;
+    const isLawfulOa =
+      !isPrivate &&
+      (paper.isOpenAccess === true ||
+        prov?.isLawfulOpenAccess === true ||
+        prov?.isPublicOpenAccess === true);
+
+    if (isLawfulOa) {
+      const candidates: (string | null | undefined)[] = [
+        prov?.openAccessPdfUrl,
+        prov?.originalPdfUrl,
+        paper.pdfUrl && !paper.pdfUrl.includes("/api/papers/") && !paper.pdfUrl.includes(".supabase.co/storage/")
+          ? paper.pdfUrl
+          : null,
+        prov?.externalLandingPageUrl,
+        prov?.externalUrl,
+      ];
+
+      for (const candidate of candidates) {
+        if (!candidate || typeof candidate !== "string" || !candidate.startsWith("https://")) {
+          continue;
+        }
+        if (validateSafePdfUrl(candidate).safe) {
+          externalPdfUrl = candidate;
+          break;
+        }
+      }
+    }
+
     const item: UserLibraryItem = {
       id: paper.id,
       bookmarkId,
@@ -897,9 +935,12 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
       documentType:
         prov?.documentType || (isPrivate ? "OTHER_DOCUMENT" : "PUBLISHED_PAPER"),
       status: paper.status,
-      hasPdf: Boolean(paper.storagePath || paper.pdfUrl),
+      hasPdf: Boolean(localPdfAvailable || externalPdfUrl),
+      hasLocalPdf: localPdfAvailable,
+      localPdfAvailable,
+      externalPdfUrl,
       storagePath: paper.storagePath,
-      pdfUrl: paper.pdfUrl || null,
+      pdfUrl: localPdfAvailable ? `/api/papers/${paper.id}/pdf` : externalPdfUrl,
       doi: paper.doi || prov?.canonicalDoi || null,
       arxiv: paper.arxivId || prov?.arxivId || null,
       isOpenAccess: Boolean(paper.isOpenAccess),
@@ -908,6 +949,7 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
       chunkCount: paper._count?.chunks || 0,
       canChat:
         paper.status === "COMPLETED" ||
+        (paper.status === "TEXT_EXTRACTED" && paper._count?.chunks > 0) ||
         (paper._count?.chunks > 0 && isPrivate) ||
         (paper._count?.chunks > 0 && prov?.attachedByUserId === userId),
       latestJobStage: latestJob?.stage || null,

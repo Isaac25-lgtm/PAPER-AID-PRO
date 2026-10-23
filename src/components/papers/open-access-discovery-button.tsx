@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Sparkles, RefreshCw, CheckCircle2, AlertCircle, ExternalLink, Globe, FileText } from "lucide-react";
+import { Sparkles, RefreshCw, CheckCircle2, AlertCircle, ExternalLink, Globe, FileUp, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { discoverPaperOpenAccessAction } from "@/app/library/actions";
+import { discoverPaperOpenAccessAction, getPaperProcessingStatusAction } from "@/app/library/actions";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 interface OpenAccessDiscoveryButtonProps {
   paperId: string;
@@ -16,6 +17,17 @@ interface OpenAccessDiscoveryButtonProps {
   buttonSize?: "default" | "sm" | "lg";
 }
 
+type ProcessingStageLabel =
+  | "IDLE"
+  | "PREPARING"
+  | "PARSING"
+  | "INDEXING"
+  | "TEXT_EXTRACTED"
+  | "READY"
+  | "RESTRICTED"
+  | "FAILED"
+  | "OCR_REQUIRED";
+
 export function OpenAccessDiscoveryButton({
   paperId,
   hasDoi,
@@ -26,51 +38,130 @@ export function OpenAccessDiscoveryButton({
   buttonSize = "sm",
 }: OpenAccessDiscoveryButtonProps) {
   const router = useRouter();
-  const [isDiscovering, setIsDiscovering] = React.useState(false);
+  const [stage, setStage] = React.useState<ProcessingStageLabel>("IDLE");
   const [feedback, setFeedback] = React.useState<{
-    type: "success" | "error" | "info";
+    type: "success" | "error" | "info" | "warning";
     message: string;
+    details?: string;
   } | null>(null);
+  const [isCheckingProgress, setIsCheckingProgress] = React.useState(false);
 
-  const handleDiscover = async () => {
-    if (!hasDoi || !doi) {
-      setFeedback({
-        type: "info",
-        message: "No registered DOI for this paper. Manual PDF upload is required.",
-      });
-      return;
-    }
+  const isProcessing = stage === "PREPARING" || stage === "PARSING" || stage === "INDEXING";
 
-    setIsDiscovering(true);
+  const handleAnalyze = async () => {
+    setStage("PREPARING");
     setFeedback(null);
 
     try {
+      // Step 1: Call on-demand analysis action
       const res = await discoverPaperOpenAccessAction(paperId);
-      if (res.success && res.hasFullText) {
-        setFeedback({
-          type: "success",
-          message: res.message || "Open-access PDF discovered and full text processed for AI analysis!",
-        });
-        router.refresh();
-      } else if (res.success && !res.hasFullText) {
+
+      if (res.logicalState === "TEXT_EXTRACTED" || (res.success && res.hasFullText && res.logicalState !== "READY")) {
+        setStage("TEXT_EXTRACTED");
         setFeedback({
           type: "info",
-          message: res.message || "External open-access reading link preserved. Manual PDF upload available.",
+          message: res.message || "Full text acquired and extracted! Evidence and citations are ready (semantic indexing pending).",
         });
         router.refresh();
-      } else {
+      } else if (res.success && res.hasFullText) {
+        setStage("READY");
+        setFeedback({
+          type: "success",
+          message: res.message || "Ready for AI! Full text acquired, parsed, and semantically indexed.",
+        });
+        router.refresh();
+      } else if (res.logicalState === "RESTRICTED" || res.status === "OPEN_ACCESS_EXTERNAL_LINK_ONLY") {
+        setStage("RESTRICTED");
+        setFeedback({
+          type: "warning",
+          message:
+            res.message ||
+            "Full Text Restricted: Publisher terms restrict direct server processing. You can read via external link or upload your PDF.",
+        });
+        router.refresh();
+      } else if (res.error?.includes("OCR") || res.message?.includes("OCR") || res.error?.includes("scanned")) {
+        setStage("OCR_REQUIRED");
         setFeedback({
           type: "error",
-          message: res.message || "No legally accessible open-access PDF located.",
+          message: "OCR Required: Manuscript appears to be a scanned image without extractable text.",
+        });
+      } else {
+        setStage("FAILED");
+        setFeedback({
+          type: "error",
+          message: res.message || res.error || "No legally accessible full text found or processing failed.",
         });
       }
     } catch (err: any) {
+      setStage("FAILED");
       setFeedback({
         type: "error",
-        message: err?.message || "Failed querying open-access repositories.",
+        message: err?.message || "Failed to analyze paper.",
       });
+    }
+  };
+
+  const checkProgress = async () => {
+    setIsCheckingProgress(true);
+    try {
+      const res = await getPaperProcessingStatusAction(paperId);
+      if (res && res.logicalState) {
+        if (res.logicalState === "READY") {
+          setStage("READY");
+          setFeedback({
+            type: "success",
+            message: "Document is ready for AI! Full text chunks and embeddings are indexed.",
+          });
+        } else if (res.logicalState === "TEXT_EXTRACTED") {
+          setStage("TEXT_EXTRACTED");
+          setFeedback({
+            type: "info",
+            message: "Full text extracted! Citations and structured evidence ready (semantic indexing pending).",
+          });
+        } else if (res.logicalState === "RESTRICTED") {
+          setStage("RESTRICTED");
+          setFeedback({
+            type: "warning",
+            message: "Full Text Restricted: Automatic acquisition is not permitted by license.",
+          });
+        } else if (res.logicalState === "PARSING") {
+          setStage("PARSING");
+        } else if (res.logicalState === "INDEXING" || res.logicalState === "CHUNKING") {
+          setStage("INDEXING");
+        } else if (res.logicalState === "FAILED") {
+          setStage("FAILED");
+          setFeedback({
+            type: "error",
+            message: res.latestJob?.errorMessage || "Processing failed.",
+          });
+        }
+      }
+    } catch (err: any) {
+      // safe fallback
     } finally {
-      setIsDiscovering(false);
+      setIsCheckingProgress(false);
+    }
+  };
+
+  const getButtonText = () => {
+    switch (stage) {
+      case "PREPARING":
+        return "Preparing Document...";
+      case "PARSING":
+        return "Parsing Document...";
+      case "INDEXING":
+        return "Indexing Evidence...";
+      case "TEXT_EXTRACTED":
+        return "Full Text Extracted";
+      case "READY":
+        return "Ready for AI";
+      case "RESTRICTED":
+        return "Full Text Restricted";
+      case "FAILED":
+      case "OCR_REQUIRED":
+        return "Processing Failed / Retry";
+      default:
+        return "Analyze Paper";
     }
   };
 
@@ -80,24 +171,55 @@ export function OpenAccessDiscoveryButton({
         <Button
           size={buttonSize}
           type="button"
-          onClick={handleDiscover}
-          disabled={isDiscovering || !hasDoi}
+          onClick={handleAnalyze}
+          disabled={isProcessing}
           className={`bg-indigo-600 hover:bg-indigo-700 text-white font-semibold gap-1.5 shadow-xs ${className}`}
-          title={hasDoi ? `Search Unpaywall and OpenAlex for DOI: ${doi}` : "No DOI available for this paper"}
+          title="Verify lawful source, retrieve PDF, extract structured text, and index evidence"
         >
-          {isDiscovering ? (
+          {isProcessing ? (
             <>
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              <span>Searching Open Access...</span>
+              <span>{getButtonText()}</span>
+            </>
+          ) : stage === "READY" ? (
+            <>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>Ready for AI</span>
+            </>
+          ) : stage === "TEXT_EXTRACTED" ? (
+            <>
+              <CheckCircle2 className="h-3.5 w-3.5 text-indigo-200" />
+              <span>Full Text Extracted</span>
+            </>
+          ) : stage === "RESTRICTED" ? (
+            <>
+              <ShieldAlert className="h-3.5 w-3.5 text-amber-300" />
+              <span>Full Text Restricted</span>
             </>
           ) : (
             <>
-              <Globe className="h-3.5 w-3.5" />
-              <span>Find Open-Access Version</span>
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>{stage === "FAILED" ? "Retry Analysis" : "Analyze Paper"}</span>
             </>
           )}
         </Button>
 
+        {/* Check progress button if previously triggered or in progress */}
+        {isProcessing && (
+          <Button
+            size={buttonSize}
+            variant="outline"
+            type="button"
+            onClick={checkProgress}
+            disabled={isCheckingProgress}
+            className="text-xs text-slate-600 gap-1 border-slate-200"
+          >
+            <RefreshCw className={`h-3 w-3 ${isCheckingProgress ? "animate-spin" : ""}`} />
+            <span>Check Status</span>
+          </Button>
+        )}
+
+        {/* External Link */}
         {externalPdfUrl && (
           <a
             href={externalPdfUrl}
@@ -109,6 +231,17 @@ export function OpenAccessDiscoveryButton({
             <span>Open External Full Text</span>
           </a>
         )}
+
+        {/* Upload Your PDF option */}
+        {(stage === "RESTRICTED" || stage === "FAILED" || stage === "OCR_REQUIRED" || !hasDoi) && (
+          <Link
+            href={`/library?uploadPaperId=${paperId}`}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 transition-colors shadow-2xs"
+          >
+            <FileUp className="h-3.5 w-3.5 text-amber-700" />
+            <span>Upload Your PDF</span>
+          </Link>
+        )}
       </div>
 
       {feedback && (
@@ -118,7 +251,9 @@ export function OpenAccessDiscoveryButton({
               ? "bg-emerald-50 text-emerald-800 border-emerald-200"
               : feedback.type === "error"
               ? "bg-rose-50 text-rose-800 border-rose-200"
-              : "bg-amber-50 text-amber-900 border-amber-200"
+              : feedback.type === "warning"
+              ? "bg-amber-50 text-amber-900 border-amber-200"
+              : "bg-sky-50 text-sky-800 border-sky-200"
           }`}
         >
           {feedback.type === "success" ? (

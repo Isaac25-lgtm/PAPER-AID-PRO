@@ -5,6 +5,7 @@ import {
   generateEmbeddingsBatch,
   prepareChunkEmbeddingInput,
   computeEmbeddingInputHash,
+  isMockEmbeddingMode,
 } from "./embeddings";
 import { ProcessingStage, JobStatus } from "@prisma/client";
 
@@ -199,6 +200,7 @@ export async function embedPaperChunks(
   embeddedCount: number;
   skippedCount: number;
   error?: string;
+  isMock?: boolean;
 }> {
   const paper = await prisma.paper.findUnique({
     where: { id: paperId },
@@ -291,22 +293,40 @@ export async function embedPaperChunks(
       const vectors = await generateEmbeddingsBatch(inputs);
 
       // Persist vectors, model, dimensions, input hash, and timestamp
+      const isMock = isMockEmbeddingMode();
+      const recordedModel = isMock ? "mock-sha256" : AI_CONFIG.embeddingModel;
+      const isProductionWithoutReal = process.env.NODE_ENV === "production" && isMock;
+
       for (let j = 0; j < batch.length; j++) {
         const item = batch[j];
         const vector = vectors[j];
-        const vectorString = `[${vector.join(",")}]`;
         const expectedHash = item.staleness.expectedHash;
 
-        await prisma.$executeRaw`
-          UPDATE "paper_chunks"
-          SET 
-            "embedding" = ${vectorString}::vector,
-            "embeddingModel" = ${AI_CONFIG.embeddingModel},
-            "embeddingDimensions" = ${AI_CONFIG.embeddingDimensions},
-            "embeddingInputHash" = ${expectedHash},
-            "embeddedAt" = NOW()
-          WHERE "id" = ${item.chunk.id};
-        `;
+        if (isProductionWithoutReal) {
+          // Strict production safeguard: NEVER write mock vectors into real pgvector indices
+          await prisma.$executeRaw`
+            UPDATE "paper_chunks"
+            SET 
+              "embedding" = NULL,
+              "embeddingModel" = ${recordedModel},
+              "embeddingDimensions" = ${AI_CONFIG.embeddingDimensions},
+              "embeddingInputHash" = ${expectedHash},
+              "embeddedAt" = NOW()
+            WHERE "id" = ${item.chunk.id};
+          `;
+        } else {
+          const vectorString = `[${vector.join(",")}]`;
+          await prisma.$executeRaw`
+            UPDATE "paper_chunks"
+            SET 
+              "embedding" = ${vectorString}::vector,
+              "embeddingModel" = ${recordedModel},
+              "embeddingDimensions" = ${AI_CONFIG.embeddingDimensions},
+              "embeddingInputHash" = ${expectedHash},
+              "embeddedAt" = NOW()
+            WHERE "id" = ${item.chunk.id};
+          `;
+        }
         embeddedCount++;
       }
     }
@@ -322,6 +342,7 @@ export async function embedPaperChunks(
 
     return {
       success: true,
+      isMock: isMockEmbeddingMode(),
       totalChunks: paper.chunks.length,
       embeddedCount,
       skippedCount,

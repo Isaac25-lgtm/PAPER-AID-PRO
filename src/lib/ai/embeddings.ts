@@ -47,7 +47,42 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 /**
+ * Generates a deterministic pseudo-embedding vector from text.
+ * Used for isolated testing and local environments to guarantee zero paid AI calls.
+ */
+export function generateDeterministicMockEmbedding(
+  text: string,
+  dimensions: number = AI_CONFIG.embeddingDimensions
+): number[] {
+  const hash = createHash("sha256").update(text, "utf8").digest();
+  const vector: number[] = new Array(dimensions);
+  let norm = 0;
+  for (let i = 0; i < dimensions; i++) {
+    const byte = hash[i % hash.length];
+    const val = ((byte + (i % 31)) / 143.0) - 1.0;
+    vector[i] = val;
+    norm += val * val;
+  }
+  const sqrtNorm = Math.sqrt(norm) || 1;
+  return vector.map((v) => Number((v / sqrtNorm).toFixed(6)));
+}
+
+/**
+ * Determines whether the system is in mock embedding mode.
+ * Real embeddings require explicit server configuration: ENABLE_REAL_EMBEDDINGS === "true"
+ * and not being in test or isolated mock storage mode.
+ */
+export function isMockEmbeddingMode(): boolean {
+  return (
+    process.env.USE_MOCK_STORAGE === "true" ||
+    process.env.NODE_ENV === "test" ||
+    process.env.ENABLE_REAL_EMBEDDINGS !== "true"
+  );
+}
+
+/**
  * Generates embeddings for a batch of strings using OpenAI's embeddings API.
+ * In test, local, or unapproved environments, uses deterministic mock embeddings.
  * Validates returned vector count and dimensions.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
@@ -55,8 +90,17 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
     return [];
   }
 
-  const client = getOpenAIClient();
   const normalizedTexts = texts.map((t) => t.replace(/\r\n/g, "\n").trim());
+
+  // Execution boundary: In isolated tests or when real embeddings are not explicitly enabled,
+  // use deterministic mock vectors to guarantee zero paid API calls.
+  if (isMockEmbeddingMode()) {
+    return normalizedTexts.map((text) =>
+      generateDeterministicMockEmbedding(text, AI_CONFIG.embeddingDimensions)
+    );
+  }
+
+  const client = getOpenAIClient();
 
   try {
     const response = await client.embeddings.create({

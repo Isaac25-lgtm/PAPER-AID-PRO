@@ -21,11 +21,11 @@ export function getPaperStatusLabel(status: PaperProcessingStatus | string | nul
     case "PROCESSING":
       return "Processing paper";
     case "TEXT_EXTRACTED":
-      return "Preparing paper";
+      return "Full text extracted";
     case "EMBEDDING":
       return "Preparing AI search";
     case "COMPLETED":
-      return "Ready";
+      return "Ready for AI";
     case "FAILED":
       return "Processing failed";
     default:
@@ -61,10 +61,10 @@ export function getPaperStatusBadge(status: PaperProcessingStatus | string | nul
       };
     case "TEXT_EXTRACTED":
       return {
-        label: "Preparing paper",
-        variant: "secondary",
+        label: "Full text extracted",
+        variant: "academic",
         className: "bg-indigo-50 text-indigo-700 border-indigo-200",
-        description: "Text extracted; organizing evidence structure.",
+        description: "Full manuscript extracted and structured. Semantic AI indexing pending authorization.",
       };
     case "EMBEDDING":
       return {
@@ -75,10 +75,10 @@ export function getPaperStatusBadge(status: PaperProcessingStatus | string | nul
       };
     case "COMPLETED":
       return {
-        label: "Ready",
+        label: "Ready for AI",
         variant: "success",
         className: "bg-emerald-50 text-emerald-800 border-emerald-200",
-        description: "Full manuscript indexed and ready for grounded research and AI inquiry.",
+        description: "Full manuscript semantically indexed and ready for grounded research and AI inquiry.",
       };
     case "FAILED":
       return {

@@ -33,6 +33,7 @@ import { PaperQA } from "@/components/papers/paper-qa";
 import { getPaperStatusBadge } from "@/lib/ui/status-mapper";
 import { authorizePaperAccess } from "@/lib/auth/paper-authorization";
 import { OpenAccessDiscoveryButton } from "@/components/papers/open-access-discovery-button";
+import { isLocalPdfAvailable } from "@/lib/storage";
 
 export async function generateMetadata({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -128,6 +129,24 @@ export default async function PaperDetailPage({
   const docType = prov?.documentType;
   const institution = prov?.institution;
   const isPreprint = prov?.version === "submittedVersion" || prov?.isPreprint === true;
+
+  const localPdfAvailable = isLocalPdfAvailable(paper.storagePath);
+  const externalPdfUrl =
+    (prov?.openAccessPdfUrl && typeof prov.openAccessPdfUrl === "string" && prov.openAccessPdfUrl.startsWith("http")
+      ? prov.openAccessPdfUrl
+      : null) ||
+    (prov?.originalPdfUrl && typeof prov.originalPdfUrl === "string" && prov.originalPdfUrl.startsWith("http")
+      ? prov.originalPdfUrl
+      : null) ||
+    (paper.pdfUrl && typeof paper.pdfUrl === "string" && paper.pdfUrl.startsWith("http") && !paper.pdfUrl.includes("/api/papers/")
+      ? paper.pdfUrl
+      : null) ||
+    (prov?.externalLandingPageUrl && typeof prov.externalLandingPageUrl === "string" && prov.externalLandingPageUrl.startsWith("http")
+      ? prov.externalLandingPageUrl
+      : null) ||
+    (prov?.externalUrl && typeof prov.externalUrl === "string" && prov.externalUrl.startsWith("http")
+      ? prov.externalUrl
+      : null);
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-10 space-y-8">
@@ -264,13 +283,25 @@ export default async function PaperDetailPage({
         {/* Action Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100">
           <div className="flex flex-wrap items-center gap-2">
-            {(paper.storagePath || paper.pdfUrl) && canDownloadPdf ? (
+            {localPdfAvailable && canDownloadPdf ? (
               <a href={`/api/papers/${paper.id}/pdf`} target="_blank" rel="noopener noreferrer">
                 <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 gap-1.5 shadow-xs text-xs font-semibold">
                   <FileText className="h-3.5 w-3.5" />
                   View Original PDF
                 </Button>
               </a>
+            ) : externalPdfUrl && canDownloadPdf ? (
+              <a href={externalPdfUrl} target="_blank" rel="noopener noreferrer">
+                <Button size="sm" variant="outline" className="text-indigo-700 border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100 gap-1.5 shadow-xs text-xs font-semibold">
+                  <ExternalLink className="h-3.5 w-3.5 text-indigo-600" />
+                  External Full Text
+                </Button>
+              </a>
+            ) : !isMetadataOnly && canDownloadPdf ? (
+              <Button size="sm" variant="outline" disabled className="gap-1.5 text-xs text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed">
+                <FileText className="h-3.5 w-3.5 text-slate-400" />
+                PDF Unavailable
+              </Button>
             ) : null}
             <SavePaperButton paperId={paper.id} initialSaved={isBookmarked} />
             <Link href="/tools/citation-generator">

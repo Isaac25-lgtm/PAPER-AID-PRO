@@ -613,22 +613,39 @@ export function LibraryView({
 
     try {
       const res = await discoverPaperOpenAccessAction(paperId);
-      if (res.success && res.hasFullText) {
+      if (res.logicalState === "TEXT_EXTRACTED") {
         setOaActionFeedback({
           paperId,
           type: "success",
           message:
             res.message ||
-            "Eligible open-access PDF acquired, license-verified, and indexed for AI analysis!",
+            "Full text acquired and extracted! Structured evidence and citations are ready (semantic indexing pending).",
         });
         router.refresh();
-      } else if (res.status === "OPEN_ACCESS_EXTERNAL_LINK_ONLY") {
+      } else if (res.success && res.hasFullText) {
+        setOaActionFeedback({
+          paperId,
+          type: "success",
+          message:
+            res.message ||
+            "Ready for AI! Full-text acquired, verified, and semantically indexed.",
+        });
+        router.refresh();
+      } else if (res.logicalState === "RESTRICTED" || res.status === "OPEN_ACCESS_EXTERNAL_LINK_ONLY") {
         setOaActionFeedback({
           paperId,
           type: "info",
           message:
             res.message ||
-            "Auto-import is restricted by publisher license terms. External full-text link provided. You can attach a personal copy using 'Upload My PDF'.",
+            "Full Text Restricted: Automatic acquisition is restricted by publisher license terms. External reading link provided. You can attach a personal copy using 'Upload My PDF'.",
+        });
+        router.refresh();
+      } else if (res.error?.includes("OCR") || res.message?.includes("OCR")) {
+        setOaActionFeedback({
+          paperId,
+          type: "warning",
+          message:
+            "OCR Required: Manuscript appears to be a scanned image without extractable text. Upload a digital text PDF.",
         });
         router.refresh();
       } else {
@@ -1330,16 +1347,20 @@ export function LibraryView({
                     {discoveringOaId === item.id ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200 animate-pulse">
                         <RefreshCw className="h-3 w-3 animate-spin text-indigo-600" />
-                        <span>Searching for Open Access</span>
+                        <span>Preparing &amp; Analyzing Document...</span>
                       </span>
                     ) : item.status === "COMPLETED" && item.chunkCount > 0 ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                         <CheckCircle2 className="h-3 w-3 text-emerald-600" />
                         <span>Ready for AI Analysis</span>
                       </span>
+                    ) : item.status === "TEXT_EXTRACTED" && item.chunkCount > 0 ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                        <CheckCircle2 className="h-3 w-3 text-indigo-600" />
+                        <span>Full Text Extracted</span>
+                      </span>
                     ) : item.status === "PROCESSING" ||
-                      item.status === "EMBEDDING" ||
-                      item.status === "TEXT_EXTRACTED" ? (
+                      item.status === "EMBEDDING" ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 animate-pulse">
                         <RefreshCw className="h-3 w-3 animate-spin text-blue-600" />
                         <span>Processing Full Text</span>
@@ -1511,21 +1532,21 @@ export function LibraryView({
                       </Button>
                     ) : item.status === "METADATA_ONLY" ? (
                       <>
-                        {/* Primary: Find & Attach Full Text */}
+                        {/* Primary: Analyze Paper */}
                         <Button
                           size="sm"
                           type="button"
                           onClick={() => handleDiscoverOpenAccess(item.id)}
                           disabled={discoveringOaId === item.id}
                           className="h-7 px-2.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold gap-1 shadow-2xs"
-                          title="Invoke authorized, license-checked acquisition workflow to find and attach eligible full text"
+                          title="Invoke authorized, license-checked acquisition workflow to find, process, and index full text"
                         >
                           {discoveringOaId === item.id ? (
                             <RefreshCw className="h-3 w-3 animate-spin text-white" />
                           ) : (
                             <Sparkles className="h-3 w-3 text-white" />
                           )}
-                          <span>{discoveringOaId === item.id ? "Finding..." : "Find & Attach Full Text"}</span>
+                          <span>{discoveringOaId === item.id ? "Analyzing..." : "Analyze Paper"}</span>
                         </Button>
 
                         {/* Secondary: Upload My PDF */}
@@ -1570,33 +1591,65 @@ export function LibraryView({
                       </>
                     ) : null}
 
-                    {item.hasPdf && (
-                      <>
-                        <a
-                          href={`/api/papers/${item.id}/pdf`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-md border border-slate-200 transition-colors"
-                          title="View Manuscript PDF"
-                        >
-                          <FileText className="h-3 w-3" />
-                          <span>PDF</span>
-                        </a>
+                    {item.hasLocalPdf ? (
+                      <a
+                        href={`/api/papers/${item.id}/pdf`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-md border border-slate-200 transition-colors font-medium"
+                        title="View Stored Manuscript PDF"
+                      >
+                        <FileText className="h-3 w-3" />
+                        <span>PDF</span>
+                      </a>
+                    ) : item.externalPdfUrl ? (
+                      <a
+                        href={item.externalPdfUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 h-7 px-2 text-xs text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 hover:text-indigo-800 rounded-md border border-indigo-200 transition-colors font-medium"
+                        title="Locally stored PDF is unavailable. Open verified external publisher full-text."
+                      >
+                        <ExternalLink className="h-3 w-3 text-indigo-600" />
+                        <span>External Full Text</span>
+                      </a>
+                    ) : (item.status === "COMPLETED" || item.status === "TEXT_EXTRACTED") ? (
+                      <span
+                        className="inline-flex items-center gap-1 h-7 px-2 text-xs text-slate-400 bg-slate-50 rounded-md border border-slate-200 cursor-not-allowed font-medium"
+                        title="Full-text chunks are indexed for grounded AI chat, but the original PDF manuscript is not in local storage."
+                      >
+                        <FileText className="h-3 w-3 text-slate-400" />
+                        <span>PDF Unavailable</span>
+                      </span>
+                    ) : null}
 
-                        {/* Cite Paper (Full Text) */}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          type="button"
-                          onClick={() => setCitingItem(item)}
-                          className="h-7 px-2 text-xs text-slate-500 hover:text-indigo-600 hover:bg-slate-100 gap-1 font-medium"
-                          title="Cite this reference"
-                        >
-                          <Quote className="h-3 w-3" />
-                          <span>Cite</span>
-                        </Button>
-                      </>
+                    {/* Secondary Attach PDF option when local PDF is missing */}
+                    {!item.hasLocalPdf && (item.status === "COMPLETED" || item.status === "TEXT_EXTRACTED") && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        type="button"
+                        onClick={() => openDirectAttachModal(item)}
+                        className="h-7 px-2 text-xs text-slate-500 hover:text-indigo-600 hover:bg-slate-100 gap-1 font-medium"
+                        title="Attach an authorized local PDF copy of this paper"
+                      >
+                        <FileUp className="h-3 w-3 text-slate-400" />
+                        <span>Attach PDF</span>
+                      </Button>
                     )}
+
+                    {/* Cite Paper */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      type="button"
+                      onClick={() => setCitingItem(item)}
+                      className="h-7 px-2 text-xs text-slate-500 hover:text-indigo-600 hover:bg-slate-100 gap-1 font-medium"
+                      title="Cite this reference"
+                    >
+                      <Quote className="h-3 w-3" />
+                      <span>Cite</span>
+                    </Button>
 
                     {/* Quick Select for Multi-Paper Chat */}
                     <Button

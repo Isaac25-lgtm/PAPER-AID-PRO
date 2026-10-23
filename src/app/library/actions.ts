@@ -33,6 +33,13 @@ import {
   ImportPreviewSummary,
   ReferencePreviewItem,
 } from "@/lib/library/citation-import-service";
+import {
+  requestOnDemandPaperAnalysis,
+  getPaperProcessingStatus,
+  OnDemandAnalysisResult,
+  PaperProcessingStatusInfo,
+  OnDemandLogicalState,
+} from "@/lib/pdf/on-demand-processor";
 import { revalidatePath } from "next/cache";
 
 export interface LibraryActionResponse {
@@ -433,33 +440,116 @@ export async function importPaperByIdentifierAction(
 export async function discoverPaperOpenAccessAction(paperId: string): Promise<{
   success: boolean;
   status: string;
+  logicalState?: OnDemandLogicalState;
   message: string;
   hasFullText: boolean;
   error?: string;
+  chunkCount?: number;
 }> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return {
       success: false,
       status: "NO_OPEN_ACCESS_LOCATED",
-      message: "Authentication required to discover open-access full text.",
+      logicalState: "RESTRICTED",
+      message: "Authentication required to analyze paper full text.",
       hasFullText: false,
       error: "Authentication required.",
     };
   }
 
   try {
-    const result = await discoverAndProcessPaperOpenAccess(paperId, session.user.id);
-    return result;
+    const result = await requestOnDemandPaperAnalysis({
+      paperId,
+      userId: session.user.id,
+    });
+    revalidatePath("/library");
+    revalidatePath("/saved");
+    revalidatePath(`/papers/${paperId}`);
+
+    return {
+      success: result.success,
+      status: result.state,
+      logicalState: result.state,
+      message: result.message,
+      hasFullText: result.state === "READY",
+      error: result.error,
+      chunkCount: result.chunkCount,
+    };
   } catch (err: any) {
     console.error("[discoverPaperOpenAccessAction] Error:", err);
     return {
       success: false,
-      status: "IMPORT_FAILED",
-      message: err?.message || "Open-access discovery failed.",
+      status: "FAILED",
+      message: err?.message || "Paper analysis failed.",
       hasFullText: false,
       error: err?.message,
     };
+  }
+}
+
+/**
+ * Server Action: Explicitly request on-demand full-text analysis for an authorized paper.
+ * Implements Phase 9C on-demand ingestion with concurrency leases and durable recovery.
+ */
+export async function requestOnDemandAnalysisAction(
+  paperId: string,
+  forceReprocess: boolean = false
+): Promise<OnDemandAnalysisResult> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return {
+      success: false,
+      paperId,
+      state: "FAILED",
+      status: "FAILED",
+      message: "Authentication required to analyze research papers.",
+      errorCode: "UNAUTHORIZED",
+    };
+  }
+
+  try {
+    const result = await requestOnDemandPaperAnalysis({
+      paperId,
+      userId: session.user.id,
+      forceReprocess,
+    });
+    revalidatePath("/library");
+    revalidatePath("/saved");
+    revalidatePath(`/papers/${paperId}`);
+    return result;
+  } catch (err: any) {
+    console.error("[requestOnDemandAnalysisAction] Error:", err);
+    return {
+      success: false,
+      paperId,
+      state: "FAILED",
+      status: "FAILED",
+      message: err?.message || "Internal server error during on-demand analysis.",
+      errorCode: "INTERNAL_ERROR",
+    };
+  }
+}
+
+/**
+ * Server Action: Get real-time status and telemetry for an on-demand paper processing job.
+ */
+export async function getPaperProcessingStatusAction(
+  paperId: string
+): Promise<PaperProcessingStatusInfo | null> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return null;
+  }
+
+  try {
+    return await getPaperProcessingStatus({
+      paperId,
+      userId: session.user.id,
+    });
+  } catch (err: any) {
+    console.error("[getPaperProcessingStatusAction] Error:", err);
+    return null;
   }
 }
 

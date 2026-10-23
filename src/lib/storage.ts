@@ -235,6 +235,103 @@ export function normalizeStorageRelativePath(path: string): string {
   return path;
 }
 
+/**
+ * Lightweight, synchronous check to determine whether a stored manuscript PDF
+ * exists in local/mock storage (in-memory cache or local disk).
+ *
+ * IMPORTANT: In production Supabase Storage mode, this returns true if storagePath
+ * is present, avoiding expensive synchronous network round-trips for library card lists.
+ * For true asynchronous existence verification in Supabase Storage, use checkPaperPdfExists().
+ * It NEVER checks the local filesystem in production Supabase mode.
+ */
+export function isLocalPdfAvailable(storagePath: string | null | undefined): boolean {
+  if (!storagePath) return false;
+
+  const isMockMode =
+    process.env.USE_MOCK_STORAGE === "true" ||
+    process.env.NODE_ENV === "test" ||
+    (process.env.NODE_ENV !== "production" && !process.env.SUPABASE_SECRET_KEY);
+
+  if (isMockMode) {
+    const relativePath = normalizeStorageRelativePath(storagePath);
+    const cleanPath = relativePath.replace(/^[\\/]+/, "");
+
+    // 1. If storageClientOverride is present (e.g. test harness)
+    if (storageClientOverride?.storage?.from) {
+      try {
+        const bucketObj = storageClientOverride.storage.from(BUCKET_NAME);
+        if (typeof bucketObj?.has === "function") {
+          return bucketObj.has(cleanPath);
+        }
+        if (bucketObj?._bucket instanceof Map) {
+          return bucketObj._bucket.has(cleanPath) || bucketObj._bucket.has(relativePath);
+        }
+      } catch {}
+    }
+
+    // 2. Check in-memory mock map in storage.ts
+    const bucket = mockStorageBuckets.get(BUCKET_NAME);
+    if (bucket && (bucket.has(cleanPath) || bucket.has(relativePath))) return true;
+
+    // 3. Check local disk mock storage
+    try {
+      const diskPath = getSafeMockDiskPath(BUCKET_NAME, cleanPath);
+      return fs.existsSync(diskPath);
+    } catch {
+      return false;
+    }
+  }
+
+  // In production Supabase mode, local disk is NEVER checked to determine existence.
+  return Boolean(storagePath);
+}
+
+/**
+ * Asynchronously verifies whether a stored manuscript PDF exists in the active storage provider.
+ * - In local mock storage mode (USE_MOCK_STORAGE=true or development/test), checks in-memory cache and local disk.
+ * - In production Supabase Storage mode, directly queries Supabase Storage via bucket.list() to verify object existence.
+ *   NEVER checks only the local filesystem in production mode.
+ */
+export async function checkPaperPdfExists(storagePath: string): Promise<boolean> {
+  if (!storagePath) return false;
+
+  const isMockMode =
+    process.env.USE_MOCK_STORAGE === "true" ||
+    process.env.NODE_ENV === "test" ||
+    (process.env.NODE_ENV !== "production" && !process.env.SUPABASE_SECRET_KEY);
+
+  if (isMockMode) {
+    return isLocalPdfAvailable(storagePath);
+  }
+
+  // Production Supabase Storage check: Query Supabase bucket directly
+  try {
+    const relativePath = normalizeStorageRelativePath(storagePath);
+    const cleanPath = relativePath.replace(/^[\\/]+/, "");
+    const parts = cleanPath.split("/");
+    const filename = parts.pop();
+    const folder = parts.join("/");
+
+    if (!filename) return false;
+
+    const { data, error } = await supabaseStorage.storage
+      .from(BUCKET_NAME)
+      .list(folder, {
+        limit: 100,
+        search: filename,
+      });
+
+    if (error || !data) {
+      return false;
+    }
+
+    return data.some((item: { name: string }) => item.name === filename);
+  } catch (err: any) {
+    console.warn(`[storage] checkPaperPdfExists failed for ${storagePath}:`, err.message);
+    return false;
+  }
+}
+
 export interface UploadPaperOptions {
   userId?: string;
   customRelativePath?: string;
