@@ -51,6 +51,7 @@ import {
   ImportPreviewSummary,
   ReferencePreviewItem,
 } from "@/lib/library/citation-import-service";
+import { hasSubstantiveAbstract } from "@/lib/synthesis/types";
 import {
   uploadUserDocumentAction,
   deleteLibraryItemAction,
@@ -1371,10 +1372,23 @@ export function LibraryView({
                         <span>Import Failed</span>
                       </span>
                     ) : item.status === "METADATA_ONLY" ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                        <AlertCircle className="h-3 w-3 text-amber-600" />
-                        <span>Reference Saved — Full Text Needed</span>
-                      </span>
+                      hasSubstantiveAbstract(item.abstract) ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-800 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200"
+                          title="Published abstract available for AI research synthesis. Original PDF full-text has not been ingested."
+                        >
+                          <FileText className="h-3 w-3 text-sky-600" />
+                          <span>Abstract Saved — Full Text Needed</span>
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200"
+                          title="Bibliographic metadata and title only. No abstract or full-text manuscript available."
+                        >
+                          <AlertCircle className="h-3 w-3 text-amber-600" />
+                          <span>Metadata Only — Full Text Needed</span>
+                        </span>
+                      )
                     ) : (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
                         <Clock className="h-3 w-3 text-slate-500" />
@@ -1575,19 +1589,6 @@ export function LibraryView({
                             <span>External Link</span>
                           </a>
                         )}
-
-                        {/* Cite Paper (Metadata Only) */}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          type="button"
-                          onClick={() => setCitingItem(item)}
-                          className="h-7 px-2 text-xs text-slate-500 hover:text-indigo-600 hover:bg-slate-100 gap-1 font-medium"
-                          title="Cite this reference"
-                        >
-                          <Quote className="h-3 w-3" />
-                          <span>Cite</span>
-                        </Button>
                       </>
                     ) : null}
 

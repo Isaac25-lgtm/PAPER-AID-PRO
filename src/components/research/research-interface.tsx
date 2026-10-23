@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   Loader2,
   AlertTriangle,
+  FileUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -473,18 +474,78 @@ export function ResearchInterface({ initialThreadId, initialPaperIds }: Research
     "What limitations or constraints were reported by the authors?",
   ];
 
+  const fullTextCount = selectedPapers.filter(
+    (p) => !p.isMetadataOnly && p.chunkCount > 0
+  ).length;
+  const abstractOnlyCount = selectedPapers.filter(
+    (p) => (p.isMetadataOnly || p.chunkCount === 0) && p.hasAbstract
+  ).length;
+  const titleOnlyCount = selectedPapers.filter(
+    (p) => (p.isMetadataOnly || p.chunkCount === 0) && !p.hasAbstract
+  ).length;
+  const allTitleOnly =
+    selectedPapers.length > 0 && fullTextCount === 0 && abstractOnlyCount === 0;
+
   return (
     <div className="space-y-8">
-      {/* Top Banner: Library Scope Disclosure */}
-      <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 text-xs text-indigo-900 flex items-start gap-3 shadow-xs">
-        <Info className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <p className="font-semibold text-indigo-950">Library Scope Disclosure</p>
-          <p className="text-indigo-800 leading-relaxed">
-            This research synthesis is grounded strictly in peer-reviewed manuscripts currently ingested in your AI Research Hub library. Every empirical statement is traceable to cited manuscript chunks.
-          </p>
+      {/* Top Banner: Truthful Evidence & Scope Disclosure */}
+      {selectedPapers.length === 0 ? (
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 text-xs text-indigo-900 flex items-start gap-3 shadow-xs">
+          <Info className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-indigo-950">Library Scope Disclosure</p>
+            <p className="text-indigo-800 leading-relaxed">
+              Synthesizing across your entire library. Empirical statements will be anchored in available full-text manuscripts and published abstracts in your research context.
+            </p>
+          </div>
         </div>
-      </div>
+      ) : allTitleOnly ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-950 flex items-start gap-3 shadow-xs">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-amber-950">Selected Context: Bibliographic Metadata Only</p>
+            <p className="text-amber-900 leading-relaxed">
+              The {titleOnlyCount} selected {titleOnlyCount === 1 ? "reference contains" : "references contain"} titles and bibliographic metadata only. Full-text manuscripts and published abstracts have not been ingested. While references can be cited and formatted in bibliographies, empirical research synthesis requires extractable text.
+            </p>
+          </div>
+        </div>
+      ) : fullTextCount === 0 && abstractOnlyCount > 0 ? (
+        <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-4 text-xs text-sky-950 flex items-start gap-3 shadow-xs">
+          <FileText className="h-5 w-5 text-sky-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-sky-950">
+              Selected Context: Abstract-Level Evidence ({abstractOnlyCount} {abstractOnlyCount === 1 ? "Paper" : "Papers"}{titleOnlyCount > 0 ? `, ${titleOnlyCount} Metadata-Only` : ""})
+            </p>
+            <p className="text-sky-900 leading-relaxed">
+              Research synthesis will be grounded in peer-reviewed abstracts. Full-text manuscripts have not been ingested for these sources; empirical statements reflect published abstract text with zero synthetic page numbers.
+            </p>
+          </div>
+        </div>
+      ) : fullTextCount > 0 && (abstractOnlyCount > 0 || titleOnlyCount > 0) ? (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-4 text-xs text-indigo-950 flex items-start gap-3 shadow-xs">
+          <Layers className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-indigo-950">
+              Selected Context: Mixed Evidence Sources ({fullTextCount} full-text, {abstractOnlyCount} abstract{titleOnlyCount > 0 ? `, ${titleOnlyCount} metadata-only` : ""})
+            </p>
+            <p className="text-indigo-900 leading-relaxed">
+              Synthesis prioritizes extracted full-text manuscript passages ({fullTextCount}) and supplements with published abstracts ({abstractOnlyCount}). Empirical claims are traceable to specific cited evidence passages.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 text-xs text-emerald-950 flex items-start gap-3 shadow-xs">
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-emerald-950">
+              Selected Context: Ingested Manuscript Evidence ({fullTextCount} {fullTextCount === 1 ? "Paper" : "Papers"})
+            </p>
+            <p className="text-emerald-900 leading-relaxed">
+              This research synthesis is grounded strictly in peer-reviewed manuscripts currently ingested in your AI Research Hub library. Every empirical statement is traceable to cited manuscript chunks.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         {/* Main Research Workspace (3 cols) */}
@@ -566,13 +627,29 @@ export function ResearchInterface({ initialThreadId, initialPaperIds }: Research
                     </div>
 
                     <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-[10px]">
-                      {paper.isMetadataOnly ? (
-                        <span className="inline-flex items-center gap-1 font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                          Metadata Only
+                      {paper.chunkCount > 0 && !paper.isMetadataOnly ? (
+                        <span
+                          className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200"
+                          title="Full manuscript text extracted and chunked for grounded research"
+                        >
+                          <CheckCircle2 className="h-2.5 w-2.5 text-emerald-600" />
+                          <span>Full Text ({paper.chunkCount} chunks)</span>
+                        </span>
+                      ) : paper.hasAbstract ? (
+                        <span
+                          className="inline-flex items-center gap-1 font-semibold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200"
+                          title="Peer-reviewed abstract available for grounded synthesis. Full manuscript has not been ingested."
+                        >
+                          <FileText className="h-2.5 w-2.5 text-sky-600" />
+                          <span>Abstract Available</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                          Full Text ({paper.chunkCount} chunks)
+                        <span
+                          className="inline-flex items-center gap-1 font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200"
+                          title="Bibliographic metadata and title only. No abstract or full-text manuscript available."
+                        >
+                          <AlertCircle className="h-2.5 w-2.5 text-amber-600" />
+                          <span>Metadata / Title Only</span>
                         </span>
                       )}
                       <Link
@@ -585,6 +662,64 @@ export function ResearchInterface({ initialThreadId, initialPaperIds }: Research
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Task 2: Context-Level Research Guidance when all selected papers lack substantive evidence */}
+            {allTitleOnly && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                      No Accessible Evidence in Selected Context
+                    </h4>
+                    <p className="text-xs text-amber-900 leading-relaxed">
+                      All {selectedPapers.length} selected references currently provide titles and bibliographic metadata only. AI Research Hub cannot extract empirical claims or passage citations from title-only entries.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 border-t border-amber-200/60 text-xs">
+                  <Link
+                    href="/library"
+                    className="p-3 rounded-xl bg-white border border-amber-200 hover:border-indigo-300 text-slate-800 hover:text-indigo-700 hover:bg-indigo-50/30 transition-all flex flex-col justify-between space-y-1 shadow-2xs group"
+                  >
+                    <div className="font-semibold flex items-center gap-1.5 text-slate-900 group-hover:text-indigo-700">
+                      <FileUp className="h-3.5 w-3.5 text-indigo-600" />
+                      <span>1. Upload My PDF</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-normal">
+                      Attach an authorized local PDF in My Library to ingest and chunk the manuscript.
+                    </p>
+                  </Link>
+
+                  <Link
+                    href="/library"
+                    className="p-3 rounded-xl bg-white border border-amber-200 hover:border-indigo-300 text-slate-800 hover:text-indigo-700 hover:bg-indigo-50/30 transition-all flex flex-col justify-between space-y-1 shadow-2xs group"
+                  >
+                    <div className="font-semibold flex items-center gap-1.5 text-slate-900 group-hover:text-indigo-700">
+                      <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+                      <span>2. Analyze Paper</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-normal">
+                      Run automated open-access discovery in My Library for eligible saved papers.
+                    </p>
+                  </Link>
+
+                  <Link
+                    href="/papers"
+                    className="p-3 rounded-xl bg-white border border-amber-200 hover:border-indigo-300 text-slate-800 hover:text-indigo-700 hover:bg-indigo-50/30 transition-all flex flex-col justify-between space-y-1 shadow-2xs group"
+                  >
+                    <div className="font-semibold flex items-center gap-1.5 text-slate-900 group-hover:text-indigo-700">
+                      <Search className="h-3.5 w-3.5 text-indigo-600" />
+                      <span>3. Find Available Sources</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-normal">
+                      Explore Scholarly Discovery for papers with available abstracts or open-access full text.
+                    </p>
+                  </Link>
+                </div>
               </div>
             )}
 
@@ -1237,13 +1372,17 @@ export function ResearchInterface({ initialThreadId, initialPaperIds }: Research
                           </p>
                           <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
                             <span>{p.authors.slice(0, 2).join(", ")}</span>
-                            {p.isMetadataOnly ? (
-                              <span className="font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
-                                Metadata Only
+                            {p.chunkCount > 0 && !p.isMetadataOnly ? (
+                              <span className="font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                Full Text ({p.chunkCount} chunks)
+                              </span>
+                            ) : p.hasAbstract ? (
+                              <span className="font-semibold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200">
+                                Abstract Available
                               </span>
                             ) : (
-                              <span className="font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                                Full Text ({p.chunkCount} chunks)
+                              <span className="font-semibold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                Metadata / Title Only
                               </span>
                             )}
                           </div>

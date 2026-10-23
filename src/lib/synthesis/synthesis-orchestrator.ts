@@ -12,7 +12,15 @@ import {
   LIBRARY_SCOPE_DISCLOSURE,
 } from "./prompts";
 import { MultiPaperSynthesisSchema, MultiPaperSynthesisOutput } from "./schemas";
-import { ResearchSynthesisRequest, MultiPaperSynthesisResult, DiscoveredPaper, PaperEvidenceSet } from "./types";
+import {
+  ResearchSynthesisRequest,
+  MultiPaperSynthesisResult,
+  DiscoveredPaper,
+  PaperEvidenceSet,
+  EvidenceAvailability,
+  hasSubstantiveAbstract,
+  getPaperEvidenceAvailability,
+} from "./types";
 import { zodTextFormat } from "openai/helpers/zod";
 import { AIMessageRole } from "@prisma/client";
 
@@ -267,6 +275,7 @@ export async function synthesizeResearchQuestion(
     const combinedEvidenceSets: PaperEvidenceSet[] = [...fullTextResult.evidenceSets];
 
     for (const mp of metadataOnlyPapers) {
+      const hasValidAbstract = hasSubstantiveAbstract(mp.abstract);
       const metaEvidenceSet: PaperEvidenceSet = {
         paperId: mp.id,
         paperTitle: mp.title,
@@ -275,9 +284,11 @@ export async function synthesizeResearchQuestion(
         publicationDate: mp.publicationDate ? mp.publicationDate.toISOString() : null,
         journal: mp.journal,
         citationCount: mp.citationCount,
-        abstract: mp.abstract || "No abstract available.",
+        abstract: hasValidAbstract ? mp.abstract!.trim() : "No substantive abstract available in scholarly record.",
         isMetadataOnly: true,
-        chunks: mp.abstract
+        hasAbstract: hasValidAbstract,
+        evidenceAvailability: hasValidAbstract ? "ABSTRACT_ONLY" : "METADATA_ONLY",
+        chunks: hasValidAbstract
           ? [
               {
                 id: `meta-abstract-${mp.id}`,
@@ -285,7 +296,7 @@ export async function synthesizeResearchQuestion(
                 chunkIndex: 0,
                 section: "Abstract (Metadata Only)",
                 pageNumber: null,
-                text: mp.abstract,
+                text: mp.abstract!.trim(),
                 similarity: 0.8,
               },
             ]
@@ -352,33 +363,44 @@ export async function synthesizeResearchQuestion(
     });
   }
 
-  if (
-    evidenceResult.totalChunks === 0 &&
-    !evidenceResult.evidenceSets.some((e) => e.isMetadataOnly && Boolean(e.abstract))
-  ) {
+  const hasAnyAccessibleChunks = evidenceResult.evidenceSets.some((e) => e.chunks.length > 0);
+  if (!hasAnyAccessibleChunks) {
+    const isExplicitSelection = Boolean(params.selectedPaperIds && params.selectedPaperIds.length > 0);
+    const contentMessage = isExplicitSelection
+      ? "The selected papers do not contain accessible empirical evidence to answer this research question. The selected references provide bibliographic metadata and titles only, without published abstracts or ingested full-text manuscripts. To synthesize empirical findings, please upload an authorized PDF in My Library, analyze an eligible open-access paper, or select references with available abstracts."
+      : MULTI_PAPER_INSUFFICIENT_EVIDENCE_FALLBACK;
+
+    const fallbackScopeNote = isExplicitSelection
+      ? "Selected context contains bibliographic metadata only without published abstracts or ingested full-text manuscripts."
+      : LIBRARY_SCOPE_DISCLOSURE;
+
+    const emptySelectedMeta = evidenceResult.evidenceSets.map((s) => ({
+      paperId: s.paperId,
+      paperTitle: s.paperTitle,
+      authors: s.authors,
+      doi: s.doi,
+      publicationDate: s.publicationDate,
+      journal: s.journal,
+      chunksContributed: 0,
+      isMetadataOnly: Boolean(s.isMetadataOnly),
+      hasAbstract: Boolean(s.hasAbstract),
+      evidenceAvailability: s.evidenceAvailability || (s.isMetadataOnly ? (s.hasAbstract ? "ABSTRACT_ONLY" : "METADATA_ONLY") : "FULL_TEXT"),
+      isSupporting: false,
+    }));
+
     const assistantMessage = await prisma.aIMessage.create({
       data: {
         conversationId: conversation.id,
         role: AIMessageRole.ASSISTANT,
-        content: MULTI_PAPER_INSUFFICIENT_EVIDENCE_FALLBACK,
+        content: contentMessage,
         citations: {
           claims: [],
           disagreements: [],
           limitations: [],
-          selectedPapers: evidenceResult.evidenceSets.map((s) => ({
-            paperId: s.paperId,
-            paperTitle: s.paperTitle,
-            authors: s.authors,
-            doi: s.doi,
-            publicationDate: s.publicationDate,
-            journal: s.journal,
-            chunksContributed: 0,
-            isMetadataOnly: Boolean(s.isMetadataOnly),
-            isSupporting: false,
-          })),
+          selectedPapers: emptySelectedMeta,
           supportingPapers: [],
           candidatePapersCount: evidenceResult.evidenceSets.length,
-          libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
+          libraryScopeNote: fallbackScopeNote,
           insufficientEvidence: true,
         },
       },
@@ -393,22 +415,12 @@ export async function synthesizeResearchQuestion(
       claims: [],
       disagreements: [],
       limitations: [],
-      selectedPapers: evidenceResult.evidenceSets.map((s) => ({
-        paperId: s.paperId,
-        paperTitle: s.paperTitle,
-        authors: s.authors,
-        doi: s.doi,
-        publicationDate: s.publicationDate,
-        journal: s.journal,
-        chunksContributed: 0,
-        isMetadataOnly: Boolean(s.isMetadataOnly),
-        isSupporting: false,
-      })),
+      selectedPapers: emptySelectedMeta,
       supportingPapers: [],
       candidatePapersCount: evidenceResult.evidenceSets.length,
       totalEvidenceChunks: 0,
       insufficientEvidence: true,
-      libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
+      libraryScopeNote: fallbackScopeNote,
       rejectedCitationCount: 0,
       rejectedClaimsCount: 0,
     };
@@ -507,13 +519,33 @@ export async function synthesizeResearchQuestion(
     doi: s.doi,
     publicationDate: s.publicationDate,
     journal: s.journal,
-    chunksContributed: s.isMetadataOnly ? 0 : s.chunks.length,
+    chunksContributed: s.isMetadataOnly ? (s.hasAbstract ? 1 : 0) : s.chunks.length,
     isMetadataOnly: Boolean(s.isMetadataOnly),
+    hasAbstract: Boolean(s.hasAbstract),
+    evidenceAvailability: s.evidenceAvailability || (s.isMetadataOnly ? (s.hasAbstract ? "ABSTRACT_ONLY" : "METADATA_ONLY") : "FULL_TEXT"),
     isSupporting: citedSupportingPaperIds.has(s.paperId),
   }));
 
   const supportingPapersMeta = selectedPapersMeta.filter((p) => p.isSupporting);
   const isInsufficient = validation.insufficientEvidence || validation.claims.length === 0;
+
+  // Determine truthful library scope disclosure based on candidate context composition
+  const candidateFullText = evidenceResult.evidenceSets.filter((s) => !s.isMetadataOnly && s.chunks.length > 0).length;
+  const candidateAbstract = evidenceResult.evidenceSets.filter((s) => s.isMetadataOnly && s.hasAbstract).length;
+  const candidateTitleOnly = evidenceResult.evidenceSets.filter((s) => s.isMetadataOnly && !s.hasAbstract).length;
+
+  let computedScopeNote = LIBRARY_SCOPE_DISCLOSURE;
+  if (params.selectedPaperIds && params.selectedPaperIds.length > 0) {
+    if (candidateFullText > 0 && candidateAbstract === 0 && candidateTitleOnly === 0) {
+      computedScopeNote = "Selected context: Grounded strictly in peer-reviewed manuscripts currently ingested in your library.";
+    } else if (candidateFullText === 0 && candidateAbstract > 0 && candidateTitleOnly === 0) {
+      computedScopeNote = "Selected context: Grounded in peer-reviewed abstracts. Full-text manuscripts have not been ingested for these sources.";
+    } else if (candidateFullText === 0 && candidateAbstract === 0) {
+      computedScopeNote = "Selected context: Bibliographic metadata and titles only without published abstracts or full text.";
+    } else {
+      computedScopeNote = `Selected context: Mixed evidence sources (${candidateFullText} full-text, ${candidateAbstract} abstract, ${candidateTitleOnly} metadata-only).`;
+    }
+  }
 
   // Assemble human-readable content string for fallback/search display
   let contentText: string;
@@ -535,7 +567,7 @@ export async function synthesizeResearchQuestion(
     selectedPapers: selectedPapersMeta,
     supportingPapers: supportingPapersMeta,
     candidatePapersCount: evidenceResult.evidenceSets.length,
-    libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
+    libraryScopeNote: computedScopeNote,
     insufficientEvidence: isInsufficient,
     omittedSourcesNotice,
   };
@@ -569,7 +601,7 @@ export async function synthesizeResearchQuestion(
     candidatePapersCount: evidenceResult.evidenceSets.length,
     totalEvidenceChunks: evidenceResult.totalChunks,
     insufficientEvidence: isInsufficient,
-    libraryScopeNote: LIBRARY_SCOPE_DISCLOSURE,
+    libraryScopeNote: computedScopeNote,
     rejectedCitationCount: validation.rejectedCitationCount,
     rejectedClaimsCount: validation.rejectedClaimsCount,
     omittedSourcesNotice,

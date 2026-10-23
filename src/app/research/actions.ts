@@ -4,7 +4,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { synthesizeResearchQuestion } from "@/lib/synthesis/synthesis-orchestrator";
-import { MultiPaperSynthesisResult } from "@/lib/synthesis/types";
+import {
+  MultiPaperSynthesisResult,
+  EvidenceAvailability,
+  hasSubstantiveAbstract,
+  getPaperEvidenceAvailability,
+} from "@/lib/synthesis/types";
 
 import { authorizePaperAccess } from "@/lib/auth/paper-authorization";
 import { getUserLibraryItems } from "@/lib/library/user-library-service";
@@ -22,8 +27,10 @@ export interface SelectedPaperSummary {
   doi?: string | null;
   status: string;
   isMetadataOnly: boolean;
+  hasAbstract: boolean;
   chunkCount: number;
   hasPdf: boolean;
+  evidenceAvailability: EvidenceAvailability;
 }
 
 export async function synthesizeResearchAction(params: {
@@ -98,6 +105,7 @@ export async function getSelectedPapersDetailsAction(
       arxivId: true,
       pmid: true,
       pmcid: true,
+      abstract: true,
       semanticScholarId: true,
       storagePath: true,
       sourceProvenance: true,
@@ -116,15 +124,25 @@ export async function getSelectedPapersDetailsAction(
   for (const c of candidates) {
     const auth = await authorizePaperAccess(c, userContext, "VIEW_METADATA");
     if (auth.allowed) {
+      const hasAbstract = hasSubstantiveAbstract(c.abstract);
+      const isFullText = c.status !== "METADATA_ONLY" && c._count.chunks > 0;
+      const evidenceAvailability: EvidenceAvailability = isFullText
+        ? "FULL_TEXT"
+        : hasAbstract
+        ? "ABSTRACT_ONLY"
+        : "METADATA_ONLY";
+
       papers.push({
         id: c.id,
         title: c.title,
         authors: c.authors.map((a) => a.author.name),
         doi: c.doi,
         status: c.status,
-        isMetadataOnly: c.status === "METADATA_ONLY" || c._count.chunks === 0,
+        isMetadataOnly: !isFullText,
+        hasAbstract,
         chunkCount: c._count.chunks,
         hasPdf: Boolean(c.storagePath),
+        evidenceAvailability,
       });
     }
   }
@@ -144,15 +162,26 @@ export async function getUserLibraryPaperSummariesAction(): Promise<{
 
   try {
     const items = await getUserLibraryItems(session.user.id);
-    const papers: SelectedPaperSummary[] = items.map((item) => ({
-      id: item.id,
-      title: item.title,
-      authors: item.authors,
-      status: item.status,
-      isMetadataOnly: item.status === "METADATA_ONLY" || item.chunkCount === 0,
-      chunkCount: item.chunkCount,
-      hasPdf: item.hasPdf,
-    }));
+    const papers: SelectedPaperSummary[] = items.map((item) => {
+      const hasAbstract = hasSubstantiveAbstract(item.abstract);
+      const isFullText = item.status !== "METADATA_ONLY" && item.chunkCount > 0;
+      const evidenceAvailability: EvidenceAvailability = isFullText
+        ? "FULL_TEXT"
+        : hasAbstract
+        ? "ABSTRACT_ONLY"
+        : "METADATA_ONLY";
+      return {
+        id: item.id,
+        title: item.title,
+        authors: item.authors,
+        status: item.status,
+        isMetadataOnly: !isFullText,
+        hasAbstract,
+        chunkCount: item.chunkCount,
+        hasPdf: item.hasPdf,
+        evidenceAvailability,
+      };
+    });
     return { success: true, papers };
   } catch (err: any) {
     return { success: false, papers: [], error: err?.message || "Failed to fetch library papers." };

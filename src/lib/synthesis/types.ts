@@ -17,6 +17,48 @@ export interface DiscoveredPaper {
   bestChunkSection?: string | null;
 }
 
+export type EvidenceAvailability = "FULL_TEXT" | "ABSTRACT_ONLY" | "METADATA_ONLY";
+
+/**
+ * Deterministically checks whether an abstract string contains genuine, substantive academic text
+ * rather than missing content or placeholder labels (e.g. "Abstract not provided in scholarly metadata.").
+ */
+export function hasSubstantiveAbstract(abstract: string | null | undefined): boolean {
+  if (!abstract) return false;
+  const clean = abstract.trim();
+  if (clean.length < 50) return false;
+  const lower = clean.toLowerCase();
+  if (
+    lower.startsWith("abstract not provided") ||
+    lower.startsWith("no abstract available") ||
+    lower.startsWith("abstract unavailable") ||
+    lower.startsWith("abstract not available")
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Computes the evidence availability category for a paper:
+ * - FULL_TEXT: Ingested manuscript with chunkCount > 0 and not METADATA_ONLY
+ * - ABSTRACT_ONLY: Has substantive published abstract without ingested full text
+ * - METADATA_ONLY: Bibliographic metadata/title only without abstract or full text
+ */
+export function getPaperEvidenceAvailability(paper: {
+  status: string;
+  chunkCount: number;
+  abstract?: string | null;
+}): EvidenceAvailability {
+  if (paper.chunkCount > 0 && paper.status !== "METADATA_ONLY") {
+    return "FULL_TEXT";
+  }
+  if (hasSubstantiveAbstract(paper.abstract)) {
+    return "ABSTRACT_ONLY";
+  }
+  return "METADATA_ONLY";
+}
+
 export interface PaperEvidenceSet {
   paperId: string;
   paperTitle: string;
@@ -28,6 +70,8 @@ export interface PaperEvidenceSet {
   chunks: RetrievedEvidenceChunk[];
   abstract?: string;
   isMetadataOnly?: boolean;
+  hasAbstract?: boolean;
+  evidenceAvailability?: EvidenceAvailability;
 }
 
 export interface HydratedMultiPaperAnchor extends GroundedCitationAnchor {
@@ -76,6 +120,8 @@ export interface MultiPaperSynthesisResult {
     journal: string | null;
     chunksContributed: number;
     isMetadataOnly?: boolean;
+    hasAbstract?: boolean;
+    evidenceAvailability?: EvidenceAvailability;
     isSupporting?: boolean;
   }>;
   supportingPapers?: Array<{
@@ -87,6 +133,8 @@ export interface MultiPaperSynthesisResult {
     journal: string | null;
     chunksContributed: number;
     isMetadataOnly?: boolean;
+    hasAbstract?: boolean;
+    evidenceAvailability?: EvidenceAvailability;
   }>;
   candidatePapersCount?: number;
   totalEvidenceChunks: number;
