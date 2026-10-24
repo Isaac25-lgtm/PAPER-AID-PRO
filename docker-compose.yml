@@ -12,5 +12,27 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  docling:
+    image: ghcr.io/docling-project/docling-serve-cpu:v1.37.0
+    container_name: ai_research_hub_docling
+    restart: unless-stopped
+    environment:
+      UVICORN_HOST: 0.0.0.0
+      UVICORN_PORT: 5001
+      DOCLING_SERVE_ENABLE_UI: 'true'
+      DOCLING_SERVE_LOAD_MODELS_AT_BOOT: 'false'
+      DOCLING_SERVE_MAX_NUM_PAGES: 100
+      DOCLING_SERVE_MAX_FILE_SIZE: 31457280
+      OMP_NUM_THREADS: 4
+      MKL_NUM_THREADS: 4
+    ports:
+      - '127.0.0.1:5001:5001'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 volumes:
   postgres_data:

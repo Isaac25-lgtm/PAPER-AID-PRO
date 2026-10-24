@@ -263,6 +263,7 @@ export async function askPaperQuestion(params: AskPaperParams): Promise<PaperQAR
         citations: {
           claims: validatedResult.claims,
           anchors: validatedResult.citations,
+          unverifiedAspects: validatedResult.unverifiedAspects,
           evidenceType: validatedResult.evidenceType || evidenceType,
           insufficientEvidence: validatedResult.insufficientEvidence,
         } as any,
@@ -283,6 +284,7 @@ export async function askPaperQuestion(params: AskPaperParams): Promise<PaperQAR
       answer: validatedResult.answer,
       claims: validatedResult.claims,
       citations: validatedResult.citations,
+      unverifiedAspects: validatedResult.unverifiedAspects,
       insufficientEvidence: validatedResult.insufficientEvidence,
       evidenceType: validatedResult.evidenceType || evidenceType,
     };

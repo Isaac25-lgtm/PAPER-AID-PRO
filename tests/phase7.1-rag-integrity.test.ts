@@ -40,14 +40,52 @@ async function runPhase71Tests() {
       throw new Error("Required test papers (Attention & AlphaFold 3) not found in database.");
     }
 
+    if (alphafoldPaper.chunks.length === 0) {
+      const chunk = await prisma.paperChunk.create({
+        data: {
+          paperId: alphafoldPaper.id,
+          chunkIndex: 0,
+          pageNumber: 1,
+          section: "Abstract",
+          text: alphafoldPaper.abstract || "AlphaFold 3 predicts 3D structures of molecular complexes.",
+          tokenCount: 20,
+        },
+      });
+      alphafoldPaper.chunks = [chunk];
+    }
+
+    if (!attentionPaper.chunks.some((c) => c.section === "Limitations" || c.text.toLowerCase().includes("limitation"))) {
+      const nextIdx = attentionPaper.chunks.length;
+      const limText =
+        attentionPaper.limitations ||
+        "Quadratic computational complexity and memory scaling relative to sequence length presents a notable limitation in processing long sequences.";
+      const limChunk = await prisma.paperChunk.create({
+        data: {
+          paperId: attentionPaper.id,
+          chunkIndex: nextIdx,
+          pageNumber: 8,
+          section: "Limitations",
+          text: limText,
+          tokenCount: 40,
+        },
+      });
+      attentionPaper.chunks.push(limChunk);
+    }
+
     const { evidenceChunks } = await retrievePaperEvidence(
       attentionPaper.id,
       "What were the main findings and architecture?",
       { limit: 5 }
     );
 
-    const validChunk1 = evidenceChunks[0];
-    const validChunk2 = evidenceChunks[1];
+    const validChunk1 =
+      evidenceChunks.find(
+        (c) =>
+          c.text.toLowerCase().includes("self-attention") ||
+          c.text.toLowerCase().includes("attention")
+      ) || evidenceChunks[0];
+    const validChunk2 =
+      evidenceChunks.find((c) => c.id !== validChunk1.id) || evidenceChunks[1];
     const alphafoldChunk = alphafoldPaper.chunks[0];
 
     // Find a chunk in Paper A that was NOT retrieved in evidenceChunks

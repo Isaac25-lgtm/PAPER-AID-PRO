@@ -148,17 +148,95 @@ export async function retrievePaperEvidence(
   const genuineCount = Number(embeddingStats[0]?.genuineCount ?? 0);
   const mockCount = Number(embeddingStats[0]?.mockCount ?? 0);
 
-  // Extract query keywords for lexical matching (>= 3 chars, not stopwords)
+  // Extract substantive query keywords (>= 3 chars, not common filler words)
+  const stopwords = new Set([
+    "what", "were", "with", "this", "that", "from", "have", "about", "which",
+    "there", "for", "and", "the", "are", "was", "how", "did", "does", "been",
+    "reported", "showed", "study", "paper"
+  ]);
+
   const queryWords = cleanQuestion
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((w) => w.length >= 3 && !["what", "were", "with", "this", "that", "from", "have", "about", "which", "there"].includes(w));
+    .filter((w) => w.length >= 3 && !stopwords.has(w));
+
+  // Extract consecutive bigram phrases for multi-part clinical entities
+  const queryPhrases: string[] = [];
+  for (let i = 0; i < queryWords.length - 1; i++) {
+    queryPhrases.push(`${queryWords[i]} ${queryWords[i + 1]}`);
+  }
 
   // 4. MOCK EMBEDDING / UNINDEXED SAFETY (Task 4)
-  // If genuine embeddings do NOT exist, execute pure lexical/text-based retrieval fallback.
+  // If genuine embeddings do NOT exist, execute multi-term lexical retrieval fallback with section scoring.
   // Never treat mock vector similarity as meaningful and never invoke paid embedding APIs.
   if (genuineCount === 0) {
+    const candidates: Array<{
+      id: string;
+      paperId: string;
+      chunkIndex: number;
+      section: string | null;
+      pageNumber: number | null;
+      text: string;
+    }> = await prisma.$queryRaw`
+      SELECT 
+        c.id,
+        c."paperId",
+        c."chunkIndex",
+        c.section,
+        c."pageNumber",
+        c.text
+      FROM "paper_chunks" c
+      WHERE c."paperId" = ${paperId}
+        AND (
+          c.section IS NULL OR (
+            c.section NOT ILIKE '%reference%'
+            AND c.section NOT ILIKE '%bibliography%'
+            AND c.section NOT ILIKE '%citation%'
+          )
+        )
+      ORDER BY c."chunkIndex" ASC;
+    `;
+
+    // Score candidates across all substantive query words, phrases, and sections
+    const scored = candidates.map((c) => {
+      let score = 0;
+      const lowerText = c.text.toLowerCase();
+      const lowerSec = (c.section || "").toLowerCase();
+
+      // Bigram phrase matches (high precision for clinical entities)
+      for (const phrase of queryPhrases) {
+        if (lowerText.includes(phrase)) score += 3.0;
+      }
+
+      // Word matches and section title alignment
+      for (const word of queryWords) {
+        const stem = word.length > 4 && word.endsWith("s") ? word.slice(0, -1) : word;
+        if (lowerText.includes(word) || lowerText.includes(stem)) score += 1.0;
+        if (lowerSec.length > 0 && (lowerSec.includes(word) || lowerSec.includes(stem) || word.includes(lowerSec))) {
+          score += 3.0;
+        }
+      }
+
+      // Query-directed section alignment
+      if (/limit/i.test(cleanQuestion) && /limit/i.test(lowerSec)) {
+        score += 4.0;
+      } else if (/method/i.test(cleanQuestion) && /method/i.test(lowerSec)) {
+        score += 3.0;
+      } else if (/result|finding/i.test(cleanQuestion) && /result|finding/i.test(lowerSec)) {
+        score += 3.0;
+      }
+
+      // Baseline empirical section weight
+      if (/result|abstract|conclusion/i.test(lowerSec)) {
+        score += 1.0;
+      } else if (/method/i.test(lowerSec)) {
+        score += 0.5;
+      }
+
+      return { ...c, score };
+    });
+
     let lexicalRows: Array<{
       id: string;
       paperId: string;
@@ -168,45 +246,12 @@ export async function retrievePaperEvidence(
       text: string;
     }> = [];
 
-    if (queryWords.length > 0) {
-      const primaryTerm = queryWords.slice(0, 3).join(" ");
-      const singleTerm = queryWords[0];
-
-      lexicalRows = await prisma.$queryRaw`
-        SELECT 
-          c.id,
-          c."paperId",
-          c."chunkIndex",
-          c.section,
-          c."pageNumber",
-          c.text
-        FROM "paper_chunks" c
-        WHERE c."paperId" = ${paperId}
-          AND (
-            c.text ILIKE ${'%' + primaryTerm + '%'}
-            OR c.text ILIKE ${'%' + singleTerm + '%'}
-            OR c.section ILIKE ${'%' + singleTerm + '%'}
-          )
-        ORDER BY c."chunkIndex" ASC
-        LIMIT ${finalLimit};
-      `;
-    }
-
-    // If keyword matching yielded zero rows or question had no keywords, fetch initial sequence chunks
-    if (lexicalRows.length === 0) {
-      lexicalRows = await prisma.$queryRaw`
-        SELECT 
-          c.id,
-          c."paperId",
-          c."chunkIndex",
-          c.section,
-          c."pageNumber",
-          c.text
-        FROM "paper_chunks" c
-        WHERE c."paperId" = ${paperId}
-        ORDER BY c."chunkIndex" ASC
-        LIMIT ${finalLimit};
-      `;
+    const matchingChunks = scored.filter((s) => s.score > 0);
+    if (matchingChunks.length > 0) {
+      matchingChunks.sort((a, b) => b.score - a.score || a.chunkIndex - b.chunkIndex);
+      lexicalRows = matchingChunks.slice(0, finalLimit);
+    } else {
+      lexicalRows = candidates.slice(0, finalLimit);
     }
 
     const lexicalChunks: RetrievedEvidenceChunk[] = lexicalRows.map((row, idx) => ({
@@ -278,10 +323,14 @@ export async function retrievePaperEvidence(
   }> = [];
 
   if (queryWords.length > 0) {
-    const primaryTerm = queryWords.slice(0, 3).join(" ");
-    const singleTerm = queryWords[0];
-
-    lexicalRows = await prisma.$queryRaw`
+    const candidates: Array<{
+      id: string;
+      paperId: string;
+      chunkIndex: number;
+      section: string | null;
+      pageNumber: number | null;
+      text: string;
+    }> = await prisma.$queryRaw`
       SELECT 
         c.id,
         c."paperId",
@@ -292,12 +341,60 @@ export async function retrievePaperEvidence(
       FROM "paper_chunks" c
       WHERE c."paperId" = ${paperId}
         AND (
-          c.text ILIKE ${'%' + primaryTerm + '%'}
-          OR c.text ILIKE ${'%' + singleTerm + '%'}
-          OR c.section ILIKE ${'%' + singleTerm + '%'}
+          c.section IS NULL OR (
+            c.section NOT ILIKE '%reference%'
+            AND c.section NOT ILIKE '%bibliography%'
+            AND c.section NOT ILIKE '%citation%'
+          )
         )
-      LIMIT 10;
+      ORDER BY c."chunkIndex" ASC;
     `;
+
+    const scored = candidates.map((c) => {
+      let score = 0;
+      const lowerText = c.text.toLowerCase();
+      const lowerSec = (c.section || "").toLowerCase();
+
+      // Bigram phrase matches (high precision for clinical entities)
+      for (const phrase of queryPhrases) {
+        if (lowerText.includes(phrase)) score += 3.0;
+      }
+
+      // Word matches and section title alignment
+      for (const word of queryWords) {
+        const stem = word.length > 4 && word.endsWith("s") ? word.slice(0, -1) : word;
+        if (lowerText.includes(word) || lowerText.includes(stem)) score += 1.0;
+        if (lowerSec.length > 0 && (lowerSec.includes(word) || lowerSec.includes(stem) || word.includes(lowerSec))) {
+          score += 3.0;
+        }
+      }
+
+      // Query-directed section alignment
+      if (/limit/i.test(cleanQuestion) && /limit/i.test(lowerSec)) {
+        score += 4.0;
+      } else if (/method/i.test(cleanQuestion) && /method/i.test(lowerSec)) {
+        score += 3.0;
+      } else if (/result|finding/i.test(cleanQuestion) && /result|finding/i.test(lowerSec)) {
+        score += 3.0;
+      }
+
+      // Baseline empirical section weight
+      if (/result|abstract|conclusion/i.test(lowerSec)) {
+        score += 1.0;
+      } else if (/method/i.test(lowerSec)) {
+        score += 0.5;
+      }
+
+      return { ...c, score };
+    });
+
+    const matchingChunks = scored.filter((s) => s.score > 0);
+    if (matchingChunks.length > 0) {
+      matchingChunks.sort((a, b) => b.score - a.score || a.chunkIndex - b.chunkIndex);
+      lexicalRows = matchingChunks.slice(0, 10);
+    } else {
+      lexicalRows = candidates.slice(0, 10);
+    }
   }
 
   // Reciprocal Rank Fusion (RRF)

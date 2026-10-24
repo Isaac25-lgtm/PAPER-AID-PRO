@@ -3,7 +3,7 @@ import "server-only";
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { downloadPaperPdf, uploadPaperPdf } from "@/lib/storage";
-import { extractPdfText, ScannedPdfError } from "./extractor";
+import { extractPdfStructured, ScannedPdfError, StructuredExtractionResult } from "./extractor";
 import { chunkManuscriptPages } from "./chunker";
 import { embedPaperChunks } from "@/lib/ai/embedding-pipeline";
 import { isMockEmbeddingMode } from "@/lib/ai/embeddings";
@@ -753,9 +753,9 @@ export async function requestOnDemandPaperAnalysis(params: {
       stage: "TEXT_EXTRACTION",
     });
 
-    let extractionResult;
+    let extractionResult: StructuredExtractionResult;
     try {
-      extractionResult = await extractPdfText(pdfBuffer);
+      extractionResult = await extractPdfStructured(pdfBuffer);
     } catch (extractErr: any) {
       const isScanned = extractErr instanceof ScannedPdfError;
       const errorMsg = isScanned
@@ -797,7 +797,12 @@ export async function requestOnDemandPaperAnalysis(params: {
       stage: "CHUNKING",
     });
 
-    const chunks = chunkManuscriptPages(paperId, extractionResult.pages);
+    const chunks = chunkManuscriptPages(
+      paperId,
+      extractionResult.pages,
+      undefined,
+      extractionResult.tables
+    );
     if (chunks.length === 0) {
       const errorMsg = "Extraction yielded 0 usable chunks. Document may be scanned or empty.";
       await prisma.processingJob.update({
@@ -932,6 +937,8 @@ export async function requestOnDemandPaperAnalysis(params: {
               hasSemanticEmbeddings: !isMock,
               indexingStatus: isMock ? "TEXT_EXTRACTED" : "SEMANTICALLY_INDEXED",
               semanticIndexingPending: isMock,
+              extractionProvider: extractionResult.provider,
+              tableCount: extractionResult.tables.length,
             },
           },
         });

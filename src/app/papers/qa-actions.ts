@@ -198,6 +198,7 @@ export async function getPaperConversationAction(
       let citations: GroundedCitationAnchor[] = [];
       let claims: any[] | undefined = undefined;
       let evidenceType: any = undefined;
+      let unverifiedAspects: string[] | undefined = undefined;
 
       if (m.citations) {
         try {
@@ -208,6 +209,7 @@ export async function getPaperConversationAction(
             citations = parsed.anchors || [];
             claims = parsed.claims || undefined;
             evidenceType = parsed.evidenceType || undefined;
+            unverifiedAspects = parsed.unverifiedAspects || undefined;
           }
         } catch {
           citations = [];
@@ -220,6 +222,7 @@ export async function getPaperConversationAction(
         content: m.content,
         claims,
         citations,
+        unverifiedAspects,
         evidenceType,
         createdAt: m.createdAt.toISOString(),
       };

@@ -14,7 +14,23 @@ export interface ChunkPayload {
     charLength: number;
     wordCount: number;
     chunkIndex: number;
+    isTable?: boolean;
+    tableIndex?: number;
+    caption?: string | null;
+    extractionProvider?: string;
   };
+}
+
+export interface StructuredTableChunkInput {
+  tableIndex: number;
+  pageNumber: number;
+  caption?: string;
+  markdown: string;
+  structuredText?: string;
+  numRows?: number;
+  numCols?: number;
+  headers?: string[];
+  rows?: string[][];
 }
 
 export interface ChunkingOptions {
@@ -32,12 +48,14 @@ const DEFAULT_OPTIONS: Required<ChunkingOptions> = {
 };
 
 /**
- * Deterministically splits extracted manuscript pages into section- and page-aware chunks.
+ * Deterministically splits extracted manuscript pages into section- and page-aware chunks,
+ * with first-class support for structured scientific tables.
  */
 export function chunkManuscriptPages(
   paperId: string,
   pages: ExtractedPage[],
-  userOptions?: ChunkingOptions
+  userOptions?: ChunkingOptions,
+  tables?: StructuredTableChunkInput[]
 ): ChunkPayload[] {
   const options = { ...DEFAULT_OPTIONS, ...userOptions };
   const chunks: ChunkPayload[] = [];
@@ -197,7 +215,105 @@ export function chunkManuscriptPages(
       pageBuffer = "";
       currentSectionInChunk = null;
     }
+
+    // Flush structured tables for this page if provided
+    if (tables && tables.length > 0) {
+      const pageTables = tables.filter((t) => t.pageNumber === page.pageNumber);
+      for (const table of pageTables) {
+        const parts: string[] = [];
+        if (table.caption) {
+          parts.push(`Table ${table.tableIndex + 1}: ${table.caption}`);
+        } else {
+          parts.push(`Table ${table.tableIndex + 1}`);
+        }
+        if (table.markdown) {
+          parts.push(table.markdown);
+        }
+        if (table.structuredText) {
+          parts.push(`\nStructured Cell Data:\n${table.structuredText}`);
+        }
+        const tableText = parts.join("\n\n").trim();
+        if (tableText.length >= minMeaningfulChars) {
+          const wordCount = tableText.split(/\s+/).filter(Boolean).length;
+          const tokenCount = Math.max(1, Math.round(tableText.length / 4));
+          const tableSection = activeSection || "Results";
+
+          chunks.push({
+            paperId,
+            chunkIndex: globalChunkIndex,
+            text: tableText,
+            section: tableSection,
+            pageNumber: page.pageNumber,
+            tokenCount,
+            metadata: {
+              pageNumber: page.pageNumber,
+              section: tableSection,
+              charLength: tableText.length,
+              wordCount,
+              chunkIndex: globalChunkIndex,
+              isTable: true,
+              tableIndex: table.tableIndex,
+              caption: table.caption || null,
+              extractionProvider: "docling",
+            },
+          });
+          globalChunkIndex++;
+        }
+      }
+    }
+  }
+
+  // Flush any tables not matched to a page (or pageNumber outside range)
+  if (tables && tables.length > 0) {
+    const processedPageNumbers = new Set(pages.map((p) => p.pageNumber));
+    const unassignedTables = tables.filter(
+      (t) => !processedPageNumbers.has(t.pageNumber)
+    );
+    for (const table of unassignedTables) {
+      const fallbackPageNum =
+        table.pageNumber || (pages.length > 0 ? pages[pages.length - 1].pageNumber : 1);
+      const parts: string[] = [];
+      if (table.caption) {
+        parts.push(`Table ${table.tableIndex + 1}: ${table.caption}`);
+      } else {
+        parts.push(`Table ${table.tableIndex + 1}`);
+      }
+      if (table.markdown) {
+        parts.push(table.markdown);
+      }
+      if (table.structuredText) {
+        parts.push(`\nStructured Cell Data:\n${table.structuredText}`);
+      }
+      const tableText = parts.join("\n\n").trim();
+      if (tableText.length >= minMeaningfulChars) {
+        const wordCount = tableText.split(/\s+/).filter(Boolean).length;
+        const tokenCount = Math.max(1, Math.round(tableText.length / 4));
+        const tableSection = activeSection || "Results";
+
+        chunks.push({
+          paperId,
+          chunkIndex: globalChunkIndex,
+          text: tableText,
+          section: tableSection,
+          pageNumber: fallbackPageNum,
+          tokenCount,
+          metadata: {
+            pageNumber: fallbackPageNum,
+            section: tableSection,
+            charLength: tableText.length,
+            wordCount,
+            chunkIndex: globalChunkIndex,
+            isTable: true,
+            tableIndex: table.tableIndex,
+            caption: table.caption || null,
+            extractionProvider: "docling",
+          },
+        });
+        globalChunkIndex++;
+      }
+    }
   }
 
   return chunks;
 }
+

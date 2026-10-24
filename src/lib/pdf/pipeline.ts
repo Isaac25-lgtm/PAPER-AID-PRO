@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { downloadPaperPdf } from "@/lib/storage";
-import { extractPdfText, ScannedPdfError } from "./extractor";
+import { extractPdfStructured, ScannedPdfError } from "./extractor";
 import { chunkManuscriptPages } from "./chunker";
 import { revalidatePath } from "next/cache";
 
@@ -103,7 +103,7 @@ export async function processPaperDocument(
 
     let extractionResult;
     try {
-      extractionResult = await extractPdfText(pdfBuffer);
+      extractionResult = await extractPdfStructured(pdfBuffer);
     } catch (extractErr: any) {
       const isScanned = extractErr instanceof ScannedPdfError;
       const errorMsg = isScanned
@@ -135,7 +135,12 @@ export async function processPaperDocument(
       data: { stage: "CHUNKING" },
     });
 
-    const chunks = chunkManuscriptPages(paperId, extractionResult.pages);
+    const chunks = chunkManuscriptPages(
+      paperId,
+      extractionResult.pages,
+      undefined,
+      extractionResult.tables
+    );
 
     if (chunks.length === 0) {
       const errorMsg = "Chunking failed: Extracted document yielded 0 valid text chunks.";
@@ -166,6 +171,8 @@ export async function processPaperDocument(
       // Dormant hook: When Stage 2 is migrated and activated, isolated TablePersistenceService
       // will be invoked here to persist candidate tables and verify cells.
     }
+
+    const currentProv = (paper.sourceProvenance as any) || {};
 
     // Atomically replace previous chunks and persist new chunks
     await prisma.$transaction(async (tx) => {
@@ -199,10 +206,17 @@ export async function processPaperDocument(
         },
       });
 
-      // Mark Paper as COMPLETED
+      // Mark Paper as COMPLETED with updated provenance
       await tx.paper.update({
         where: { id: paperId },
-        data: { status: "COMPLETED" },
+        data: {
+          status: "COMPLETED",
+          sourceProvenance: {
+            ...currentProv,
+            extractionProvider: extractionResult.provider,
+            tableCount: extractionResult.tables.length,
+          },
+        },
       });
     });
 

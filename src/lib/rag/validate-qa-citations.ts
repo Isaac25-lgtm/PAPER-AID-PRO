@@ -13,6 +13,7 @@ export interface ValidatedQAResult {
   claims: GroundedClaim[];
   citations: GroundedCitationAnchor[];
   insufficientEvidence: boolean;
+  unverifiedAspects?: string[];
   rejectedCitationIds: string[];
   crossPaperRejectedIds: string[];
   rejectedClaimsCount: number;
@@ -138,7 +139,13 @@ export function evaluateClaimSupport(
  * 8. Hydrates citation metadata (snippet, pageNumber, section, DOI, evidenceType) strictly from PostgreSQL records.
  */
 export function validateQACitations(
-  modelOutput: PaperQAAnswerOutput | { answer: string; citations: { chunkId: string }[]; insufficientEvidence: boolean },
+  modelOutput:
+    | {
+        claims: { text: string; evidenceChunkIds: string[] }[];
+        unverifiedAspects?: string[];
+        insufficientEvidence: boolean;
+      }
+    | { answer: string; citations: { chunkId: string }[]; insufficientEvidence: boolean },
   retrievedChunks: RetrievedEvidenceChunk[],
   expectedPaperId: string
 ): ValidatedQAResult {
@@ -169,16 +176,25 @@ export function validateQACitations(
     ];
   }
 
-  // If model explicitly marked evidence as insufficient, discard all claims
-  if (modelOutput.insufficientEvidence) {
+  // Extract unverified aspects reported by model (if any)
+  const rawUnverified: string[] = Array.isArray((modelOutput as any).unverifiedAspects)
+    ? (modelOutput as any).unverifiedAspects
+    : [];
+  const unverifiedAspects: string[] = rawUnverified
+    .map((s) => (typeof s === "string" ? s.trim() : ""))
+    .filter((s) => s.length > 0);
+
+  // If model explicitly marked evidence as insufficient AND provided 0 raw claims, return fallback
+  if (modelOutput.insufficientEvidence && rawClaims.length === 0) {
     return {
       answer: INSUFFICIENT_EVIDENCE_FALLBACK,
       claims: [],
       citations: [],
       insufficientEvidence: true,
+      unverifiedAspects,
       rejectedCitationIds,
       crossPaperRejectedIds,
-      rejectedClaimsCount: rawClaims.length,
+      rejectedClaimsCount: 0,
       quotationMismatches,
     };
   }
@@ -299,6 +315,7 @@ export function validateQACitations(
       claims: [],
       citations: [],
       insufficientEvidence: true,
+      unverifiedAspects,
       rejectedCitationIds,
       crossPaperRejectedIds,
       rejectedClaimsCount,
@@ -308,7 +325,14 @@ export function validateQACitations(
   }
 
   // Assemble verified answer strictly from validated claims
-  const answer = validatedClaims.map((vc) => vc.text.trim()).join("\n\n");
+  let answer = validatedClaims.map((vc) => vc.text.trim()).join("\n\n");
+  if (unverifiedAspects.length > 0) {
+    const unverifiedSection = unverifiedAspects
+      .map((u) => (u.endsWith(".") ? u : u + "."))
+      .join(" ");
+    answer += `\n\n${unverifiedSection}`;
+  }
+
   const citations = Array.from(allValidCitationsMap.values());
 
   return {
@@ -316,6 +340,7 @@ export function validateQACitations(
     claims: validatedClaims,
     citations,
     insufficientEvidence: false,
+    unverifiedAspects,
     rejectedCitationIds,
     crossPaperRejectedIds,
     rejectedClaimsCount,

@@ -79,6 +79,7 @@ export interface PaperQAResponse {
   claims?: GroundedClaim[];
   citations: GroundedCitationAnchor[];
   insufficientEvidence: boolean;
+  unverifiedAspects?: string[];
   evidenceType?: EvidenceType;
   limitations?: string[];
   provenanceSummary?: {
@@ -95,6 +96,7 @@ export interface ConversationMessageView {
   content: string;
   claims?: GroundedClaim[];
   citations?: GroundedCitationAnchor[];
+  unverifiedAspects?: string[];
   evidenceType?: EvidenceType;
   createdAt: string;
 }

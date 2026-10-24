@@ -131,6 +131,7 @@ export function PaperQA({
         content: response.answer,
         claims: response.claims,
         citations: response.citations || [],
+        unverifiedAspects: response.unverifiedAspects,
         createdAt: new Date().toISOString(),
       };
 
@@ -511,6 +512,21 @@ export function PaperQA({
                               );
                             })}
                           </div>
+                        </div>
+                      )}
+
+                      {/* Unverified Aspects Disclosure */}
+                      {!isUser && msg.unverifiedAspects && msg.unverifiedAspects.length > 0 && (
+                        <div className="mt-3.5 p-3 bg-amber-50/80 rounded-xl border border-amber-200/80 text-xs text-amber-900 space-y-1.5">
+                          <div className="flex items-center gap-1.5 font-semibold text-[11px] text-amber-800">
+                            <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                            <span>Not Stated in Available Manuscript Text:</span>
+                          </div>
+                          <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-800/90 pl-1">
+                            {msg.unverifiedAspects.map((aspect, aIdx) => (
+                              <li key={aIdx}>{aspect}</li>
+                            ))}
+                          </ul>
                         </div>
                       )}
                     </div>

@@ -1,6 +1,6 @@
 import { RetrievedEvidenceChunk } from "./types";
 
-export const RAG_PROMPT_VERSION = "paper-qa-v3";
+export const RAG_PROMPT_VERSION = "paper-qa-v4";
 
 export const RAG_SYSTEM_PROMPT = `You are a scientific research evidence engine analyzing a single academic manuscript.
 Your sole mission is to provide rigorous, truthful answers grounded strictly in the provided manuscript evidence blocks.
@@ -14,7 +14,12 @@ CRITICAL INTEGRITY AND SECURITY DIRECTIVES:
    Every substantive claim MUST have at least one valid supporting Chunk ID.
 4. ZERO FABRICATION: Never invent Chunk IDs. Only cite Chunk IDs that appear explicitly in the "[EVIDENCE N]" blocks provided in the input. Never include claims that lack direct evidence.
 5. ABSTRACT-ONLY EVIDENCE BOUNDARY: When an evidence block is labeled "ABSTRACT ONLY", the full manuscript text has not been ingested. You must only report findings stated directly in the abstract. Do NOT imply the entire manuscript was examined. Do NOT fabricate methodology details, data tables, clinical numbers, or conclusions that do not appear in the abstract.
-6. INSUFFICIENT EVIDENCE MANDATE: If the supplied evidence does not clearly and directly answer the question, you MUST set "insufficientEvidence" to true and leave the "claims" array empty. Do NOT attempt to fill in gaps from general knowledge.
+6. PARTIAL EVIDENCE DIRECTIVE: When a question requests multiple findings, metrics, or clinical entities (e.g., sensitivity and specificity for several ultrasound signs):
+   - Do NOT reject the entire question or set insufficientEvidence to true if at least one requested finding is substantiated by the evidence blocks.
+   - For every finding supported by evidence, generate a grounded claim in "claims" citing its exact supporting Chunk ID(s).
+   - In "unverifiedAspects", explicitly identify any requested metrics, signs, or figures that could NOT be verified in the supplied evidence blocks (e.g., "Individual sensitivity and specificity values for myometrial cysts were not reported in the accessible text.").
+   - Set "insufficientEvidence" to true ONLY if NONE of the requested findings or figures are substantiated by the evidence blocks (claims array is empty).
+   - NEVER invent sensitivity, specificity, confidence intervals, sample sizes, or page numbers for unverified items.
 7. SCIENTIFIC FIDELITY & TONE: Preserve hedges, sample size qualifications, and limitations reported by the authors. Distinguish between empirical observations and author conjectures. Use clear, objective scientific prose.`;
 
 export const INSUFFICIENT_EVIDENCE_FALLBACK =
@@ -65,7 +70,7 @@ export function buildPaperQAPrompt(
 
   // Active question with instructions
   sections.push(
-    `RESEARCH QUESTION:\n"${question.trim()}"\n\nProvide grounded claims answering this question strictly from the evidence blocks above. If the evidence does not clearly answer the question, set insufficientEvidence to true and leave claims empty.`
+    `RESEARCH QUESTION:\n"${question.trim()}"\n\nProvide grounded claims answering this question strictly from the evidence blocks above. If the question asks for multiple findings and only some are supported by the evidence, provide grounded claims for the supported findings and list the unavailable or unverified metrics in unverifiedAspects. Set insufficientEvidence to true ONLY if none of the requested findings are supported.`
   );
 
   return {
