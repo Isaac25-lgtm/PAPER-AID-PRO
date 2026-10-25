@@ -24,6 +24,9 @@ import {
   Loader2,
   AlertTriangle,
   FileUp,
+  Copy,
+  Check,
+  Table as TableIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -39,6 +42,7 @@ import {
   SelectedPaperSummary,
 } from "@/app/research/actions";
 import { MultiPaperSynthesisResult, ValidatedMultiPaperClaim, HydratedMultiPaperAnchor } from "@/lib/synthesis/types";
+import { formatDocumentCsl } from "@/lib/citations/csl/csl-client-formatter";
 
 interface SupportingExcerptCardProps {
   citation: HydratedMultiPaperAnchor;
@@ -155,6 +159,12 @@ function SupportingExcerptCard({ citation, variant = "indigo", conversationId }:
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+        {citation.isTable && (
+          <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[10px]">
+            <TableIcon className="h-3 w-3 text-emerald-600" />
+            <span>{citation.tableCaption || "Structured Table Evidence"}</span>
+          </span>
+        )}
         <span className="font-medium text-slate-700">
           {citation.pageNumber ? `Page ${citation.pageNumber}` : "Page unrecorded"}
         </span>
@@ -169,17 +179,30 @@ function SupportingExcerptCard({ citation, variant = "indigo", conversationId }:
 
       <div className="space-y-1.5">
         {hasText ? (
-          <blockquote
-            className={`text-xs text-slate-700 ${
-              isAmber
-                ? "bg-amber-50/50 border-amber-500"
-                : isSlate
-                ? "bg-slate-50 border-slate-400"
-                : "bg-slate-50/80 border-indigo-400"
-            } p-2.5 rounded border-l-2 italic leading-relaxed whitespace-pre-wrap break-words`}
-          >
-            &ldquo;{textToDisplay}&rdquo;
-          </blockquote>
+          citation.isTable || textToDisplay.includes("Structured Cell Data:") ? (
+            <div className="bg-slate-900 text-slate-100 p-3 rounded-lg border border-slate-800 font-mono text-[11px] leading-relaxed overflow-x-auto">
+              <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800 text-[10px] text-emerald-400 font-sans font-semibold">
+                <span className="flex items-center gap-1.5">
+                  <TableIcon className="h-3 w-3" />
+                  <span>{citation.tableCaption || "Extracted Manuscript Table Data"}</span>
+                </span>
+                {citation.pageNumber && <span>Page {citation.pageNumber}</span>}
+              </div>
+              <pre className="whitespace-pre-wrap font-mono text-[11px]">{textToDisplay}</pre>
+            </div>
+          ) : (
+            <blockquote
+              className={`text-xs text-slate-700 ${
+                isAmber
+                  ? "bg-amber-50/50 border-amber-500"
+                  : isSlate
+                  ? "bg-slate-50 border-slate-400"
+                  : "bg-slate-50/80 border-indigo-400"
+              } p-2.5 rounded border-l-2 italic leading-relaxed whitespace-pre-wrap break-words`}
+            >
+              &ldquo;{textToDisplay}&rdquo;
+            </blockquote>
+          )
         ) : (
           <div className="text-xs text-slate-500 italic bg-slate-50 p-2.5 rounded border border-dashed border-slate-200 flex items-center gap-2">
             <AlertCircle className="h-3.5 w-3.5 text-slate-400 shrink-0" />
@@ -220,6 +243,149 @@ function SupportingExcerptCard({ citation, variant = "indigo", conversationId }:
         )}
       </div>
     </div>
+  );
+}
+
+interface CSLBibliographySectionProps {
+  supportingPapers: Array<{
+    paperId: string;
+    paperTitle: string;
+    isSupporting?: boolean;
+    authors?: string[];
+    year?: number | null;
+    publicationDate?: string | null;
+    journal?: string | null;
+    doi?: string | null;
+  }>;
+}
+
+const SUPPORTED_CSL_STYLES = [
+  { id: "apa", label: "APA (7th ed.)" },
+  { id: "ieee", label: "IEEE" },
+  { id: "nature", label: "Nature" },
+  { id: "vancouver", label: "Vancouver" },
+  { id: "chicago-author-date", label: "Chicago" },
+];
+
+function CSLBibliographySection({ supportingPapers }: CSLBibliographySectionProps) {
+  const [selectedStyle, setSelectedStyle] = React.useState("apa");
+  const [entries, setEntries] = React.useState<string[]>([]);
+  const [isFormatting, setIsFormatting] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!supportingPapers || supportingPapers.length === 0) return;
+    let isMounted = true;
+    setIsFormatting(true);
+
+    formatDocumentCsl({
+      styleId: selectedStyle,
+      linkedPapers: supportingPapers.map((p) => ({
+        id: p.paperId,
+        title: p.paperTitle,
+        authors: p.authors || [],
+        publicationYear: p.year ?? (p.publicationDate ? new Date(p.publicationDate).getFullYear() : undefined),
+        journal: p.journal || undefined,
+        doi: p.doi || undefined,
+      })),
+      clusters: supportingPapers.map((p, idx) => ({
+        citationId: `cluster-${idx}`,
+        items: [{ id: p.paperId }],
+      })),
+    })
+      .then((res) => {
+        if (isMounted) {
+          setEntries(res.bibliographyEntries || []);
+        }
+      })
+      .catch((err) => {
+        console.error("CSL format error:", err);
+      })
+      .finally(() => {
+        if (isMounted) setIsFormatting(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [supportingPapers, selectedStyle]);
+
+  const handleCopy = () => {
+    if (entries.length === 0) return;
+    navigator.clipboard.writeText(entries.join("\n\n"));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!supportingPapers || supportingPapers.length === 0) return null;
+
+  return (
+    <Card className="bg-white border-slate-200 p-5 rounded-xl space-y-3 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+        <div className="flex items-center gap-2">
+          <BookOpen className="h-4 w-4 text-indigo-600" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+            CSL Bibliography ({supportingPapers.length} Supporting {supportingPapers.length === 1 ? "Source" : "Sources"})
+          </h3>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="inline-flex p-0.5 bg-slate-100 rounded-lg text-xs">
+            {SUPPORTED_CSL_STYLES.map((st) => (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => setSelectedStyle(st.id)}
+                className={`px-2 py-1 rounded-md text-[11px] transition-all ${
+                  selectedStyle === st.id
+                    ? "bg-white text-indigo-700 shadow-2xs font-bold"
+                    : "text-slate-600 hover:text-slate-900 font-medium"
+                }`}
+              >
+                {st.label}
+              </button>
+            ))}
+          </div>
+
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={handleCopy}
+            className="text-[11px] h-7 px-2.5 gap-1 border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold"
+          >
+            {copied ? (
+              <>
+                <Check className="h-3 w-3 text-emerald-600" />
+                <span className="text-emerald-700">Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" />
+                <span>Copy</span>
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {isFormatting ? (
+        <div className="py-4 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />
+          <span>Formatting CSL bibliography...</span>
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="py-3 text-xs text-slate-400 italic">No bibliographic references available.</div>
+      ) : (
+        <ol className="space-y-2 list-decimal list-inside text-xs text-slate-800 leading-relaxed font-sans">
+          {entries.map((entry, idx) => (
+            <li key={idx} className="pl-1">
+              <span className="font-normal">{entry}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Card>
   );
 }
 
@@ -1075,12 +1241,27 @@ export function ResearchInterface({ initialThreadId, initialPaperIds }: Research
                               >
                                 <div className="space-y-1.5 flex-1">
                                   <p className="text-xs text-slate-900 font-medium leading-relaxed">{d.description}</p>
+                                  {d.contrastReason && (
+                                    <p className="text-[11px] text-amber-900/80 italic font-normal">
+                                      {d.contrastReason}
+                                    </p>
+                                  )}
                                   <div className="flex flex-wrap items-center gap-2 pt-1">
-                                    <Badge variant="outline" className="text-[10px] bg-amber-50 border-amber-300 text-amber-900 font-semibold">
-                                      Supported by {d.supportingPaperIds.length} conflicting papers
-                                    </Badge>
+                                    {d.classification === "CONTRAST" ? (
+                                      <Badge variant="outline" className="text-[10px] bg-sky-50 border-sky-300 text-sky-900 font-semibold">
+                                        Methodological / Modality Contrast ({d.supportingPaperIds.length} studies)
+                                      </Badge>
+                                    ) : d.classification === "UNCERTAINTY" ? (
+                                      <Badge variant="outline" className="text-[10px] bg-slate-50 border-slate-300 text-slate-700 font-semibold">
+                                        Unverified / Insufficiently Comparable ({d.supportingPaperIds.length} studies)
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="outline" className="text-[10px] bg-amber-50 border-amber-300 text-amber-900 font-semibold">
+                                        Empirical Disagreement ({d.supportingPaperIds.length} conflicting studies)
+                                      </Badge>
+                                    )}
                                     <span className="text-[10px] text-amber-700 font-medium hover:underline">
-                                      {isExpanded ? "Hide Conflicting Evidence" : `Inspect Conflicting Evidence (${d.citations.length} excerpts)`}
+                                      {isExpanded ? "Hide Evidence" : `Inspect Evidence (${d.citations.length} excerpts)`}
                                     </span>
                                   </div>
                                 </div>
@@ -1093,7 +1274,11 @@ export function ResearchInterface({ initialThreadId, initialPaperIds }: Research
                               {isExpanded && (
                                 <div className="bg-amber-50/30 border-t border-amber-200 p-4 space-y-3">
                                   <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900">
-                                    Conflicting Manuscript Excerpts:
+                                    {d.classification === "CONTRAST"
+                                      ? "Contrasting Manuscript Excerpts:"
+                                      : d.classification === "UNCERTAINTY"
+                                      ? "Manuscript Excerpts for Comparison:"
+                                      : "Conflicting Manuscript Excerpts:"}
                                   </span>
                                   <div className="grid grid-cols-1 gap-3">
                                     {d.citations.map((cit, cIdx) => (
@@ -1243,6 +1428,20 @@ export function ResearchInterface({ initialThreadId, initialPaperIds }: Research
                         })}
                       </div>
                     </Card>
+                  )}
+
+                  {/* CSL Bibliography Section for Supporting Papers */}
+                  {Boolean(
+                    (currentResult.supportingPapers && currentResult.supportingPapers.length > 0) ||
+                    currentResult.selectedPapers?.some((p) => p.isSupporting)
+                  ) && (
+                    <CSLBibliographySection
+                      supportingPapers={
+                        currentResult.supportingPapers && currentResult.supportingPapers.length > 0
+                          ? currentResult.supportingPapers
+                          : currentResult.selectedPapers.filter((p) => p.isSupporting)
+                      }
+                    />
                   )}
                 </div>
               )}

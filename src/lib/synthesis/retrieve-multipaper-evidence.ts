@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "../prisma";
 import { DiscoveredPaper, PaperEvidenceSet } from "./types";
-import { RetrievedEvidenceChunk } from "../rag/types";
+import { ChunkMetadata, RetrievedEvidenceChunk, StructuredChunkMetadata } from "../rag/types";
 
 export interface RetrieveMultiPaperEvidenceOptions {
   chunksPerPaper?: number; // Target chunks per paper (default: 4, max: 5)
@@ -37,6 +37,19 @@ export function isReferenceChunk(section: string | null, text: string): boolean 
   const citationPatternCount = (trimmed.match(/(\[\d+\]|\b\d+\.)\s+[A-Z][a-z]+/g) || []).length;
   if (citationPatternCount >= 3 && /journal|proceedings|doi\.org|vol\.|pp\.|et\s+al\./i.test(trimmed)) {
     return true;
+  }
+  return false;
+}
+
+function isTableChunk(
+  section: string | null,
+  text: string,
+  metadata?: StructuredChunkMetadata | Record<string, unknown> | null
+): boolean {
+  if (section && /table/i.test(section)) return true;
+  if (text.includes("Structured Cell Data:")) return true;
+  if (metadata && typeof metadata === "object") {
+    return (metadata as StructuredChunkMetadata).isTable === true;
   }
   return false;
 }
@@ -104,6 +117,7 @@ export async function retrieveMultiPaperEvidence(
       section: string | null;
       pageNumber: number | null;
       text: string;
+      metadata?: ChunkMetadata;
       similarity: number;
       isLexical: boolean;
     }> = [];
@@ -129,11 +143,13 @@ export async function retrieveMultiPaperEvidence(
         section: string | null;
         pageNumber: number | null;
         text: string;
+        metadata?: ChunkMetadata;
       }> = [];
 
       if (queryWords.length > 0) {
         const primaryTerm = queryWords.slice(0, 3).join(" ");
         const singleTerm = queryWords[0];
+        const secondaryTerm = queryWords[1] || singleTerm;
 
         lexicalDbRows = await prisma.$queryRaw`
           SELECT 
@@ -142,12 +158,14 @@ export async function retrieveMultiPaperEvidence(
             c."chunkIndex",
             c.section,
             c."pageNumber",
-            c.text
+            c.text,
+            c.metadata
           FROM "paper_chunks" c
           WHERE c."paperId" = ${paper.paperId}
             AND (
               c.text ILIKE ${'%' + primaryTerm + '%'}
               OR c.text ILIKE ${'%' + singleTerm + '%'}
+              OR c.text ILIKE ${'%' + secondaryTerm + '%'}
               OR c.section ILIKE ${'%' + singleTerm + '%'}
             )
             AND (c.section IS NULL OR (
@@ -160,16 +178,26 @@ export async function retrieveMultiPaperEvidence(
         `;
       }
 
-      // If keyword matching yielded zero rows or question had no keywords, fetch initial sequence chunks
-      if (lexicalDbRows.length === 0) {
-        lexicalDbRows = await prisma.$queryRaw`
+      // If matches are fewer than candidateLimit, backfill with remaining candidate chunks from this paper
+      if (lexicalDbRows.length < candidateLimit) {
+        const existingIds = new Set(lexicalDbRows.map((r) => r.id));
+        const backfillRows: Array<{
+          id: string;
+          paperId: string;
+          chunkIndex: number;
+          section: string | null;
+          pageNumber: number | null;
+          text: string;
+          metadata?: ChunkMetadata;
+        }> = await prisma.$queryRaw`
           SELECT 
             c.id,
             c."paperId",
             c."chunkIndex",
             c.section,
             c."pageNumber",
-            c.text
+            c.text,
+            c.metadata
           FROM "paper_chunks" c
           WHERE c."paperId" = ${paper.paperId}
             AND (c.section IS NULL OR (
@@ -180,6 +208,13 @@ export async function retrieveMultiPaperEvidence(
           ORDER BY c."chunkIndex" ASC
           LIMIT ${candidateLimit};
         `;
+        for (const row of backfillRows) {
+          if (!existingIds.has(row.id)) {
+            lexicalDbRows.push(row);
+            existingIds.add(row.id);
+            if (lexicalDbRows.length >= candidateLimit) break;
+          }
+        }
       }
 
       // Filter out reference-like and third-party literature survey chunks
@@ -187,12 +222,16 @@ export async function retrieveMultiPaperEvidence(
         (r) => !isReferenceChunk(r.section, r.text) && !isThirdPartyLiteratureChunk(r.section, r.text)
       );
 
-      // Prioritize empirical rows
+      // Prioritize empirical rows (including structured scientific tables, results, methods, advancements)
       const empiricalRows = filteredLexical.filter(
-        (r) => r.section && /result|discussion|method|conclusion|abstract/i.test(r.section)
+        (r) =>
+          (r.section && /result|discussion|method|conclusion|abstract|table|advancement|limitation|finding/i.test(r.section)) ||
+          isTableChunk(r.section, r.text, r.metadata as StructuredChunkMetadata | null)
       );
       const backgroundRows = filteredLexical.filter(
-        (r) => !r.section || /background|intro/i.test(r.section)
+        (r) =>
+          (!r.section || /background|intro/i.test(r.section)) &&
+          !isTableChunk(r.section, r.text, r.metadata as StructuredChunkMetadata | null)
       );
 
       if (empiricalRows.length > 0) {
@@ -208,7 +247,7 @@ export async function retrieveMultiPaperEvidence(
       const remainingSlots = paperLimit - selectedRows.length;
       if (remainingSlots > 0 && backgroundRows.length > 0) {
         selectedRows.push(
-          ...backgroundRows.slice(0, Math.min(remainingSlots, 1)).map((r, idx) => ({
+          ...backgroundRows.slice(0, Math.min(remainingSlots, 2)).map((r, idx) => ({
             ...r,
             similarity: 0.75 - idx * 0.05,
             isLexical: true,
@@ -235,6 +274,7 @@ export async function retrieveMultiPaperEvidence(
         section: string | null;
         pageNumber: number | null;
         text: string;
+        metadata?: StructuredChunkMetadata | Record<string, unknown> | null;
         similarity: number;
       }> = await prisma.$queryRaw`
         SELECT 
@@ -244,6 +284,7 @@ export async function retrieveMultiPaperEvidence(
           c.section,
           c."pageNumber",
           c.text,
+          c.metadata,
           1 - (c.embedding <=> ${vectorString}::vector) AS similarity
         FROM "paper_chunks" c
         WHERE c."paperId" = ${paper.paperId}
@@ -264,10 +305,14 @@ export async function retrieveMultiPaperEvidence(
       );
 
       const empiricalRows = nonRefRows.filter(
-        (r) => r.section && /result|discussion|method|conclusion|abstract/i.test(r.section)
+        (r) =>
+          (r.section && /result|discussion|method|conclusion|abstract|table/i.test(r.section)) ||
+          isTableChunk(r.section, r.text, r.metadata as StructuredChunkMetadata | null)
       );
       const backgroundRows = nonRefRows.filter(
-        (r) => !r.section || /background|intro/i.test(r.section)
+        (r) =>
+          (!r.section || /background|intro/i.test(r.section)) &&
+          !isTableChunk(r.section, r.text, r.metadata as StructuredChunkMetadata | null)
       );
 
       if (empiricalRows.length > 0) {
@@ -293,23 +338,34 @@ export async function retrieveMultiPaperEvidence(
       selectedRows.sort((a, b) => b.similarity - a.similarity);
     }
 
-    // Tag selected chunks with full evidence provenance
-    const paperChunks: RetrievedEvidenceChunk[] = selectedRows.map((r, idx) => ({
-      id: r.id,
-      paperId: r.paperId,
-      chunkIndex: r.chunkIndex,
-      section: r.section,
-      pageNumber: r.pageNumber,
-      text: r.text,
-      evidenceType: "FULL_TEXT",
-      sourceTitle: paper.title,
-      doi: paper.doi,
-      retrievalMethod: r.isLexical ? "LEXICAL" : "SEMANTIC",
-      similarity: Number(r.similarity),
-      semanticRank: r.isLexical ? null : idx + 1,
-      lexicalRank: r.isLexical ? idx + 1 : null,
-      isMockEmbedding: r.isLexical || mockCount > 0,
-    }));
+    // Tag selected chunks with full evidence provenance and structured table metadata
+    const paperChunks: RetrievedEvidenceChunk[] = selectedRows.map((r, idx) => {
+      const meta = (r.metadata as any) || {};
+      const isTable = meta.isTable === true || (r.section === "Table") || r.text.includes("Structured Cell Data:");
+      const tableCaption = meta.caption || (meta.tableIndex !== undefined ? `Table ${meta.tableIndex + 1}` : null);
+      const tableIndex = typeof meta.tableIndex === "number" ? meta.tableIndex : null;
+
+      return {
+        id: r.id,
+        paperId: r.paperId,
+        chunkIndex: r.chunkIndex,
+        section: r.section,
+        pageNumber: r.pageNumber,
+        text: r.text,
+        evidenceType: "FULL_TEXT",
+        sourceTitle: paper.title,
+        doi: paper.doi,
+        retrievalMethod: r.isLexical ? "LEXICAL" : "SEMANTIC",
+        similarity: Number(r.similarity),
+        semanticRank: r.isLexical ? null : idx + 1,
+        lexicalRank: r.isLexical ? idx + 1 : null,
+        isMockEmbedding: r.isLexical || mockCount > 0,
+        isTable,
+        tableCaption,
+        tableIndex,
+        metadata: r.metadata,
+      };
+    });
 
     let isMetadataOnly = false;
     let abstractText: string | undefined = undefined;

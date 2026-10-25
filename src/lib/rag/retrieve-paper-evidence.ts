@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "../prisma";
 import { generateEmbedding } from "../ai/embeddings";
-import { RetrievedEvidenceChunk, EvidenceType, RetrievalMethod, PermissionScope } from "./types";
+import { RetrievedEvidenceChunk, EvidenceType, RetrievalMethod, PermissionScope, StructuredChunkMetadata } from "./types";
 import { authorizePaperAccess, UserContext, classifyPaper } from "../auth/paper-authorization";
 import { createHash } from "crypto";
 
@@ -178,6 +178,7 @@ export async function retrievePaperEvidence(
       section: string | null;
       pageNumber: number | null;
       text: string;
+      metadata?: any;
     }> = await prisma.$queryRaw`
       SELECT 
         c.id,
@@ -185,7 +186,8 @@ export async function retrievePaperEvidence(
         c."chunkIndex",
         c.section,
         c."pageNumber",
-        c.text
+        c.text,
+        c.metadata
       FROM "paper_chunks" c
       WHERE c."paperId" = ${paperId}
         AND (
@@ -227,6 +229,14 @@ export async function retrievePaperEvidence(
         score += 3.0;
       }
 
+      // Empirical tables prioritization
+      if (
+        /table|accuracy|sensitiv|specific|ppv|npv|rate|benchmark|metric|diagnostic|result/i.test(cleanQuestion) &&
+        ((c.metadata as any)?.isTable === true || c.section === "Table" || c.text.includes("Structured Cell Data:"))
+      ) {
+        score += 3.5;
+      }
+
       // Baseline empirical section weight
       if (/result|abstract|conclusion/i.test(lowerSec)) {
         score += 1.0;
@@ -244,6 +254,7 @@ export async function retrievePaperEvidence(
       section: string | null;
       pageNumber: number | null;
       text: string;
+      metadata?: StructuredChunkMetadata | Record<string, unknown> | null;
     }> = [];
 
     const matchingChunks = scored.filter((s) => s.score > 0);
@@ -254,24 +265,35 @@ export async function retrievePaperEvidence(
       lexicalRows = candidates.slice(0, finalLimit);
     }
 
-    const lexicalChunks: RetrievedEvidenceChunk[] = lexicalRows.map((row, idx) => ({
-      id: row.id,
-      paperId: row.paperId,
-      chunkIndex: row.chunkIndex,
-      section: row.section,
-      pageNumber: row.pageNumber, // Accurate page number, null if unrecorded
-      text: row.text,
-      evidenceType: "FULL_TEXT",
-      sourceTitle: paper.title,
-      doi: paper.doi,
-      retrievalMethod: "LEXICAL",
-      permissionScope,
-      contentChecksum: createHash("sha256").update(row.text).digest("hex"),
-      isMockEmbedding: mockCount > 0,
-      lexicalRank: idx + 1,
-      semanticRank: null,
-      rrfScore: 1.0 / (RRF_K + (idx + 1)),
-    }));
+    const lexicalChunks: RetrievedEvidenceChunk[] = lexicalRows.map((row, idx) => {
+      const meta = (row.metadata as StructuredChunkMetadata | null) || {};
+      const isTable = meta.isTable === true || row.section === "Table" || row.text.includes("Structured Cell Data:");
+      const tableCaption = meta.caption || (meta.tableIndex !== undefined && meta.tableIndex !== null ? `Table ${meta.tableIndex + 1}` : null);
+      const tableIndex = typeof meta.tableIndex === "number" ? meta.tableIndex : null;
+
+      return {
+        id: row.id,
+        paperId: row.paperId,
+        chunkIndex: row.chunkIndex,
+        section: row.section,
+        pageNumber: row.pageNumber, // Accurate page number, null if unrecorded
+        text: row.text,
+        evidenceType: "FULL_TEXT",
+        sourceTitle: paper.title,
+        doi: paper.doi,
+        retrievalMethod: "LEXICAL",
+        permissionScope,
+        contentChecksum: createHash("sha256").update(row.text).digest("hex"),
+        isMockEmbedding: mockCount > 0,
+        lexicalRank: idx + 1,
+        semanticRank: null,
+        rrfScore: 1.0 / (RRF_K + (idx + 1)),
+        isTable,
+        tableCaption,
+        tableIndex,
+        metadata: row.metadata,
+      };
+    });
 
     return {
       paperTitle: paper.title,
@@ -295,6 +317,7 @@ export async function retrievePaperEvidence(
     section: string | null;
     pageNumber: number | null;
     text: string;
+    metadata?: any;
     similarity: number;
   }> = await prisma.$queryRaw`
     SELECT 
@@ -304,6 +327,7 @@ export async function retrievePaperEvidence(
       c.section,
       c."pageNumber",
       c.text,
+      c.metadata,
       1 - (c.embedding <=> ${vectorString}::vector) AS similarity
     FROM "paper_chunks" c
     WHERE c."paperId" = ${paperId}
@@ -320,6 +344,7 @@ export async function retrievePaperEvidence(
     section: string | null;
     pageNumber: number | null;
     text: string;
+    metadata?: StructuredChunkMetadata | Record<string, unknown> | null;
   }> = [];
 
   if (queryWords.length > 0) {
@@ -330,6 +355,7 @@ export async function retrievePaperEvidence(
       section: string | null;
       pageNumber: number | null;
       text: string;
+      metadata?: StructuredChunkMetadata | Record<string, unknown> | null;
     }> = await prisma.$queryRaw`
       SELECT 
         c.id,
@@ -337,7 +363,8 @@ export async function retrievePaperEvidence(
         c."chunkIndex",
         c.section,
         c."pageNumber",
-        c.text
+        c.text,
+        c.metadata
       FROM "paper_chunks" c
       WHERE c."paperId" = ${paperId}
         AND (
@@ -411,6 +438,11 @@ export async function retrievePaperEvidence(
   semanticRows.forEach((row, idx) => {
     const rank = idx + 1;
     const score = 1.0 / (RRF_K + rank);
+    const meta = (row.metadata as StructuredChunkMetadata | null) || {};
+    const isTable = meta.isTable === true || row.section === "Table" || row.text.includes("Structured Cell Data:");
+    const tableCaption = meta.caption || (meta.tableIndex !== undefined && meta.tableIndex !== null ? `Table ${meta.tableIndex + 1}` : null);
+    const tableIndex = typeof meta.tableIndex === "number" ? meta.tableIndex : null;
+
     candidateScores.set(row.id, {
       chunk: {
         id: row.id,
@@ -429,6 +461,10 @@ export async function retrievePaperEvidence(
         similarity: row.similarity,
         semanticRank: rank,
         lexicalRank: null,
+        isTable,
+        tableCaption,
+        tableIndex,
+        metadata: row.metadata,
       },
       semanticRank: rank,
       lexicalRank: null,
@@ -440,10 +476,20 @@ export async function retrievePaperEvidence(
     const rank = idx + 1;
     const score = 1.0 / (RRF_K + rank);
     const existing = candidateScores.get(row.id);
+    const meta = (row.metadata as StructuredChunkMetadata | null) || {};
+    const isTable = meta.isTable === true || row.section === "Table" || row.text.includes("Structured Cell Data:");
+    const tableCaption = meta.caption || (meta.tableIndex !== undefined && meta.tableIndex !== null ? `Table ${meta.tableIndex + 1}` : null);
+    const tableIndex = typeof meta.tableIndex === "number" ? meta.tableIndex : null;
+
     if (existing) {
       existing.rrfScore += score;
       existing.lexicalRank = rank;
       existing.chunk.lexicalRank = rank;
+      if (isTable) {
+        existing.chunk.isTable = true;
+        existing.chunk.tableCaption = tableCaption;
+        existing.chunk.tableIndex = tableIndex;
+      }
     } else {
       candidateScores.set(row.id, {
         chunk: {
@@ -462,6 +508,10 @@ export async function retrievePaperEvidence(
           isMockEmbedding: false,
           semanticRank: null,
           lexicalRank: rank,
+          isTable,
+          tableCaption,
+          tableIndex,
+          metadata: row.metadata,
         },
         semanticRank: null,
         lexicalRank: rank,

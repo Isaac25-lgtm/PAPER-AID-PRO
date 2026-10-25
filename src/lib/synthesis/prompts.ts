@@ -26,6 +26,8 @@ CRITICAL INTEGRITY AND ARCHITECTURAL DIRECTIVES:
    - NEVER cite a references passage as evidence.
 7. DIVERGENT FINDINGS REQUIRE COMPARABLE INTERVENTIONS AND GENUINE EMPIRICAL CONTRADICTION:
    - A disagreement exists ONLY when two or more studies evaluate comparable methods, algorithms, or interventions on comparable outcomes and report contradictory or conflicting empirical results.
+   - Distinct but compatible approaches (e.g., conventional 2D direct signs having high specificity in Morales et al. vs 3D ultrasound offering coronal junctional zone visualization advantages in An et al.) are COMPLEMENTARY MODALITIES or METHODOLOGICAL CONTRASTS, NOT scientific disagreements.
+   - An empirical prospective diagnostic accuracy study and a narrative review or perspectives article evaluate different evidence tiers and must NEVER be presented as equivalent evidence types or empirical contradictions.
    - NEVER contrast clinical multimodal ultrasound (e.g. CEUS, Shear Wave Elastography [SWE], or physician examination) with Computer-Aided Decision / AI classification models (such as CNN, KNN, or YOLOv3) as an empirical disagreement. They evaluate entirely different diagnostic modalities and interventions, not conflicting findings.
    - NEVER classify complementary observations, differences in study scope, or general study constraints as disagreements. If Study A reports high model accuracy while Study B notes that conventional ultrasound has operator variability or that deep learning is limited by dataset sizes, these are COMPLEMENTARY observations and context, NOT a disagreement.
    - If the available literature reports complementary findings or evaluates different techniques without direct empirical contradiction, YOU MUST LEAVE "disagreements" EMPTY ([]). Never fabricate or force a disagreement to populate the field.
@@ -123,11 +125,13 @@ export function buildMultiPaperPrompt(
       } else {
         set.chunks.forEach((chunk, chunkIdx) => {
           chunkIdSet.add(chunk.id);
+          const isTable = chunk.isTable || (chunk.metadata as any)?.isTable || chunk.section === "Table" || chunk.text.includes("Structured Cell Data:");
+          const captionStr = chunk.tableCaption ? ` [STRUCTURED TABLE: ${chunk.tableCaption}]` : isTable ? " [STRUCTURED TABLE]" : "";
           const pageStr = chunk.pageNumber !== null ? `Page ${chunk.pageNumber}` : "Page unrecorded";
           const secStr = chunk.section ? `§${chunk.section}` : "§Unspecified";
 
           sections.push(
-            `  [EVIDENCE ${paperIdx + 1}.${chunkIdx + 1}]\n  Chunk ID: ${chunk.id}\n  Location: ${pageStr}, ${secStr}\n  Excerpt:\n  "${chunk.text.trim()}"`
+            `  [EVIDENCE ${paperIdx + 1}.${chunkIdx + 1}]\n  Chunk ID: ${chunk.id}\n  Location: ${pageStr}, ${secStr}${captionStr}\n  Excerpt:\n  "${chunk.text.trim()}"`
           );
         });
       }

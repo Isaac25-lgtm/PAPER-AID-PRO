@@ -19,6 +19,29 @@ export interface EvidenceProvenance {
   isInterpretation: boolean; // false for verbatim retrieved evidence, true for model paraphrase/synthesis
 }
 
+export interface StructuredChunkMetadata {
+  isTable?: boolean;
+  caption?: string | null;
+  tableIndex?: number | null;
+  numRows?: number | null;
+  numCols?: number | null;
+  pageNumber?: number | null;
+  extractionProvider?: string | null;
+  provider?: string | null;
+  charLength?: number;
+  wordCount?: number;
+  [key: string]: unknown;
+}
+
+export type ChunkMetadata =
+  | StructuredChunkMetadata
+  | Record<string, unknown>
+  | unknown[]
+  | string
+  | number
+  | boolean
+  | null;
+
 export interface GroundedCitationAnchor {
   chunkId: string;
   chunkIndex?: number;
@@ -32,6 +55,10 @@ export interface GroundedCitationAnchor {
   paperId?: string;
   retrievalMethod?: RetrievalMethod;
   isInterpretation?: boolean;
+  isTable?: boolean;
+  tableCaption?: string | null;
+  tableIndex?: number | null;
+  metadata?: ChunkMetadata;
 }
 
 export interface GroundedClaim {
@@ -62,6 +89,10 @@ export interface RetrievedEvidenceChunk {
   lexicalRank?: number | null;
   semanticRank?: number | null;
   rrfScore?: number;
+  isTable?: boolean;
+  tableCaption?: string | null;
+  tableIndex?: number | null;
+  metadata?: ChunkMetadata;
 }
 
 export interface PaperQARequest {

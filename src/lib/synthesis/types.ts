@@ -90,10 +90,14 @@ export interface ValidatedMultiPaperClaim {
   citations: HydratedMultiPaperAnchor[];
 }
 
+export type CrossStudyRelationType = "DISAGREEMENT" | "CONTRAST" | "UNCERTAINTY";
+
 export interface ValidatedMultiPaperDisagreement {
   description: string;
   supportingPaperIds: string[];
   citations: HydratedMultiPaperAnchor[];
+  classification?: CrossStudyRelationType;
+  contrastReason?: string;
 }
 
 export interface ValidatedMultiPaperLimitation {

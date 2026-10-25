@@ -371,6 +371,11 @@ export function PaperQA({
                                                 )}>
                                                   {isAbstract ? "Abstract Evidence" : "Full-Text Evidence"}
                                                 </span>
+                                                {cite.isTable && (
+                                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-300">
+                                                    Table Evidence
+                                                  </span>
+                                                )}
                                                 <span className="font-semibold text-slate-800 text-[11px]">
                                                   {sectionText} — {pageText}
                                                 </span>
@@ -382,9 +387,15 @@ export function PaperQA({
                                               )}
                                             </div>
 
-                                            <blockquote className="text-[11px] text-slate-700 italic bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed font-normal">
-                                              &ldquo;{cite.snippet}&rdquo;
-                                            </blockquote>
+                                            {cite.isTable || cite.snippet.includes("Structured Cell Data:") ? (
+                                              <div className="bg-slate-900 text-slate-100 p-2.5 rounded-lg border border-slate-800 font-mono text-[11px] leading-relaxed overflow-x-auto">
+                                                <pre className="whitespace-pre-wrap font-mono text-[11px]">{cite.snippet}</pre>
+                                              </div>
+                                            ) : (
+                                              <blockquote className="text-[11px] text-slate-700 italic bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed font-normal">
+                                                &ldquo;{cite.snippet}&rdquo;
+                                              </blockquote>
+                                            )}
 
                                             <div className="flex items-center justify-between pt-1 text-[11px]">
                                               <span className="text-slate-400 truncate max-w-[200px]">
@@ -392,11 +403,11 @@ export function PaperQA({
                                               </span>
                                               {!isAbstract && (
                                                 <Link
-                                                  href={`/api/papers/${paperId}/pdf`}
+                                                  href={`/api/papers/${paperId}/pdf${cite.pageNumber ? `#page=${cite.pageNumber}` : ""}`}
                                                   target="_blank"
                                                   className="text-indigo-600 hover:text-indigo-800 font-semibold inline-flex items-center gap-1"
                                                 >
-                                                  View Original PDF
+                                                  {cite.pageNumber ? `View PDF (p. ${cite.pageNumber})` : "View Original PDF"}
                                                   <ExternalLink className="h-3 w-3" />
                                                 </Link>
                                               )}
@@ -476,6 +487,11 @@ export function PaperQA({
                                           )}>
                                             {isAbstract ? "Abstract Evidence" : "Full-Text Evidence"}
                                           </span>
+                                          {cite.isTable && (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-300">
+                                              Table Evidence
+                                            </span>
+                                          )}
                                           <span className="font-semibold text-slate-800 text-[11px]">
                                             {sectionText} — {pageText}
                                           </span>
@@ -487,9 +503,15 @@ export function PaperQA({
                                         )}
                                       </div>
 
-                                      <blockquote className="text-[11px] text-slate-700 italic bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed font-normal">
-                                        &ldquo;{cite.snippet}&rdquo;
-                                      </blockquote>
+                                      {cite.isTable || cite.snippet.includes("Structured Cell Data:") ? (
+                                        <div className="bg-slate-900 text-slate-100 p-2.5 rounded-lg border border-slate-800 font-mono text-[11px] leading-relaxed overflow-x-auto">
+                                          <pre className="whitespace-pre-wrap font-mono text-[11px]">{cite.snippet}</pre>
+                                        </div>
+                                      ) : (
+                                        <blockquote className="text-[11px] text-slate-700 italic bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed font-normal">
+                                          &ldquo;{cite.snippet}&rdquo;
+                                        </blockquote>
+                                      )}
 
                                       <div className="flex items-center justify-between pt-1 text-[11px]">
                                         <span className="text-slate-400 truncate max-w-[200px]">
@@ -497,11 +519,11 @@ export function PaperQA({
                                         </span>
                                         {!isAbstract && (
                                           <Link
-                                            href={`/api/papers/${paperId}/pdf`}
+                                            href={`/api/papers/${paperId}/pdf${cite.pageNumber ? `#page=${cite.pageNumber}` : ""}`}
                                             target="_blank"
                                             className="text-indigo-600 hover:text-indigo-800 font-semibold inline-flex items-center gap-1"
                                           >
-                                            View Original PDF
+                                            {cite.pageNumber ? `View PDF (p. ${cite.pageNumber})` : "View Original PDF"}
                                             <ExternalLink className="h-3 w-3" />
                                           </Link>
                                         )}

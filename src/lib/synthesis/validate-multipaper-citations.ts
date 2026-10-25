@@ -4,7 +4,9 @@ import {
   ValidatedMultiPaperClaim,
   ValidatedMultiPaperDisagreement,
   ValidatedMultiPaperLimitation,
+  CrossStudyRelationType,
 } from "./types";
+import { StructuredChunkMetadata, ChunkMetadata } from "../rag/types";
 import { MultiPaperSynthesisOutput } from "./schemas";
 import { MULTI_PAPER_INSUFFICIENT_EVIDENCE_FALLBACK } from "./prompts";
 
@@ -496,7 +498,11 @@ export function statementIntroducesUnsupportedPropositions(
 
   // 1. Re-asserting a disagreement or comparative conflict when evaluating a limitation
   // Genuine limitations describe study constraints or methodological boundaries, not cross-study arguments.
-  if (isLimitation && /\b(differ\s+on|disagree\w*|diverg\w*|conflict\w*|contradict\w*|inconsistent\s+with\s+each\s+other|opposing\s+findings?|discrepanc\w*)\b/i.test(lowerStatement)) {
+  if (
+    isLimitation &&
+    (/\b(differ\s+on|disagree\w*|diverg\w*|conflict\w*|contradict\w*|inconsistent\s+with\s+each\s+other|opposing\s+findings?|cross-study\s+discrepanc\w*|discrepanc\w*\s+between\s+(the\s+)?(studies|papers|authors))\b/i.test(lowerStatement) ||
+     (/\bdiscrepanc\w*\b/i.test(lowerStatement) && !/\boperator\s+discrepanc\w*\b/i.test(lowerStatement) && !supportingChunkTexts.some((ct) => /discrepanc/i.test(ct))))
+  ) {
     return true;
   }
 
@@ -789,6 +795,101 @@ export function isNonComparableOrPseudoDisagreement(
   return { isPseudo: false };
 }
 
+export interface ClassifyDivergenceParams {
+  description: string;
+  paperIds: string[];
+  paperTitles: string[];
+  chunkTexts?: string[];
+}
+
+export interface DivergenceClassificationResult {
+  classification: CrossStudyRelationType;
+  reason?: string;
+}
+
+/**
+ * Rigorously classifies cross-study divergence into:
+ * 1. "DISAGREEMENT": Genuinely conflicting empirical findings about sufficiently comparable questions or outcomes.
+ * 2. "CONTRAST": Methodological, study-design, evidence-tier, population, modality, or scope differences without contradiction.
+ * 3. "UNCERTAINTY": When comparability cannot be established deterministically (safely unverified).
+ */
+export function classifyCrossStudyDivergence(params: ClassifyDivergenceParams): DivergenceClassificationResult {
+  const { description, paperTitles, chunkTexts = [] } = params;
+  const lowerDesc = description.toLowerCase();
+  const lowerTitles = paperTitles.map((t) => t.toLowerCase());
+  const combinedChunks = chunkTexts.join(" ").toLowerCase();
+
+  // 1. Evidence Tier / Study Design Contrast (Prospective Empirical vs. Narrative Review / Perspectives)
+  const isProspectiveOrEmpirical = (title: string, chunks: string) =>
+    /\b(prospective|cohort|randomized|clinical\s+trial|diagnostic\s+accuracy|cohort\s+study|multicenter|retrospective\s+cohort|consecutive\s+patients)\b/i.test(title) ||
+    /\b(prospective\s+cohort|histopatholog\w*|reference\s+standard|consecutive\s+patients|diagnostic\s+accuracy\s+study|enrolled\s+\d+|undergoing\s+hysterectomy)\b/i.test(chunks);
+
+  const isNarrativeOrPerspective = (title: string, chunks: string) =>
+    /\b(perspectives?|narrative\s+review|overview|commentary|editorial|opinion|advancements?|current\s+status|review\s+of|critical\s+review)\b/i.test(title) ||
+    /\b(perspectives\s+in|extended\s+opinion|this\s+review|narrative\s+review|critically\s+reviews)\b/i.test(chunks);
+
+  const hasEmpirical = lowerTitles.some((t) => isProspectiveOrEmpirical(t, combinedChunks));
+  const hasNarrative = lowerTitles.some((t) => isNarrativeOrPerspective(t, combinedChunks));
+
+  if (hasEmpirical && hasNarrative) {
+    return {
+      classification: "CONTRAST",
+      reason: "Evidence-tier contrast: prospective empirical diagnostic cohort versus narrative review / clinical perspectives article",
+    };
+  }
+
+  // 2. Modality / Technique Contrast (e.g. 2D direct signs vs 3D coronal reconstruction / elastography / Doppler)
+  const mentions2D = /\b(2d|two-dimensional|direct\s+signs?|subendometrial\s+lines|myometrial\s+cysts)\b/i.test(lowerDesc);
+  const mentions3DOrAdvanced = /\b(3d|three-dimensional|coronal|reconstruction|junctional\s+zone|elastograph\w*|color\s+doppler|shear\s+wave)\b/i.test(lowerDesc);
+
+  if (mentions2D && mentions3DOrAdvanced) {
+    return {
+      classification: "CONTRAST",
+      reason: "Modality contrast: conventional 2D ultrasound features versus 3D reconstruction / advanced imaging modalities",
+    };
+  }
+
+  // 3. Clinical Scope or Cohort Contrast (e.g. specialized surgical cohort vs general outpatient challenges)
+  if (
+    /\b(hysterectomy|surgical|histopatholog\w*)\b/i.test(lowerDesc) &&
+    /\b(outpatient|screening|asymptomatic|routine\s+practice)\b/i.test(lowerDesc)
+  ) {
+    return {
+      classification: "CONTRAST",
+      reason: "Cohort scope contrast: specialized surgical histopathology cohort versus general outpatient clinical practice",
+    };
+  }
+
+  // 4. Genuine Empirical Disagreement (Conflicting findings on comparable questions/outcomes)
+  const hasContradictoryPerformance =
+    /\b(substantially\s+lower\s+(sensitivity|specificity|accuracy)|poor\s+(sensitivity|specificity|accuracy)|unreliable\b.*(sensitivity|specificity|accuracy)|inaccurate|contradictory\s+(findings?|results?)|conflicting\s+empirical\s+results?|directly\s+contradict\w*|found\s+the\s+opposite)\b/i.test(
+      lowerDesc
+    );
+
+  const evaluatesSameMetric =
+    /\b(sensitivity|specificity|overall\s+accuracy|auc|roc|positive\s+predictive\s+value|ppv|npv)\b/i.test(lowerDesc);
+
+  if (hasContradictoryPerformance && evaluatesSameMetric) {
+    return {
+      classification: "DISAGREEMENT",
+    };
+  }
+
+  // 5. If comparability cannot be established deterministically, do NOT falsely certify as disagreement
+  const hasExplicitDispute = /\b(disagree\w*|diverg\w*|conflict\w*|differ\w*|discrepanc\w*)\b/i.test(lowerDesc);
+  if (hasExplicitDispute) {
+    return {
+      classification: "CONTRAST",
+      reason: "Methodological or observational distinction between evaluated studies",
+    };
+  }
+
+  return {
+    classification: "UNCERTAINTY",
+    reason: "Comparability between study methodologies or populations cannot be established deterministically",
+  };
+}
+
 export interface EvidenceVerificationParams {
   propositionText: string;
   category: "claim" | "disagreement" | "limitation";
@@ -916,6 +1017,10 @@ export function validateMultiPaperSynthesis(
       section: string | null;
       text: string;
       evidenceType?: "FULL_TEXT" | "ABSTRACT";
+      isTable?: boolean;
+      tableCaption?: string | null;
+      tableIndex?: number | null;
+      metadata?: ChunkMetadata;
     }>;
   }
 
@@ -928,15 +1033,24 @@ export function validateMultiPaperSynthesis(
       section: string | null;
       text: string;
       evidenceType?: "FULL_TEXT" | "ABSTRACT";
+      isTable?: boolean;
+      tableCaption?: string | null;
+      tableIndex?: number | null;
+      metadata?: ChunkMetadata;
     }>();
 
     for (const chunk of set.chunks) {
+      const meta = chunk.metadata as StructuredChunkMetadata | undefined;
       chunkMap.set(chunk.id, {
         chunkIndex: chunk.chunkIndex,
         pageNumber: chunk.pageNumber,
         section: chunk.section,
         text: chunk.text,
         evidenceType: chunk.evidenceType || (set.isMetadataOnly || chunk.section?.toLowerCase().includes("abstract") ? "ABSTRACT" : "FULL_TEXT"),
+        isTable: chunk.isTable || meta?.isTable || chunk.section === "Table" || chunk.text.includes("Structured Cell Data:"),
+        tableCaption: chunk.tableCaption || meta?.caption,
+        tableIndex: chunk.tableIndex ?? meta?.tableIndex,
+        metadata: chunk.metadata,
       });
     }
 
@@ -1034,6 +1148,9 @@ export function validateMultiPaperSynthesis(
           snippet: formatSnippet(chunkMeta.text),
           fullText: chunkMeta.text,
           evidenceType: chunkMeta.evidenceType || (chunkMeta.pageNumber === null ? "ABSTRACT" : "FULL_TEXT"),
+          isTable: chunkMeta.isTable,
+          tableCaption: chunkMeta.tableCaption,
+          tableIndex: chunkMeta.tableIndex,
         });
       }
     }
@@ -1100,6 +1217,9 @@ export function validateMultiPaperSynthesis(
           snippet: formatSnippet(chunkMeta.text),
           fullText: chunkMeta.text,
           evidenceType: chunkMeta.evidenceType || (chunkMeta.pageNumber === null ? "ABSTRACT" : "FULL_TEXT"),
+          isTable: chunkMeta.isTable,
+          tableCaption: chunkMeta.tableCaption,
+          tableIndex: chunkMeta.tableIndex,
         });
       }
     }
@@ -1173,10 +1293,22 @@ export function validateMultiPaperSynthesis(
       continue;
     }
 
+    const divergenceResult = classifyCrossStudyDivergence({
+      description: desc,
+      paperIds: Array.from(paperIdsSet),
+      paperTitles: Array.from(paperIdsSet).map((pid) => paperLookup.get(pid)?.paperTitle || ""),
+      chunkTexts: anchors.map((a) => {
+        const pm = paperLookup.get(a.paperId);
+        return pm?.chunks.get(a.chunkId)?.text || a.snippet;
+      }),
+    });
+
     validatedDisagreements.push({
       description: desc,
       supportingPaperIds: Array.from(paperIdsSet),
       citations: anchors,
+      classification: divergenceResult.classification,
+      contrastReason: divergenceResult.reason,
     });
   }
 
@@ -1226,6 +1358,9 @@ export function validateMultiPaperSynthesis(
           snippet: formatSnippet(chunkMeta.text),
           fullText: chunkMeta.text,
           evidenceType: chunkMeta.evidenceType || (chunkMeta.pageNumber === null ? "ABSTRACT" : "FULL_TEXT"),
+          isTable: chunkMeta.isTable,
+          tableCaption: chunkMeta.tableCaption,
+          tableIndex: chunkMeta.tableIndex,
         });
       }
     }
