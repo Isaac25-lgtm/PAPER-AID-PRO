@@ -17,10 +17,12 @@ import {
   Menu,
   Quote,
   ChevronDown,
+  Download,
 } from "lucide-react";
 import { DocumentType } from "@prisma/client";
 import { useOptionalWorkspace } from "@/components/layout/workspace-context";
 import { StyleSelectorModal } from "@/components/citations/style-selector-modal";
+import { exportDocumentAction } from "@/app/editor/actions";
 
 export type SaveStatus = "saved" | "saving" | "unsaved" | "conflict" | "error";
 
@@ -54,6 +56,7 @@ interface EditorHeaderProps {
 }
 
 export function EditorHeader({
+  documentId,
   initialTitle,
   docType,
   version,
@@ -78,6 +81,33 @@ export function EditorHeader({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
   const [isStyleModalOpen, setIsStyleModalOpen] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async (format: "markdown" | "bibtex" | "html" | "text") => {
+    setIsExportOpen(false);
+    setIsExporting(true);
+    try {
+      const res = await exportDocumentAction(documentId, format);
+      if (res.success && res.export) {
+        const blob = new Blob([res.export.content], { type: res.export.mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = res.export.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        alert(res.error || "Failed to export manuscript.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to export manuscript.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   useEffect(() => {
     setTitle(initialTitle);
@@ -260,6 +290,68 @@ export function EditorHeader({
             </span>
             <ChevronDown className="w-3 h-3 text-slate-400" />
           </button>
+
+          {/* Manuscript Export Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsExportOpen(!isExportOpen)}
+              disabled={isExporting}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+              title="Export manuscript draft and references"
+            >
+              {isExporting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+              ) : (
+                <Download className="w-3.5 h-3.5 text-indigo-600" />
+              )}
+              <span className="hidden sm:inline">Export</span>
+              <ChevronDown className="w-3 h-3 text-slate-400" />
+            </button>
+
+            {isExportOpen && (
+              <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-30 animate-in fade-in zoom-in-95 duration-100 text-xs">
+                <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100 mb-1">
+                  Manuscript Draft
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleExport("markdown")}
+                  className="w-full text-left px-3 py-1.5 text-slate-700 hover:bg-slate-50 flex items-center justify-between"
+                >
+                  <span>Markdown with Citations</span>
+                  <span className="text-[10px] font-mono text-slate-400">.md</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExport("html")}
+                  className="w-full text-left px-3 py-1.5 text-slate-700 hover:bg-slate-50 flex items-center justify-between"
+                >
+                  <span>Academic HTML Article</span>
+                  <span className="text-[10px] font-mono text-slate-400">.html</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExport("text")}
+                  className="w-full text-left px-3 py-1.5 text-slate-700 hover:bg-slate-50 flex items-center justify-between"
+                >
+                  <span>Plain Text Draft</span>
+                  <span className="text-[10px] font-mono text-slate-400">.txt</span>
+                </button>
+                <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider border-b border-t border-slate-100 my-1">
+                  Bibliography Only
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleExport("bibtex")}
+                  className="w-full text-left px-3 py-1.5 text-slate-700 hover:bg-slate-50 flex items-center justify-between"
+                >
+                  <span>BibTeX Cited References</span>
+                  <span className="text-[10px] font-mono text-slate-400">.bib</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Sources Drawer Button */}
           <button

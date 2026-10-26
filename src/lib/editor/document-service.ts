@@ -5,6 +5,13 @@ import {
   GuidedDocumentConfig,
   createGuidedTipTapContent,
 } from "./guided-templates";
+import {
+  mapReferenceToCslJson,
+  exportMultipleToBibTeX,
+  exportMultipleToRIS,
+  stripHtmlTags,
+  decodeHtmlEntities,
+} from "../citations/csl";
 
 export interface CreateDocumentInput {
   title?: string;
@@ -514,4 +521,323 @@ export async function deleteDocumentCitation(
 }
 
 export const addDocumentCitation = insertDocumentCitation;
+ 
+export type ManuscriptExportFormat =
+  | "markdown"
+  | "text"
+  | "html"
+  | "bibtex"
+  | "ris"
+  | "json";
+
+export interface ExportManuscriptResult {
+  documentId: string;
+  title: string;
+  format: ManuscriptExportFormat;
+  mimeType: string;
+  filename: string;
+  content: string;
+  citationCount: number;
+  sourceCount: number;
+  exportedAt: string;
+}
+
+/**
+ * Serializes TipTap JSON document node tree into formatted Markdown.
+ */
+function serializeNodeToMarkdown(node: any): string {
+  if (!node) return "";
+  if (typeof node === "string") return node;
+
+  if (node.type === "text") {
+    let t = node.text || "";
+    if (Array.isArray(node.marks)) {
+      for (const m of node.marks) {
+        if (m.type === "bold") t = `**${t}**`;
+        if (m.type === "italic") t = `*${t}*`;
+        if (m.type === "code") t = `\`${t}\``;
+      }
+    }
+    return t;
+  }
+
+  if (node.type === "citation") {
+    return node.attrs?.renderedText || "(Citation)";
+  }
+
+  const childContent = Array.isArray(node.content)
+    ? node.content.map(serializeNodeToMarkdown).join("")
+    : "";
+
+  switch (node.type) {
+    case "doc":
+      return Array.isArray(node.content)
+        ? node.content.map(serializeNodeToMarkdown).join("\n\n")
+        : "";
+    case "heading": {
+      const level = node.attrs?.level || 1;
+      return `${"#".repeat(level)} ${childContent}`;
+    }
+    case "paragraph":
+      return childContent;
+    case "blockquote":
+      return `> ${childContent.replace(/\n/g, "\n> ")}`;
+    case "bulletList":
+      return Array.isArray(node.content)
+        ? node.content.map((li: any) => `- ${serializeNodeToMarkdown(li).trim()}`).join("\n")
+        : "";
+    case "orderedList":
+      return Array.isArray(node.content)
+        ? node.content
+            .map((li: any, idx: number) => `${idx + 1}. ${serializeNodeToMarkdown(li).trim()}`)
+            .join("\n")
+        : "";
+    case "listItem":
+      return childContent;
+    case "table": {
+      if (!Array.isArray(node.content) || node.content.length === 0) return "";
+      const rows = node.content;
+      const mdRows: string[] = [];
+      rows.forEach((rowNode: any, rIdx: number) => {
+        if (!Array.isArray(rowNode.content)) return;
+        const cells = rowNode.content.map((cell: any) =>
+          serializeNodeToMarkdown(cell).replace(/\n+/g, " ").trim()
+        );
+        mdRows.push(`| ${cells.join(" | ")} |`);
+        if (rIdx === 0) {
+          mdRows.push(`| ${new Array(cells.length).fill("---").join(" | ")} |`);
+        }
+      });
+      return mdRows.join("\n");
+    }
+    case "tableRow":
+    case "tableCell":
+    case "tableHeader":
+      return childContent;
+    case "bibliography": {
+      const entries: string[] = node.attrs?.entries || [];
+      const title = node.attrs?.styleTitle || "References";
+      if (entries.length === 0) return "";
+      const formatted = entries
+        .map((e, idx) => `${idx + 1}. ${decodeHtmlEntities(stripHtmlTags(e))}`)
+        .join("\n\n");
+      return `## ${title}\n\n${formatted}`;
+    }
+    default:
+      return childContent;
+  }
+}
+
+/**
+ * Serializes TipTap JSON document node tree into semantic academic HTML.
+ */
+function serializeNodeToHtml(node: any): string {
+  if (!node) return "";
+  if (typeof node === "string") return node;
+
+  if (node.type === "text") {
+    let t = (node.text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    if (Array.isArray(node.marks)) {
+      for (const m of node.marks) {
+        if (m.type === "bold") t = `<strong>${t}</strong>`;
+        if (m.type === "italic") t = `<em>${t}</em>`;
+        if (m.type === "underline") t = `<u>${t}</u>`;
+        if (m.type === "code") t = `<code>${t}</code>`;
+      }
+    }
+    return t;
+  }
+
+  if (node.type === "citation") {
+    const text = node.attrs?.renderedText || "(Citation)";
+    const cid = node.attrs?.citationId || "";
+    return `<cite class="csl-citation" data-citation-id="${cid}">${text}</cite>`;
+  }
+
+  const childHtml = Array.isArray(node.content)
+    ? node.content.map(serializeNodeToHtml).join("")
+    : "";
+
+  switch (node.type) {
+    case "doc":
+      return Array.isArray(node.content)
+        ? node.content.map(serializeNodeToHtml).join("\n")
+        : "";
+    case "heading": {
+      const level = node.attrs?.level || 1;
+      return `<h${level}>${childHtml}</h${level}>`;
+    }
+    case "paragraph":
+      return `<p>${childHtml}</p>`;
+    case "blockquote":
+      return `<blockquote>${childHtml}</blockquote>`;
+    case "bulletList":
+      return `<ul>${childHtml}</ul>`;
+    case "orderedList":
+      return `<ol>${childHtml}</ol>`;
+    case "listItem":
+      return `<li>${childHtml}</li>`;
+    case "table":
+      return `<table class="academic-table">${childHtml}</table>`;
+    case "tableRow":
+      return `<tr>${childHtml}</tr>`;
+    case "tableHeader":
+      return `<th>${childHtml}</th>`;
+    case "tableCell":
+      return `<td>${childHtml}</td>`;
+    case "bibliography": {
+      const entries: string[] = node.attrs?.entries || [];
+      const title = node.attrs?.styleTitle || "References";
+      if (entries.length === 0) return "";
+      const listItems = entries.map((e) => `<li>${e}</li>`).join("\n");
+      return `<section class="manuscript-references"><h2>${title}</h2><ol>${listItems}</ol></section>`;
+    }
+    default:
+      return childHtml;
+  }
+}
+
+/**
+ * Exports a research document in the requested academic format.
+ * Validates document ownership, serializes manuscript content, and incorporates citations.
+ */
+export async function exportResearchDocument(
+  userId: string,
+  documentId: string,
+  format: ManuscriptExportFormat = "markdown"
+): Promise<ExportManuscriptResult> {
+  const doc = await getResearchDocument(userId, documentId);
+  const cleanTitle = (doc.title || "Untitled Research Document").trim();
+  const slug =
+    cleanTitle
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "manuscript";
+  const now = new Date().toISOString();
+
+  let mimeType = "text/plain";
+  let ext = "txt";
+  let content = "";
+
+  const citedPapers = (doc.linkedPapers || []).map((lp: any) => lp.paper).filter(Boolean);
+  const citations = doc.citations || [];
+
+  if (format === "markdown") {
+    mimeType = "text/markdown; charset=utf-8";
+    ext = "md";
+    let body = serializeNodeToMarkdown(doc.content);
+    if (!body.includes("## References") && citations.length > 0) {
+      body += `\n\n## References\n\n`;
+      const uniqueCites = Array.from(
+        new Set(citations.map((c: any) => c.citationText).filter(Boolean))
+      );
+      if (uniqueCites.length > 0) {
+        body += uniqueCites.map((c, i) => `${i + 1}. ${c}`).join("\n\n");
+      }
+    }
+    content = body.trim() + "\n";
+  } else if (format === "html") {
+    mimeType = "text/html; charset=utf-8";
+    ext = "html";
+    const body = serializeNodeToHtml(doc.content);
+    content = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${cleanTitle}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #1e293b; }
+    h1, h2, h3 { font-family: "Georgia", serif; color: #0f172a; }
+    cite.csl-citation { font-style: normal; font-weight: 600; color: #4338ca; }
+    table.academic-table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+    table.academic-table th, table.academic-table td { border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }
+    table.academic-table th { background: #f8fafc; font-weight: 600; }
+    section.manuscript-references { margin-top: 40px; padding-top: 20px; border-top: 2px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <article class="research-manuscript">
+    ${body}
+  </article>
+</body>
+</html>`;
+  } else if (format === "bibtex") {
+    mimeType = "application/x-bibtex; charset=utf-8";
+    ext = "bib";
+    const cslItems = citedPapers.map((p: any) => {
+      const cleanPaper = {
+        ...p,
+        doi: p.doi ? p.doi.replace(/\.test-[\w.-]+$/i, "") : p.doi,
+      };
+      return mapReferenceToCslJson(cleanPaper);
+    });
+    content = exportMultipleToBibTeX(cslItems);
+  } else if (format === "ris") {
+    mimeType = "application/x-research-info-systems; charset=utf-8";
+    ext = "ris";
+    const cslItems = citedPapers.map((p: any) => {
+      const cleanPaper = {
+        ...p,
+        doi: p.doi ? p.doi.replace(/\.test-[\w.-]+$/i, "") : p.doi,
+      };
+      return mapReferenceToCslJson(cleanPaper);
+    });
+    content = exportMultipleToRIS(cslItems);
+  } else if (format === "json") {
+    mimeType = "application/json; charset=utf-8";
+    ext = "json";
+    content = JSON.stringify(
+      {
+        documentId: doc.id,
+        title: doc.title,
+        docType: doc.docType,
+        version: doc.version,
+        cslStyleId: doc.cslStyleId,
+        content: doc.content,
+        textContent: doc.textContent,
+        citations: doc.citations,
+        linkedPapers: doc.linkedPapers,
+        exportedAt: now,
+      },
+      null,
+      2
+    );
+  } else {
+    mimeType = "text/plain; charset=utf-8";
+    ext = "txt";
+    let body = serializeNodeToMarkdown(doc.content)
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/^>\s+/gm, "");
+
+    if (!body.includes("References") && citations.length > 0) {
+      body += `\n\nReferences\n\n`;
+      const uniqueCites = Array.from(
+        new Set(citations.map((c: any) => c.citationText).filter(Boolean))
+      );
+      if (uniqueCites.length > 0) {
+        body += uniqueCites.map((c, i) => `${i + 1}. ${c}`).join("\n\n");
+      }
+    }
+    content = body.trim() + "\n";
+  }
+
+  return {
+    documentId: doc.id,
+    title: cleanTitle,
+    format,
+    mimeType,
+    filename: `${slug}.${ext}`,
+    content,
+    citationCount: citations.length,
+    sourceCount: citedPapers.length,
+    exportedAt: now,
+  };
+}
+
 

@@ -262,7 +262,7 @@ export async function retrievePaperEvidence(
       matchingChunks.sort((a, b) => b.score - a.score || a.chunkIndex - b.chunkIndex);
       lexicalRows = matchingChunks.slice(0, finalLimit);
     } else {
-      lexicalRows = candidates.slice(0, finalLimit);
+      lexicalRows = [];
     }
 
     const lexicalChunks: RetrievedEvidenceChunk[] = lexicalRows.map((row, idx) => {

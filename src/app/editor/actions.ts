@@ -15,6 +15,8 @@ import {
   detachDocumentPaper,
   insertDocumentCitation,
   deleteDocumentCitation,
+  exportResearchDocument,
+  ManuscriptExportFormat,
   InsertCitationInput,
   UpdateDocumentInput,
   CreateDocumentInput,
@@ -308,3 +310,17 @@ export async function summarizeEvidenceAction(params: {
     return { success: false, error: err.message || "Evidence summarization failed." };
   }
 }
+
+export async function exportDocumentAction(
+  documentId: string,
+  format: ManuscriptExportFormat = "markdown"
+) {
+  try {
+    const userId = await requireAuthUserId();
+    const result = await exportResearchDocument(userId, documentId, format);
+    return { success: true, export: result };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to export document." };
+  }
+}
+

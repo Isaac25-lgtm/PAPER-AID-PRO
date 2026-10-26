@@ -223,32 +223,71 @@ export async function askPaperQuestion(params: AskPaperParams): Promise<PaperQAR
       historyForPrompt
     );
 
-    // 7. Invoke OpenAI Responses API with Structured Outputs (Claim-Level Provenance)
-    const openai = getOpenAIClient();
-    const response = await openai.responses.parse({
-      model: AI_CONFIG.qaModel,
-      instructions: RAG_SYSTEM_PROMPT,
-      input: userPrompt,
-      text: {
-        format: zodTextFormat(PaperQAAnswerSchema, "paper_qa_answer"),
-      },
-      max_output_tokens: 1200, // Token output safeguard
-      temperature: 0.1, // Low temperature for maximum scientific fidelity
-      store: false,
-    });
-
     let parsedOutput: PaperQAAnswerOutput;
-    if (response.output_parsed) {
-      parsedOutput = response.output_parsed as PaperQAAnswerOutput;
-    } else if (response.output_text) {
-      try {
-        const rawJson = JSON.parse(response.output_text);
-        parsedOutput = PaperQAAnswerSchema.parse(rawJson);
-      } catch (err: any) {
-        throw new Error(`OpenAI response schema parsing failed: ${err.message}`);
+
+    if (process.env.ALLOW_MOCK_AUTOCOMPLETE === "true") {
+      const stopwords = new Set([
+        "what", "were", "with", "this", "that", "from", "have", "about", "which",
+        "there", "for", "and", "the", "are", "was", "how", "did", "does", "been",
+        "reported", "showed", "study", "paper"
+      ]);
+      const questionWords = cleanQuestion
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length >= 3 && !stopwords.has(w));
+
+      const hasRelevantEvidence = evidenceChunks.some((c) => {
+        const lower = c.text.toLowerCase();
+        return questionWords.some((w) => new RegExp(`\\b${w}\\b`, "i").test(lower));
+      });
+
+      if (!hasRelevantEvidence) {
+        parsedOutput = {
+          claims: [],
+          unverifiedAspects: [cleanQuestion],
+          insufficientEvidence: true,
+        };
+      } else {
+        const topChunk = evidenceChunks[0];
+        parsedOutput = {
+          claims: [
+            {
+              text: `Based on the manuscript evidence in ${topChunk.section || "the text"}, ${topChunk.text.slice(0, 200).trim()}`,
+              evidenceChunkIds: [topChunk.id],
+            },
+          ],
+          unverifiedAspects: [],
+          insufficientEvidence: false,
+        };
       }
     } else {
-      throw new Error("OpenAI Responses API returned an empty output.");
+      // 7. Invoke OpenAI Responses API with Structured Outputs (Claim-Level Provenance)
+      const openai = getOpenAIClient();
+      const response = await openai.responses.parse({
+        model: AI_CONFIG.qaModel,
+        instructions: RAG_SYSTEM_PROMPT,
+        input: userPrompt,
+        text: {
+          format: zodTextFormat(PaperQAAnswerSchema, "paper_qa_answer"),
+        },
+        max_output_tokens: 1200, // Token output safeguard
+        temperature: 0.1, // Low temperature for maximum scientific fidelity
+        store: false,
+      });
+
+      if (response.output_parsed) {
+        parsedOutput = response.output_parsed as PaperQAAnswerOutput;
+      } else if (response.output_text) {
+        try {
+          const rawJson = JSON.parse(response.output_text);
+          parsedOutput = PaperQAAnswerSchema.parse(rawJson);
+        } catch (err: any) {
+          throw new Error(`OpenAI response schema parsing failed: ${err.message}`);
+        }
+      } else {
+        throw new Error("OpenAI Responses API returned an empty output.");
+      }
     }
 
     // 8. Validate Claims and Enforce Unsupported Claim Withholding
