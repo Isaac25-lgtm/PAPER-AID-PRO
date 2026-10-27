@@ -26,6 +26,7 @@ import {
 } from "@/lib/citations/csl";
 import { loadStyleXmlClient } from "@/lib/citations/csl/csl-client-formatter";
 import { StyleSelectorModal } from "./style-selector-modal";
+import { formatMetadataText } from "@/lib/utils";
 
 export interface CitePaperModalProps {
   isOpen: boolean;
@@ -202,9 +203,9 @@ export function CitePaperModal({ isOpen, onClose, paper }: CitePaperModalProps) 
 
           {/* Paper Mini Preview */}
           <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-100 text-xs space-y-1">
-            <p className="font-semibold text-slate-800 line-clamp-2">{paper.title}</p>
+            <p className="font-semibold text-slate-800 line-clamp-2">{formatMetadataText(paper.title)}</p>
             <div className="text-slate-500 flex flex-wrap gap-x-2">
-              {paper.journal && <span className="italic">{paper.journal}</span>}
+              {paper.journal && <span className="italic">{formatMetadataText(paper.journal)}</span>}
               {paper.doi && <span className="font-mono text-slate-400">doi:{paper.doi}</span>}
             </div>
           </div>

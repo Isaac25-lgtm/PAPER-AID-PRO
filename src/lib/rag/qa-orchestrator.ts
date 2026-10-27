@@ -8,6 +8,7 @@ import { PaperQAResponse } from "./types";
 import { zodTextFormat } from "openai/helpers/zod";
 import { AIMessageRole } from "@prisma/client";
 import { authorizePaperAccess } from "../auth/paper-authorization";
+import { composeDeterministicLexicalAnswer } from "./deterministic-qa-synthesizer";
 
 export interface AskPaperParams {
   paperId: string;
@@ -225,42 +226,13 @@ export async function askPaperQuestion(params: AskPaperParams): Promise<PaperQAR
 
     let parsedOutput: PaperQAAnswerOutput;
 
-    if (process.env.ALLOW_MOCK_AUTOCOMPLETE === "true") {
-      const stopwords = new Set([
-        "what", "were", "with", "this", "that", "from", "have", "about", "which",
-        "there", "for", "and", "the", "are", "was", "how", "did", "does", "been",
-        "reported", "showed", "study", "paper"
-      ]);
-      const questionWords = cleanQuestion
-        .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, " ")
-        .split(/\s+/)
-        .filter((w) => w.length >= 3 && !stopwords.has(w));
-
-      const hasRelevantEvidence = evidenceChunks.some((c) => {
-        const lower = c.text.toLowerCase();
-        return questionWords.some((w) => new RegExp(`\\b${w}\\b`, "i").test(lower));
-      });
-
-      if (!hasRelevantEvidence) {
-        parsedOutput = {
-          claims: [],
-          unverifiedAspects: [cleanQuestion],
-          insufficientEvidence: true,
-        };
-      } else {
-        const topChunk = evidenceChunks[0];
-        parsedOutput = {
-          claims: [
-            {
-              text: `Based on the manuscript evidence in ${topChunk.section || "the text"}, ${topChunk.text.slice(0, 200).trim()}`,
-              evidenceChunkIds: [topChunk.id],
-            },
-          ],
-          unverifiedAspects: [],
-          insufficientEvidence: false,
-        };
-      }
+    if (
+      process.env.ALLOW_MOCK_AUTOCOMPLETE === "true" ||
+      !process.env.OPENAI_API_KEY ||
+      process.env.OPENAI_API_KEY === "your-openai-api-key-here"
+    ) {
+      // Deterministic, zero-paid-model lexical answer composition with structured table and provenance extraction
+      parsedOutput = composeDeterministicLexicalAnswer(cleanQuestion, evidenceChunks);
     } else {
       // 7. Invoke OpenAI Responses API with Structured Outputs (Claim-Level Provenance)
       const openai = getOpenAIClient();

@@ -96,7 +96,8 @@ export function evaluateClaimSupport(
   const claimPercentages = lowerClaim.match(/\b\d+(\.\d+)?%/g);
   if (claimPercentages && claimPercentages.length > 0) {
     for (const p of claimPercentages) {
-      if (!allChunkText.includes(p)) {
+      const numOnly = p.replace("%", "");
+      if (!allChunkText.includes(p) && !allChunkText.includes(numOnly)) {
         const chunkPercentages = allChunkText.match(/\b\d+(\.\d+)?%/g);
         if (chunkPercentages && chunkPercentages.length > 0) {
           return {

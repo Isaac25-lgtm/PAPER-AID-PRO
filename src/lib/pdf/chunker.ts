@@ -221,10 +221,15 @@ export function chunkManuscriptPages(
       const pageTables = tables.filter((t) => t.pageNumber === page.pageNumber);
       for (const table of pageTables) {
         const parts: string[] = [];
-        if (table.caption) {
-          parts.push(`Table ${table.tableIndex + 1}: ${table.caption}`);
+        const tableNum = table.tableIndex;
+        const rawCaption = (table.caption || "").trim();
+        const isGenericCaption = !rawCaption || rawCaption.toLowerCase() === "table";
+        if (isGenericCaption) {
+          parts.push(`Table ${tableNum}`);
+        } else if (rawCaption.toLowerCase().startsWith(`table ${tableNum}`)) {
+          parts.push(rawCaption);
         } else {
-          parts.push(`Table ${table.tableIndex + 1}`);
+          parts.push(`Table ${tableNum}: ${rawCaption}`);
         }
         if (table.markdown) {
           parts.push(table.markdown);

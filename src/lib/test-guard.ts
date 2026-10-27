@@ -250,6 +250,7 @@ export function loadIsolatedTestEnvironment(options: { installMockStorage?: bool
     process.env[key] = parsed[key];
   }
   (process.env as any).NODE_ENV = "test";
+  process.env.ALLOW_MOCK_AUTOCOMPLETE = "true";
 
   // Strictly clear / neutralize production Supabase secret keys in test process
   delete process.env.SUPABASE_SECRET_KEY;

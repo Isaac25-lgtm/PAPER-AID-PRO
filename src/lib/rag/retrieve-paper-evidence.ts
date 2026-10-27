@@ -268,7 +268,11 @@ export async function retrievePaperEvidence(
     const lexicalChunks: RetrievedEvidenceChunk[] = lexicalRows.map((row, idx) => {
       const meta = (row.metadata as StructuredChunkMetadata | null) || {};
       const isTable = meta.isTable === true || row.section === "Table" || row.text.includes("Structured Cell Data:");
-      const tableCaption = meta.caption || (meta.tableIndex !== undefined && meta.tableIndex !== null ? `Table ${meta.tableIndex + 1}` : null);
+      const rawCaption = (meta.caption || "").trim();
+      const isGenericCaption = !rawCaption || rawCaption.toLowerCase() === "table";
+      const tableCaption = !isGenericCaption
+        ? rawCaption
+        : (meta.tableIndex !== undefined && meta.tableIndex !== null ? `Table ${meta.tableIndex}` : null);
       const tableIndex = typeof meta.tableIndex === "number" ? meta.tableIndex : null;
 
       return {
@@ -478,7 +482,11 @@ export async function retrievePaperEvidence(
     const existing = candidateScores.get(row.id);
     const meta = (row.metadata as StructuredChunkMetadata | null) || {};
     const isTable = meta.isTable === true || row.section === "Table" || row.text.includes("Structured Cell Data:");
-    const tableCaption = meta.caption || (meta.tableIndex !== undefined && meta.tableIndex !== null ? `Table ${meta.tableIndex + 1}` : null);
+    const rawCaption = (meta.caption || "").trim();
+    const isGenericCaption = !rawCaption || rawCaption.toLowerCase() === "table";
+    const tableCaption = !isGenericCaption
+      ? rawCaption
+      : (meta.tableIndex !== undefined && meta.tableIndex !== null ? `Table ${meta.tableIndex}` : null);
     const tableIndex = typeof meta.tableIndex === "number" ? meta.tableIndex : null;
 
     if (existing) {

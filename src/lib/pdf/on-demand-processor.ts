@@ -615,6 +615,8 @@ export async function requestOnDemandPaperAnalysis(params: {
               ...prov,
               scholarlyClassification: resolution.classification,
               sourceResolution: resolution,
+              externalLandingPageUrl: best?.landingPageUrl || (prov as any)?.externalLandingPageUrl || null,
+              externalPdfUrl: best?.pdfUrl || (prov as any)?.externalPdfUrl || null,
             },
           },
         });
@@ -630,7 +632,8 @@ export async function requestOnDemandPaperAnalysis(params: {
             externalLandingPageUrl: best.landingPageUrl,
             externalPdfUrl: best.pdfUrl || null,
             errorCode: "RESTRICTED_LICENSE",
-            message: `Automated server ingestion is restricted by license (${best.license || "restricted"}). External reading link is preserved; personal PDF upload is available.`,
+            message:
+              "Full text is available to read externally. AI Research Hub has not verified permission for automated ingestion from this source. Open the article externally or provide a copy you are authorized to process.",
           };
         }
 
@@ -641,7 +644,8 @@ export async function requestOnDemandPaperAnalysis(params: {
           status: "METADATA_ONLY",
           jobId: activeJob.id,
           errorCode: "NO_FULL_TEXT",
-          message: "No open-access full-text manuscript was located for automated analysis. You may upload a personal copy.",
+          message:
+            "No open-access full-text manuscript was located for automated analysis. You may provide a copy you are authorized to process.",
         };
       }
 

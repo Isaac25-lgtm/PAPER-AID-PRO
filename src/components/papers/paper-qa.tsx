@@ -31,6 +31,7 @@ interface PaperQAProps {
   isEmbedded: boolean;
   isAuthenticated: boolean;
   initialConversationId?: string;
+  paperStatus?: string;
 }
 
 const SUGGESTED_QUESTIONS = [
@@ -47,6 +48,7 @@ export function PaperQA({
   isEmbedded,
   isAuthenticated,
   initialConversationId,
+  paperStatus,
 }: PaperQAProps) {
   const [messages, setMessages] = React.useState<ConversationMessageView[]>([]);
   const [conversationId, setConversationId] = React.useState<string | undefined>(initialConversationId);
@@ -152,6 +154,20 @@ export function PaperQA({
 
   // State 1: Manuscript text has not been processed / full text needed
   if (chunkCount === 0) {
+    if (paperStatus === "PROCESSING" || paperStatus === "EMBEDDING" || paperStatus === "UPLOADED") {
+      return (
+        <Card id="ask-paper" className="p-6 sm:p-8 bg-slate-50 border-slate-200 text-center space-y-3 rounded-2xl">
+          <div className="mx-auto h-10 w-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center animate-pulse">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+          <h3 className="font-semibold text-slate-800 text-sm">Processing Manuscript</h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            The manuscript is currently being read and structured for research analysis. Research Q&amp;A will be ready once extraction completes.
+          </p>
+        </Card>
+      );
+    }
+
     return (
       <Card id="ask-paper" className="p-6 sm:p-8 bg-slate-50 border-slate-200 text-center space-y-3 rounded-2xl">
         <div className="mx-auto h-10 w-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
@@ -160,21 +176,6 @@ export function PaperQA({
         <h3 className="font-semibold text-slate-800 text-sm">Full Text Needed for Research Q&amp;A</h3>
         <p className="text-xs text-slate-500 max-w-md mx-auto">
           Full manuscript text is needed before asking questions. Attach or upload the original manuscript PDF to enable evidence-grounded research inquiry.
-        </p>
-      </Card>
-    );
-  }
-
-  // State 2: Text exists but search indexing is still preparing
-  if (!isEmbedded) {
-    return (
-      <Card id="ask-paper" className="p-6 sm:p-8 bg-slate-50 border-slate-200 text-center space-y-3 rounded-2xl">
-        <div className="mx-auto h-10 w-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
-          <AlertCircle className="h-5 w-5" />
-        </div>
-        <h3 className="font-semibold text-slate-800 text-sm">Preparing Research Search</h3>
-        <p className="text-xs text-slate-500 max-w-md mx-auto">
-          Manuscript text is extracted and the precision search index is being prepared. Research Q&amp;A will be ready momentarily.
         </p>
       </Card>
     );
@@ -194,11 +195,13 @@ export function PaperQA({
                 Ask This Paper
               </h2>
               <Badge variant="academic" className="text-[10px] bg-indigo-100 text-indigo-800 border-indigo-200">
-                Single-Paper Evidence
+                {isEmbedded ? "Single-Paper Evidence • Semantic Index" : "Single-Paper Evidence • Lexical Search"}
               </Badge>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Answers are grounded strictly in manuscript excerpts with supporting chunk citations.
+              {isEmbedded
+                ? "Answers are grounded strictly in manuscript excerpts with semantic vector precision."
+                : "Answers are grounded strictly in manuscript text using precision lexical evidence matching."}
             </p>
           </div>
         </div>

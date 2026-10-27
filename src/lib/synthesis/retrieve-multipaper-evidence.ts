@@ -342,7 +342,11 @@ export async function retrieveMultiPaperEvidence(
     const paperChunks: RetrievedEvidenceChunk[] = selectedRows.map((r, idx) => {
       const meta = (r.metadata as any) || {};
       const isTable = meta.isTable === true || (r.section === "Table") || r.text.includes("Structured Cell Data:");
-      const tableCaption = meta.caption || (meta.tableIndex !== undefined ? `Table ${meta.tableIndex + 1}` : null);
+      const rawCaption = (meta.caption || "").trim();
+      const isGenericCaption = !rawCaption || rawCaption.toLowerCase() === "table";
+      const tableCaption = !isGenericCaption
+        ? rawCaption
+        : (meta.tableIndex !== undefined && meta.tableIndex !== null ? `Table ${meta.tableIndex}` : null);
       const tableIndex = typeof meta.tableIndex === "number" ? meta.tableIndex : null;
 
       return {

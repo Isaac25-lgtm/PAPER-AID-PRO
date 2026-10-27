@@ -6,6 +6,7 @@ import { processPaperDocument } from "@/lib/pdf/pipeline";
 import { embedPaperChunks } from "@/lib/ai/embedding-pipeline";
 import { revalidatePath } from "next/cache";
 import { PaperProcessingStatus } from "@prisma/client";
+import { formatMetadataText } from "@/lib/utils";
 
 export const MAX_USER_PDF_SIZE_BYTES = 35 * 1024 * 1024; // 35 MB
 
@@ -53,6 +54,7 @@ export interface UserLibraryItem {
   hasLocalPdf?: boolean;
   localPdfAvailable?: boolean;
   externalPdfUrl?: string | null;
+  externalLandingPageUrl?: string | null;
   storagePath?: string | null;
   pdfUrl?: string | null;
   doi?: string | null;
@@ -894,31 +896,61 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
     // 1. Local storage check (zero network overhead, instant synchronous disk/memory lookup)
     const localPdfAvailable = isLocalPdfAvailable(paper.storagePath);
 
-    // 2. Verified external reading link (only for lawful open-access papers with trusted provenance)
+    // 2. Verified external reading links (strictly separating direct PDF endpoints from article landing pages)
     let externalPdfUrl: string | null = null;
-    const isLawfulOa =
+    let externalLandingPageUrl: string | null = null;
+
+    const hasExternalAccess =
       !isPrivate &&
       (paper.isOpenAccess === true ||
         prov?.isLawfulOpenAccess === true ||
-        prov?.isPublicOpenAccess === true);
+        prov?.isPublicOpenAccess === true ||
+        prov?.scholarlyClassification === "READING_LINK_ONLY" ||
+        prov?.sourceResolution?.permissions?.canReadDirectly === true);
 
-    if (isLawfulOa) {
-      const candidates: (string | null | undefined)[] = [
+    if (hasExternalAccess) {
+      // 2a. Direct PDF candidates (must point to a PDF resource, not an HTML landing page)
+      const directPdfCandidates: (string | null | undefined)[] = [
         prov?.openAccessPdfUrl,
         prov?.originalPdfUrl,
+        prov?.externalPdfUrl,
+        prov?.sourceResolution?.bestCandidate?.pdfUrl,
         paper.pdfUrl && !paper.pdfUrl.includes("/api/papers/") && !paper.pdfUrl.includes(".supabase.co/storage/")
           ? paper.pdfUrl
           : null,
-        prov?.externalLandingPageUrl,
-        prov?.externalUrl,
       ];
 
-      for (const candidate of candidates) {
+      for (const candidate of directPdfCandidates) {
+        if (!candidate || typeof candidate !== "string" || !candidate.startsWith("https://")) {
+          continue;
+        }
+        const isPdfTarget =
+          candidate.toLowerCase().includes(".pdf") ||
+          candidate.includes("blobtype=pdf") ||
+          candidate.includes("/pdf/") ||
+          candidate === prov?.openAccessPdfUrl ||
+          candidate === prov?.originalPdfUrl;
+
+        if (isPdfTarget && validateSafePdfUrl(candidate).safe) {
+          externalPdfUrl = candidate;
+          break;
+        }
+      }
+
+      // 2b. Article Landing Page candidates (for viewing the article externally in a browser)
+      const landingCandidates: (string | null | undefined)[] = [
+        prov?.externalLandingPageUrl,
+        prov?.sourceResolution?.bestCandidate?.landingPageUrl,
+        prov?.externalUrl,
+        paper.doi ? `https://doi.org/${paper.doi}` : null,
+      ];
+
+      for (const candidate of landingCandidates) {
         if (!candidate || typeof candidate !== "string" || !candidate.startsWith("https://")) {
           continue;
         }
         if (validateSafePdfUrl(candidate).safe) {
-          externalPdfUrl = candidate;
+          externalLandingPageUrl = candidate;
           break;
         }
       }
@@ -927,7 +959,7 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
     const item: UserLibraryItem = {
       id: paper.id,
       bookmarkId,
-      title: paper.title,
+      title: formatMetadataText(paper.title),
       abstract: paper.abstract,
       authors: authorsList,
       institution: prov?.institution || null,
@@ -939,8 +971,9 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
       hasLocalPdf: localPdfAvailable,
       localPdfAvailable,
       externalPdfUrl,
+      externalLandingPageUrl,
       storagePath: paper.storagePath,
-      pdfUrl: localPdfAvailable ? `/api/papers/${paper.id}/pdf` : externalPdfUrl,
+      pdfUrl: localPdfAvailable ? `/api/papers/${paper.id}/pdf` : (externalPdfUrl || null),
       doi: paper.doi || prov?.canonicalDoi || null,
       arxiv: paper.arxivId || prov?.arxivId || null,
       isOpenAccess: Boolean(paper.isOpenAccess),
@@ -958,7 +991,7 @@ export async function getUserLibraryItems(userId: string): Promise<UserLibraryIt
       publicationDate: paper.publicationDate
         ? paper.publicationDate.toISOString()
         : null,
-      journal: paper.journal || prov?.canonicalJournal || null,
+      journal: formatMetadataText(paper.journal || prov?.canonicalJournal) || null,
       categories: categoriesList,
       collections: collectionNames,
       createdAt: paper.createdAt.toISOString(),

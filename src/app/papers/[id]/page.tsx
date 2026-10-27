@@ -24,7 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatMetadataText } from "@/lib/utils";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { AISummaryView } from "@/components/papers/ai-summary-view";
@@ -121,7 +121,7 @@ export default async function PaperDetailPage({
     `,
   ]);
   const isEmbedded = Number(embeddedCountResult[0]?.count ?? 0) > 0;
-  const statusBadge = getPaperStatusBadge(paper.status);
+  const statusBadge = getPaperStatusBadge(paper.status, chunkCount);
   const isMetadataOnly = paper.status === "METADATA_ONLY";
 
   const prov = paper.sourceProvenance as any;
@@ -131,22 +131,47 @@ export default async function PaperDetailPage({
   const isPreprint = prov?.version === "submittedVersion" || prov?.isPreprint === true;
 
   const localPdfAvailable = isLocalPdfAvailable(paper.storagePath);
-  const externalPdfUrl =
+
+  // Direct PDF candidate (must be a genuine PDF URL, not an HTML landing page)
+  const rawDirectPdf =
     (prov?.openAccessPdfUrl && typeof prov.openAccessPdfUrl === "string" && prov.openAccessPdfUrl.startsWith("http")
       ? prov.openAccessPdfUrl
       : null) ||
     (prov?.originalPdfUrl && typeof prov.originalPdfUrl === "string" && prov.originalPdfUrl.startsWith("http")
       ? prov.originalPdfUrl
       : null) ||
+    (prov?.externalPdfUrl && typeof prov.externalPdfUrl === "string" && prov.externalPdfUrl.startsWith("http")
+      ? prov.externalPdfUrl
+      : null) ||
     (paper.pdfUrl && typeof paper.pdfUrl === "string" && paper.pdfUrl.startsWith("http") && !paper.pdfUrl.includes("/api/papers/")
       ? paper.pdfUrl
-      : null) ||
+      : null);
+
+  const isDirectPdf = Boolean(
+    rawDirectPdf && (
+      rawDirectPdf.toLowerCase().includes(".pdf") ||
+      rawDirectPdf.includes("blobtype=pdf") ||
+      rawDirectPdf.includes("/pdf/") ||
+      rawDirectPdf === prov?.openAccessPdfUrl ||
+      rawDirectPdf === prov?.originalPdfUrl
+    )
+  );
+
+  const externalPdfUrl = isDirectPdf ? rawDirectPdf : null;
+
+  // External Article Landing Page candidate (for human in-browser reading)
+  const externalLandingPageUrl =
     (prov?.externalLandingPageUrl && typeof prov.externalLandingPageUrl === "string" && prov.externalLandingPageUrl.startsWith("http")
       ? prov.externalLandingPageUrl
       : null) ||
+    (prov?.sourceResolution?.bestCandidate?.landingPageUrl && typeof prov.sourceResolution.bestCandidate.landingPageUrl === "string" && prov.sourceResolution.bestCandidate.landingPageUrl.startsWith("http")
+      ? prov.sourceResolution.bestCandidate.landingPageUrl
+      : null) ||
+    (!isDirectPdf && rawDirectPdf ? rawDirectPdf : null) ||
     (prov?.externalUrl && typeof prov.externalUrl === "string" && prov.externalUrl.startsWith("http")
       ? prov.externalUrl
-      : null);
+      : null) ||
+    (paper.doi ? `https://doi.org/${paper.doi}` : null);
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-10 space-y-8">
@@ -212,13 +237,13 @@ export default async function PaperDetailPage({
 
           {/* Manuscript Title */}
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-slate-900 leading-snug">
-            {paper.title}
+            {formatMetadataText(paper.title)}
           </h1>
 
           {/* Journal & DOI metadata */}
           <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 pt-1">
             <span className="font-semibold text-slate-800 italic">
-              {paper.journal || "Research Manuscript"}
+              {formatMetadataText(paper.journal) || "Research Manuscript"}
             </span>
             {paper.doi && (
               <>
@@ -290,14 +315,27 @@ export default async function PaperDetailPage({
                   View Original PDF
                 </Button>
               </a>
-            ) : externalPdfUrl && canDownloadPdf ? (
+            ) : null}
+
+            {externalPdfUrl && canDownloadPdf && !localPdfAvailable ? (
               <a href={externalPdfUrl} target="_blank" rel="noopener noreferrer">
                 <Button size="sm" variant="outline" className="text-indigo-700 border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100 gap-1.5 shadow-xs text-xs font-semibold">
                   <ExternalLink className="h-3.5 w-3.5 text-indigo-600" />
-                  External Full Text
+                  External PDF
                 </Button>
               </a>
-            ) : !isMetadataOnly && canDownloadPdf ? (
+            ) : null}
+
+            {externalLandingPageUrl ? (
+              <a href={externalLandingPageUrl} target="_blank" rel="noopener noreferrer">
+                <Button size="sm" variant="outline" className="text-slate-700 border-slate-200 bg-slate-50 hover:bg-slate-100 gap-1.5 shadow-xs text-xs font-semibold">
+                  <ExternalLink className="h-3.5 w-3.5 text-slate-500" />
+                  View Article Page
+                </Button>
+              </a>
+            ) : null}
+
+            {!localPdfAvailable && !externalPdfUrl && !externalLandingPageUrl && !isMetadataOnly && canDownloadPdf ? (
               <Button size="sm" variant="outline" disabled className="gap-1.5 text-xs text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed">
                 <FileText className="h-3.5 w-3.5 text-slate-400" />
                 PDF Unavailable
@@ -514,11 +552,12 @@ export default async function PaperDetailPage({
         <section id="ask-paper" className="scroll-mt-8 pt-4">
           <PaperQA
             paperId={paper.id}
-            paperTitle={paper.title}
+            paperTitle={formatMetadataText(paper.title)}
             chunkCount={chunkCount}
             isEmbedded={isEmbedded}
             isAuthenticated={!!session?.user?.id}
             initialConversationId={searchParams?.conversationId}
+            paperStatus={paper.status}
           />
         </section>
       )}

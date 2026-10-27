@@ -36,7 +36,20 @@ export function getPaperStatusLabel(status: PaperProcessingStatus | string | nul
 /**
  * Maps paper status to human-friendly styling badges and descriptions.
  */
-export function getPaperStatusBadge(status: PaperProcessingStatus | string | null | undefined): StatusBadgeInfo {
+export function getPaperStatusBadge(
+  status: PaperProcessingStatus | string | null | undefined,
+  chunkCount?: number
+): StatusBadgeInfo {
+  // If explicitly provided a chunk count of 0 for a completed/extracted paper, paper cannot launch evidence Q&A
+  if ((status === "COMPLETED" || status === "TEXT_EXTRACTED") && chunkCount !== undefined && chunkCount === 0) {
+    return {
+      label: "Full text needed",
+      variant: "warning",
+      className: "bg-amber-50 text-amber-800 border-amber-200",
+      description: "Manuscript metadata is recorded, but full-text chunks have not yet been extracted for AI research.",
+    };
+  }
+
   switch (status) {
     case "METADATA_ONLY":
       return {
@@ -64,7 +77,7 @@ export function getPaperStatusBadge(status: PaperProcessingStatus | string | nul
         label: "Full text extracted",
         variant: "academic",
         className: "bg-indigo-50 text-indigo-700 border-indigo-200",
-        description: "Full manuscript extracted and structured. Semantic AI indexing pending authorization.",
+        description: "Full manuscript extracted and structured. Ready for lexical evidence search and research inquiry.",
       };
     case "EMBEDDING":
       return {
@@ -78,7 +91,7 @@ export function getPaperStatusBadge(status: PaperProcessingStatus | string | nul
         label: "Ready for AI",
         variant: "success",
         className: "bg-emerald-50 text-emerald-800 border-emerald-200",
-        description: "Full manuscript semantically indexed and ready for grounded research and AI inquiry.",
+        description: "Full manuscript indexed and ready for grounded research and AI inquiry.",
       };
     case "FAILED":
       return {

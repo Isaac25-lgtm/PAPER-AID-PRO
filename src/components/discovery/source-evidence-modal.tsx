@@ -6,6 +6,7 @@ import { X, ExternalLink, BookOpen, CheckCircle2, ShieldCheck, Quote, FileText }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SnapshotCitation } from "@/lib/discovery/snapshot/types";
+import { formatMetadataText } from "@/lib/utils";
 
 interface SourceEvidenceModalProps {
   isOpen: boolean;
@@ -68,7 +69,7 @@ export function SourceEvidenceModal({
             {citation.journal && (
               <>
                 <span className="text-slate-300">•</span>
-                <span className="italic">{citation.journal}</span>
+                <span className="italic">{formatMetadataText(citation.journal)}</span>
               </>
             )}
           </div>

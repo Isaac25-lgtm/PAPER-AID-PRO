@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ResearchSnapshot, SnapshotCitation } from "@/lib/discovery/snapshot/types";
+import { formatMetadataText } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 interface AIResearchSnapshotCardProps {
@@ -254,10 +255,10 @@ export function AIResearchSnapshotCard({
                     </span>
                     <div>
                       <h4 className="font-semibold text-slate-900 leading-snug hover:text-indigo-600">
-                        {c.title}
+                        {formatMetadataText(c.title)}
                       </h4>
                       <p className="text-[11px] text-slate-500">
-                        {c.authors} {c.year ? `• ${c.year}` : ""} {c.journal ? `• ${c.journal}` : ""}
+                        {c.authors} {c.year ? `• ${c.year}` : ""} {c.journal ? `• ${formatMetadataText(c.journal)}` : ""}
                       </p>
                     </div>
                   </div>

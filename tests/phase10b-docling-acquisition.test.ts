@@ -613,8 +613,10 @@ async function runPhase10BAcceptanceSuite() {
       "Must return RESTRICTED_LICENSE or NO_FULL_TEXT"
     );
     assert(
-      restrictedResult.message.includes("upload") || restrictedResult.message.includes("restricted"),
-      "Message must offer manual upload option"
+      restrictedResult.message.includes("upload") ||
+      restrictedResult.message.includes("restricted") ||
+      restrictedResult.message.includes("provide a copy"),
+      "Message must offer manual provision/upload option"
     );
     recordPass("Restricted paper halted server download: returned RESTRICTED with manual upload guidance");
 

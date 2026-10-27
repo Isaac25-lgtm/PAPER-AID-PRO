@@ -71,6 +71,7 @@ import {
 } from "./actions";
 import { CitePaperModal } from "@/components/citations/cite-paper-modal";
 import { BulkExportModal } from "@/components/citations/bulk-export-modal";
+import { formatMetadataText } from "@/lib/utils";
 
 interface LibraryViewProps {
   initialItems: UserLibraryItem[];
@@ -1348,7 +1349,7 @@ export function LibraryView({
                     {discoveringOaId === item.id ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200 animate-pulse">
                         <RefreshCw className="h-3 w-3 animate-spin text-indigo-600" />
-                        <span>Preparing &amp; Analyzing Document...</span>
+                        <span>Preparing & Analyzing Document...</span>
                       </span>
                     ) : item.status === "COMPLETED" && item.chunkCount > 0 ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
@@ -1604,15 +1605,40 @@ export function LibraryView({
                         <span>PDF</span>
                       </a>
                     ) : item.externalPdfUrl ? (
+                      <div className="flex items-center gap-1.5">
+                        <a
+                          href={item.externalPdfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 h-7 px-2 text-xs text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 hover:text-indigo-800 rounded-md border border-indigo-200 transition-colors font-medium"
+                          title="Locally stored PDF is unavailable. Open verified external repository or publisher PDF."
+                        >
+                          <ExternalLink className="h-3 w-3 text-indigo-600" />
+                          <span>External PDF</span>
+                        </a>
+                        {item.externalLandingPageUrl && (
+                          <a
+                            href={item.externalLandingPageUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-md border border-slate-200 transition-colors font-medium"
+                            title="Open external article landing page."
+                          >
+                            <ExternalLink className="h-3 w-3 text-slate-500" />
+                            <span>Article Page</span>
+                          </a>
+                        )}
+                      </div>
+                    ) : item.externalLandingPageUrl ? (
                       <a
-                        href={item.externalPdfUrl}
+                        href={item.externalLandingPageUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 h-7 px-2 text-xs text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 hover:text-indigo-800 rounded-md border border-indigo-200 transition-colors font-medium"
-                        title="Locally stored PDF is unavailable. Open verified external publisher full-text."
+                        className="inline-flex items-center gap-1 h-7 px-2 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-md border border-slate-200 transition-colors font-medium"
+                        title="Open external article landing page."
                       >
-                        <ExternalLink className="h-3 w-3 text-indigo-600" />
-                        <span>External Full Text</span>
+                        <ExternalLink className="h-3 w-3 text-slate-500" />
+                        <span>Article Page</span>
                       </a>
                     ) : (item.status === "COMPLETED" || item.status === "TEXT_EXTRACTED") ? (
                       <span
@@ -2929,7 +2955,7 @@ export function LibraryView({
                   <span>{directAttachItem.authors.join(", ")}</span>
                 )}
                 {directAttachItem.journal && (
-                  <span>· {directAttachItem.journal}</span>
+                  <span>· {formatMetadataText(directAttachItem.journal)}</span>
                 )}
                 {directAttachItem.publicationDate && (
                   <span>· {directAttachItem.publicationDate}</span>

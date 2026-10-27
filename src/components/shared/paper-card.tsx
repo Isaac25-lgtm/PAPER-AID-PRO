@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Paper } from "@/lib/types/paper";
-import { formatDate, truncate } from "@/lib/utils";
+import { formatDate, formatMetadataText, truncate } from "@/lib/utils";
 import { getPaperStatusBadge } from "@/lib/ui/status-mapper";
 
 export interface MatchedSnippet {
@@ -49,7 +49,7 @@ function formatAbstractExcerpt(raw?: string | null, maxLen = 220): string {
 }
 
 export function PaperCard({ paper, showAiBadge = true, matchedSnippet }: PaperCardProps) {
-  const statusBadge = getPaperStatusBadge(paper.status);
+  const statusBadge = getPaperStatusBadge(paper.status, paper._count?.chunks);
 
   return (
     <Card className="flex flex-col justify-between hover:shadow-md hover:border-indigo-200 transition-all group bg-white">
@@ -81,7 +81,7 @@ export function PaperCard({ paper, showAiBadge = true, matchedSnippet }: PaperCa
           className="group-hover:text-indigo-600 transition-colors"
         >
           <h3 className="font-semibold text-base sm:text-lg text-slate-900 leading-snug line-clamp-2">
-            {paper.title}
+            {formatMetadataText(paper.title)}
           </h3>
         </Link>
 
@@ -95,7 +95,7 @@ export function PaperCard({ paper, showAiBadge = true, matchedSnippet }: PaperCa
 
         {/* Journal */}
         <div className="text-xs font-medium text-slate-500 mt-1 italic">
-          {paper.journal}
+          {formatMetadataText(paper.journal)}
         </div>
       </CardHeader>
 

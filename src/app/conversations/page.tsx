@@ -19,7 +19,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { prisma } from "@/lib/prisma";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatMetadataText } from "@/lib/utils";
 
 export const metadata = {
   title: "Research History | AI Research Hub",
@@ -261,11 +261,11 @@ export default async function ConversationsPage({
                       <FileText className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
                       <div className="min-w-0">
                         <div className="text-xs font-semibold text-slate-800 line-clamp-1">
-                          {convo.paper.title}
+                          {formatMetadataText(convo.paper.title)}
                         </div>
                         {convo.paper.journal && (
                           <div className="text-[11px] text-slate-500 italic">
-                            {convo.paper.journal}
+                            {formatMetadataText(convo.paper.journal)}
                           </div>
                         )}
                       </div>

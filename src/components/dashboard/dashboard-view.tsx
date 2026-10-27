@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { OnboardingChecklist } from "./onboarding-checklist";
 import { useWorkspace } from "@/components/layout/workspace-context";
+import { formatMetadataText } from "@/lib/utils";
 
 export interface DashboardDocumentItem {
   id: string;
@@ -640,12 +641,12 @@ export function DashboardView({
                       href={`/papers/${item.id}`}
                       className="block text-xs font-bold text-slate-900 hover:text-indigo-600 truncate transition-colors"
                     >
-                      {item.title}
+                      {formatMetadataText(item.title)}
                     </Link>
 
                     <div className="text-[11px] text-slate-500 truncate">
                       {item.authors && item.authors.length > 0 ? item.authors.join(", ") : "Unknown authors"}
-                      {item.journal ? ` · ${item.journal}` : ""}
+                      {item.journal ? ` · ${formatMetadataText(item.journal)}` : ""}
                     </div>
                   </div>
 

@@ -46,7 +46,7 @@ import { ResearchSnapshot, SnapshotCitation } from "@/lib/discovery/snapshot/typ
 import { AIResearchSnapshotCard } from "./ai-research-snapshot-card";
 import { SourceEvidenceModal } from "./source-evidence-modal";
 import { SavePromptModal } from "./save-prompt-modal";
-import { cn } from "@/lib/utils";
+import { cn, formatMetadataText } from "@/lib/utils";
 
 type SearchCategory = "PAPERS" | "AUTHORS" | "JOURNALS";
 type DateFilter = "ALL" | "1_YEAR" | "5_YEARS" | "10_YEARS" | "CUSTOM";
@@ -848,7 +848,7 @@ export function DiscoveryInterface() {
                     {paper.journal && (
                       <>
                         <span className="text-slate-300">•</span>
-                        <span className="italic font-medium">{paper.journal}</span>
+                        <span className="italic font-medium">{formatMetadataText(paper.journal)}</span>
                       </>
                     )}
                     {paper.year && (

@@ -40,6 +40,10 @@ export interface Paper {
     id: string;
     name: string;
   }[];
+  _count?: {
+    chunks?: number;
+    bookmarks?: number;
+  };
   createdAt: string;
   updatedAt: string;
 }
