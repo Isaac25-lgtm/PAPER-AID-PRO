@@ -16,6 +16,7 @@ import {
   decodeHtmlEntities,
 } from "./csl-engine";
 import { mapReferenceToCslJson } from "./csl-mapper";
+import { sanitizeCslHtml } from "./html-sanitizer";
 
 // In-memory client cache for fetched style XMLs
 const clientStyleCache = new Map<
@@ -130,7 +131,7 @@ export async function formatDocumentCsl({
     }
   }
 
-  if (clusters.length === 0 && cslItems.length === 0) {
+  if (clusters.length === 0) {
     return {
       renderedClusters: new Map(),
       bibliographyEntries: [],
@@ -150,6 +151,18 @@ export async function formatDocumentCsl({
     // Render sequential in-text citations
     const renderedClusters = processSequentialCitationClusters(engine, normalizedClusters);
 
+    // Register strictly the unique cited IDs for the bibliography
+    const citedIds = Array.from(
+      new Set(
+        normalizedClusters
+          .flatMap((c) => c.items.map((it: any) => it.id))
+          .filter(Boolean)
+      )
+    );
+    if (citedIds.length > 0) {
+      engine.updateItems(citedIds);
+    }
+
     // Render bibliography
     const bib = renderBibliography(
       engine,
@@ -158,8 +171,10 @@ export async function formatDocumentCsl({
       styleDef.format
     );
 
-    const cleanEntries = bib.entries.map((e) =>
-      decodeHtmlEntities(stripHtmlTags(e))
+    const cleanEntries = Array.from(
+      new Set(
+        bib.entries.map((e) => decodeHtmlEntities(sanitizeCslHtml(e)))
+      )
     );
 
     return {

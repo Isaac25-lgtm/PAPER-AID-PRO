@@ -138,9 +138,13 @@ export function parseAuthorName(rawInput: any): CslAuthorName {
       return { literal: String(rawInput.literal).trim() };
     }
     if ("family" in rawInput || "given" in rawInput) {
+      const rawGiven = rawInput.given ? String(rawInput.given).trim() : undefined;
+      const given = rawGiven && /^[A-Z]{2,4}$/.test(rawGiven)
+        ? rawGiven.split("").join(". ") + "."
+        : rawGiven;
       return {
         family: rawInput.family ? String(rawInput.family).trim() : undefined,
-        given: rawInput.given ? String(rawInput.given).trim() : undefined,
+        given,
         suffix: rawInput.suffix ? String(rawInput.suffix).trim() : undefined,
         "dropping-particle": rawInput["dropping-particle"],
         "non-dropping-particle": rawInput["non-dropping-particle"],
@@ -228,11 +232,18 @@ export function parseAuthorName(rawInput: any): CslAuthorName {
     suffix = tokens.pop()!;
   }
 
-  // 5. NLM / PubMed format check: trailing token(s) are initials ("Fink B", "Hoyka M", "Smith JA", "van der Waals JD")
+  // 5. NLM / PubMed format check: trailing token(s) are initials ("Fink B", "Hoyka M", "Smith JA", "Alcazar JL")
   if (isInitialsToken(tokens[tokens.length - 1])) {
     const initialsTokens: string[] = [];
     while (tokens.length > 1 && isInitialsToken(tokens[tokens.length - 1])) {
-      initialsTokens.unshift(tokens.pop()!);
+      const tok = tokens.pop()!;
+      // When NLM / PubMed concatenates initials without spaces (e.g. "JL", "JA", "ABC"),
+      // separate with periods so CSL citeproc engines initialize each letter (e.g. "J. L.")
+      if (/^[A-Z]{2,4}$/.test(tok)) {
+        initialsTokens.unshift(tok.split("").join(". ") + ".");
+      } else {
+        initialsTokens.unshift(tok);
+      }
     }
     const family = tokens.join(" ");
     const given = initialsTokens.join(" ");
@@ -243,11 +254,15 @@ export function parseAuthorName(rawInput: any): CslAuthorName {
     };
   }
 
-  // 6. Western format with initial at start ("B. Fink", "B Fink")
+  // 6. Western format with initial at start ("B. Fink", "B Fink", "JL Alcazar")
   if (isInitialsToken(tokens[0]) && tokens.length === 2) {
+    const rawInit = tokens[0];
+    const given = /^[A-Z]{2,4}$/.test(rawInit)
+      ? rawInit.split("").join(". ") + "."
+      : rawInit;
     return {
       family: tokens[1],
-      given: tokens[0],
+      given,
       suffix,
     };
   }
@@ -366,6 +381,7 @@ export interface GenericReferenceInput {
   issn?: string | null;
   isbn?: string | null;
   rawMetadata?: any;
+  sourceProvenance?: any;
 }
 
 /**
@@ -375,6 +391,7 @@ export interface GenericReferenceInput {
 export function mapReferenceToCslJson(input: GenericReferenceInput): CslItem {
   const id = String(input.id || "cite-" + Math.random().toString(36).substring(2, 9));
   const rawMeta = input.rawMetadata || {};
+  const prov = (input as any).sourceProvenance || {};
 
   // 1. Authors
   const authors: CslAuthorName[] = [];
@@ -407,31 +424,72 @@ export function mapReferenceToCslJson(input: GenericReferenceInput): CslItem {
     if (!isNaN(parsedYear) && parsedYear > 1000 && parsedYear < 3000) {
       issued = { "date-parts": [[parsedYear]] };
     }
-  } else if (rawMeta.year || rawMeta.publicationYear) {
-    const parsedYear = parseInt(String(rawMeta.year || rawMeta.publicationYear), 10);
+  } else if (rawMeta.year || rawMeta.publicationYear || prov.publicationYear) {
+    const parsedYear = parseInt(String(rawMeta.year || rawMeta.publicationYear || prov.publicationYear), 10);
     if (!isNaN(parsedYear)) {
       issued = { "date-parts": [[parsedYear]] };
     }
   }
 
   // 3. DOI & URLs
-  const cleanDoi = normalizeDoi(input.doi || rawMeta.doi || undefined);
+  const cleanDoi = normalizeDoi(
+    input.doi ||
+    rawMeta.doi ||
+    prov.canonicalDoi ||
+    prov.originalIdentifiers?.doi ||
+    prov.rawMetadata?.doi ||
+    undefined
+  );
   const url = input.url || input.pdfUrl || rawMeta.url || (cleanDoi ? `https://doi.org/${cleanDoi}` : undefined);
 
-  // 4. Container & Journal
-  const containerTitle = (input.journal || rawMeta.journal || rawMeta.containerTitle || rawMeta.booktitle || "").trim();
+  // 4. Container & Journal (decode HTML entities such as &amp;)
+  const rawContainer = (
+    input.journal ||
+    rawMeta.journal ||
+    rawMeta.containerTitle ||
+    rawMeta.booktitle ||
+    prov.canonicalJournal ||
+    ""
+  ).trim();
+  const containerTitle = rawContainer
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
 
   // 5. Volume, Issue, Page
-  const volume = input.volume || rawMeta.volume || undefined;
-  const issue = input.issue || rawMeta.issue || undefined;
-  const page = (input.pages || rawMeta.pages || rawMeta.page || "").trim() || undefined;
+  const volume =
+    input.volume ||
+    rawMeta.volume ||
+    prov.volume ||
+    prov.rawMetadata?.volume ||
+    undefined;
+  const issue =
+    input.issue ||
+    rawMeta.issue ||
+    prov.issue ||
+    prov.rawMetadata?.issue ||
+    undefined;
+  const page = (
+    input.pages ||
+    rawMeta.pages ||
+    rawMeta.page ||
+    prov.pages ||
+    prov.pageRange ||
+    prov.rawMetadata?.pages ||
+    ""
+  ).trim() || undefined;
   const articleNumber = input.articleNumber || rawMeta.articleNumber || undefined;
 
   // 6. Publisher & Institution
   const publisher = (input.publisher || rawMeta.publisher || input.institution || "").trim() || undefined;
 
   // 7. Type
-  const cslType = mapDocumentTypeToCsl(input.documentType || rawMeta.documentType, Boolean(containerTitle));
+  const cslType = mapDocumentTypeToCsl(
+    input.documentType || rawMeta.documentType || prov.documentType,
+    Boolean(containerTitle)
+  );
 
   const cslItem: CslItem = {
     id,

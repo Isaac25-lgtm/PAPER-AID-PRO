@@ -278,11 +278,14 @@ export function getSectionGuidance(
     return "Candidly articulate methodological boundaries, potential selection or measurement biases, cohort constraints, and ethical safeguards.";
   }
   if (lower.includes("reference") || lower.includes("bibliograph")) {
-    return "Insert citations directly from My Library or search Crossref/PubMed using the citation tools in the right-hand drawer.";
+    return REFERENCES_GUIDANCE_TEXT;
   }
 
   return "Draft section content here. Press Ctrl+J at any point to summon on-demand AI autocomplete grounded in your topic and approved objectives.";
 }
+
+export const REFERENCES_GUIDANCE_TEXT =
+  "Insert citations directly from My Library or search Crossref/PubMed using the citation tools in the right-hand drawer.";
 
 /**
  * Converts a GuidedDocumentConfig into a structured TipTap document schema with metadata.

@@ -129,6 +129,17 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
   const [externalUpdateAllCitations, setExternalUpdateAllCitations] =
     useState<ExternalUpdateAllCitations | null>(null);
 
+  // Editor cursor selection state (for citation placement validation)
+  const [editorSelection, setEditorSelection] = useState<{
+    hasSelection: boolean;
+    isValidForCitation: boolean;
+    isTitle: boolean;
+  }>({
+    hasSelection: false,
+    isValidForCitation: false,
+    isTitle: false,
+  });
+
   // Load active style title on mount
   useEffect(() => {
     loadStyleXmlClient(citationStyle).then((def) => {
@@ -384,6 +395,16 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
         setActiveCitationsInDoc(citations);
         if (citations.length === 0) {
           setBibliographyEntries([]);
+          const docContent = latestDraftRef.current.content || researchDocument.content;
+          const hasBibNode = docContent?.content?.some((node: any) => node.type === "bibliography");
+          if (hasBibNode) {
+            setExternalSetBibliography({
+              id: Date.now(),
+              styleId: citationStyle,
+              styleTitle,
+              entries: [],
+            });
+          }
           return;
         }
 
@@ -395,6 +416,18 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
 
         setBibliographyEntries(res.bibliographyEntries);
         setStyleTitle(res.styleTitle);
+
+        // Keep embedded bibliography node synchronized with current cited references
+        const docContent = latestDraftRef.current.content || researchDocument.content;
+        const hasBibNode = docContent?.content?.some((node: any) => node.type === "bibliography");
+        if (hasBibNode) {
+          setExternalSetBibliography({
+            id: Date.now(),
+            styleId: citationStyle,
+            styleTitle: res.styleTitle,
+            entries: res.bibliographyEntries,
+          });
+        }
 
         // Check if sequential numbers or disambiguations changed
         let hasMismatch = false;
@@ -777,6 +810,7 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
           externalSetBibliography={externalSetBibliography}
           externalUpdateAllCitations={externalUpdateAllCitations}
           onCitationsIndexed={handleCitationsIndexed}
+          onSelectionChange={setEditorSelection}
         />
 
         {/* My Library & Verified Sources Slide-Over Drawer */}
@@ -794,6 +828,7 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
           activeStyleName={styleTitle}
           bibliographyEntries={bibliographyEntries}
           onInsertBibliographyToCanvas={handleInsertBibliographyToCanvas}
+          editorSelection={editorSelection}
         />
       </div>
 

@@ -43,6 +43,13 @@ export interface ExternalUpdateAllCitations {
   styleId: string;
 }
 
+export interface EditorSelectionInfo {
+  hasSelection: boolean;
+  isValidForCitation: boolean;
+  isTitle: boolean;
+  nodeType?: string;
+}
+
 interface EditorCanvasProps {
   documentId: string;
   initialContent: any;
@@ -56,6 +63,8 @@ interface EditorCanvasProps {
   onCitationsIndexed?: (
     citations: Array<{ citationId: string; items: any[]; renderedText: string }>
   ) => void;
+  onSelectionChange?: (selection: EditorSelectionInfo) => void;
+  onInvalidCitationPlacement?: (reason: string) => void;
 }
 
 export function EditorCanvas({
@@ -69,6 +78,8 @@ export function EditorCanvas({
   externalSetBibliography,
   externalUpdateAllCitations,
   onCitationsIndexed,
+  onSelectionChange,
+  onInvalidCitationPlacement,
 }: EditorCanvasProps) {
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [surroundingContext, setSurroundingContext] = useState<string>("");
@@ -77,6 +88,13 @@ export function EditorCanvas({
   const [autocompleteNotice, setAutocompleteNotice] = useState<string | null>(null);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  const savedSelectionRef = useRef<{
+    from: number;
+    to: number;
+    isValidForCitation: boolean;
+    isTitle: boolean;
+    parentType: string;
+  } | null>(null);
 
   // Initialize TipTap
   const editor = useEditor({
@@ -154,7 +172,30 @@ export function EditorCanvas({
         setGhostSuggestion(null);
       }
 
-      const { from, to } = editor.state.selection;
+      const { from, to, $from } = editor.state.selection;
+      const parentNode = $from?.parent;
+      const parentType = parentNode?.type?.name || "";
+      const isTitle = parentType === "heading" && parentNode?.attrs?.level === 1;
+      const isBibliography = parentType === "bibliography";
+      const isValidForCitation = !isTitle && !isBibliography && Boolean(parentNode?.isTextblock);
+
+      savedSelectionRef.current = {
+        from,
+        to,
+        isValidForCitation,
+        isTitle,
+        parentType,
+      };
+
+      if (onSelectionChange) {
+        onSelectionChange({
+          hasSelection: true,
+          isValidForCitation,
+          isTitle,
+          nodeType: parentType,
+        });
+      }
+
       if (from !== to) {
         const text = editor.state.doc.textBetween(from, to, " ");
         if (text && text.trim().length > 3) {
@@ -183,22 +224,52 @@ export function EditorCanvas({
   // Handle external structured citation insertion
   useEffect(() => {
     if (editor && externalInsertCitation) {
+      const saved = savedSelectionRef.current;
+
+      // Ensure citation is placed at a valid position in an editable paragraph
+      if (!saved || !saved.isValidForCitation) {
+        const message = saved?.isTitle
+          ? "Citations cannot be placed in the manuscript title. Please click into an editable body paragraph or section."
+          : "Please click inside a body paragraph or section to choose where to insert your citation.";
+        console.warn("[EditorCanvas]", message);
+        setAutocompleteNotice(message);
+        setTimeout(() => setAutocompleteNotice(null), 5000);
+        if (onInvalidCitationPlacement) {
+          onInvalidCitationPlacement(message);
+        }
+        return;
+      }
+
+      // Explicitly restore the saved cursor position before inserting
       editor
         .chain()
         .focus()
-        .insertContent({
-          type: "citation",
-          attrs: {
-            citationId: externalInsertCitation.citationId,
-            items: externalInsertCitation.items,
-            renderedText: externalInsertCitation.renderedText,
-            styleId: externalInsertCitation.styleId || "apa",
+        .setTextSelection(saved.from)
+        .insertContent([
+          {
+            type: "citation",
+            attrs: {
+              citationId: externalInsertCitation.citationId,
+              items: externalInsertCitation.items,
+              renderedText: externalInsertCitation.renderedText,
+              styleId: externalInsertCitation.styleId || "apa",
+            },
           },
-        })
-        .insertContent(" ")
+          {
+            type: "text",
+            text: " ",
+          },
+        ])
         .run();
+
+      const newPos = editor.state.selection.from;
+      savedSelectionRef.current = {
+        ...saved,
+        from: newPos,
+        to: newPos,
+      };
     }
-  }, [editor, externalInsertCitation]);
+  }, [editor, externalInsertCitation, onInvalidCitationPlacement]);
 
   // Handle external bibliography insertion/update
   useEffect(() => {

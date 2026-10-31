@@ -170,6 +170,8 @@ export async function getResearchDocument(userId: string, documentId: string) {
               journal: true,
               publicationDate: true,
               status: true,
+              sourceProvenance: true,
+              rawMetadata: true,
               authors: {
                 include: { author: true },
                 orderBy: { orderIndex: "asc" },
@@ -199,6 +201,8 @@ export async function getResearchDocument(userId: string, documentId: string) {
               journal: true,
               publicationDate: true,
               status: true,
+              sourceProvenance: true,
+              rawMetadata: true,
               authors: {
                 include: { author: true },
                 orderBy: { orderIndex: "asc" },
@@ -722,7 +726,14 @@ export async function exportResearchDocument(
   let ext = "txt";
   let content = "";
 
-  const citedPapers = (doc.linkedPapers || []).map((lp: any) => lp.paper).filter(Boolean);
+  const paperMap = new Map<string, any>();
+  for (const lp of doc.linkedPapers || []) {
+    if (lp.paper?.id) paperMap.set(lp.paper.id, lp.paper);
+  }
+  for (const c of doc.citations || []) {
+    if (c.paper?.id && !paperMap.has(c.paper.id)) paperMap.set(c.paper.id, c.paper);
+  }
+  const citedPapers = Array.from(paperMap.values());
   const citations = doc.citations || [];
 
   if (format === "markdown") {

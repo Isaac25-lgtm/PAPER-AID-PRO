@@ -92,6 +92,11 @@ interface SourcesDrawerProps {
   activeStyleName?: string;
   bibliographyEntries?: string[];
   onInsertBibliographyToCanvas?: () => void;
+  editorSelection?: {
+    hasSelection: boolean;
+    isValidForCitation: boolean;
+    isTitle: boolean;
+  };
 }
 
 export function SourcesDrawer({
@@ -108,6 +113,7 @@ export function SourcesDrawer({
   activeStyleName = "APA 7th",
   bibliographyEntries = [],
   onInsertBibliographyToCanvas,
+  editorSelection,
 }: SourcesDrawerProps) {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [libraryItems, setLibraryItems] = useState<UserLibraryItem[]>([]);
@@ -587,17 +593,39 @@ export function SourcesDrawer({
                 {locatorTarget.title}
               </p>
 
+              {/* Cursor Selection Validation Banner */}
+              {editorSelection?.isTitle && (
+                <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold block text-amber-900">Manuscript Title Selected</span>
+                    <span>Citations cannot be inserted into the title. Please click into an editable body paragraph or section in the canvas.</span>
+                  </div>
+                </div>
+              )}
+
+              {editorSelection && !editorSelection.hasSelection && (
+                <div className="p-2.5 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-700 flex items-start gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold block text-slate-900">Choose Insertion Location</span>
+                    <span>Please place your cursor in a body paragraph in the manuscript where you want this citation to appear.</span>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[11px] font-medium text-slate-700 mb-1">
                   Page or Locator <span className="text-slate-400 font-normal">(optional)</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. 42 or 12-15"
+                  placeholder="e.g. 5 or 12-15"
                   value={locatorValue}
                   onChange={(e) => setLocatorValue(e.target.value)}
+                  disabled={editorSelection ? !editorSelection.isValidForCitation : false}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") {
+                    if (e.key === "Enter" && (!editorSelection || editorSelection.isValidForCitation)) {
                       e.preventDefault();
                       onInsertStructuredCitation?.({
                         paperId: locatorTarget.id,
@@ -609,10 +637,10 @@ export function SourcesDrawer({
                     }
                   }}
                   autoFocus
-                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:bg-slate-100 disabled:cursor-not-allowed"
                 />
                 <span className="text-[10px] text-slate-400 mt-1 block">
-                  CSL formats the locator according to the active style rules (e.g. p. 42).
+                  CSL formats the locator according to active style rules (e.g. p. 5).
                 </span>
               </div>
             </div>
@@ -630,6 +658,7 @@ export function SourcesDrawer({
               </button>
               <button
                 type="button"
+                disabled={editorSelection ? !editorSelection.isValidForCitation : false}
                 onClick={() => {
                   onInsertStructuredCitation?.({
                     paperId: locatorTarget.id,
@@ -639,9 +668,9 @@ export function SourcesDrawer({
                   setLocatorTarget(null);
                   setLocatorValue("");
                 }}
-                className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 rounded-md shadow-xs transition-colors"
+                className="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md shadow-xs transition-colors"
               >
-                Insert Citation
+                {editorSelection?.isTitle ? "Select Body Paragraph First" : "Insert Citation"}
               </button>
             </div>
           </div>
