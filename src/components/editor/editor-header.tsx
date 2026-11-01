@@ -84,13 +84,27 @@ export function EditorHeader({
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
-  const handleExport = async (format: "markdown" | "bibtex" | "html" | "text") => {
+  const handleExport = async (
+    format: "markdown" | "bibtex" | "html" | "text" | "docx" | "ris"
+  ) => {
     setIsExportOpen(false);
     setIsExporting(true);
     try {
       const res = await exportDocumentAction(documentId, format);
       if (res.success && res.export) {
-        const blob = new Blob([res.export.content], { type: res.export.mimeType });
+        let blob: Blob;
+        if (res.export.isBinary || res.export.format === "docx") {
+          const binaryString = window.atob(res.export.content);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          blob = new Blob([bytes], { type: res.export.mimeType });
+        } else {
+          blob = new Blob([res.export.content], { type: res.export.mimeType });
+        }
+
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -316,6 +330,17 @@ export function EditorHeader({
                 </div>
                 <button
                   type="button"
+                  onClick={() => handleExport("docx")}
+                  className="w-full text-left px-3 py-1.5 text-slate-700 hover:bg-slate-50 flex items-center justify-between font-medium group"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Word Document</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded font-semibold">.docx</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleExport("markdown")}
                   className="w-full text-left px-3 py-1.5 text-slate-700 hover:bg-slate-50 flex items-center justify-between"
                 >
@@ -348,6 +373,14 @@ export function EditorHeader({
                 >
                   <span>BibTeX Cited References</span>
                   <span className="text-[10px] font-mono text-slate-400">.bib</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExport("ris")}
+                  className="w-full text-left px-3 py-1.5 text-slate-700 hover:bg-slate-50 flex items-center justify-between"
+                >
+                  <span>RIS Cited References</span>
+                  <span className="text-[10px] font-mono text-slate-400">.ris</span>
                 </button>
               </div>
             )}

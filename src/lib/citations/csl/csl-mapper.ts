@@ -122,6 +122,38 @@ export function splitAuthorList(raw: string): string[] {
 }
 
 /**
+ * Normalizes compound initials (e.g. "JL", "JL.", "J.L.", "J.L", "J-L", "ABC") into
+ * period-and-space separated initials ("J. L.", "A. B. C.") so that CSL citeproc engines
+ * correctly initialize and preserve every author initial in APA 7th and all academic citation styles.
+ * Full names (e.g. "John", "John L.", "Maria Elena") are preserved intact.
+ */
+export function normalizeGivenInitials(given?: string | null): string | undefined {
+  if (!given) return undefined;
+  const trimmed = given.trim();
+  if (!trimmed) return undefined;
+
+  // Pattern 1: Unpunctuated uppercase letters, 2-4 chars (e.g. "JL", "ABC", "ABCD", "JL.")
+  const cleanUnpunctuated = trimmed.replace(/\.$/, "");
+  if (/^[A-Z]{2,4}$/.test(cleanUnpunctuated)) {
+    return cleanUnpunctuated.split("").join(". ") + ".";
+  }
+
+  // Pattern 2: Dotted initials without spaces (e.g. "J.L.", "J.L", "A.B.C.")
+  if (/^([A-Z]\.)+[A-Z]?\.?$/.test(trimmed)) {
+    const letters = trimmed.replace(/\./g, "").split("");
+    return letters.join(". ") + ".";
+  }
+
+  // Pattern 3: Hyphenated initials (e.g. "J-L", "J.-L.")
+  if (/^[A-Z]\.?-?[A-Z]\.?$/.test(trimmed)) {
+    const letters = trimmed.replace(/[.\-]/g, "").split("");
+    return letters.join(".-") + ".";
+  }
+
+  return trimmed;
+}
+
+/**
  * Splits an author name string or structured author object into family and given components, or literal name.
  * Correctly distinguishes NLM / PubMed name order ("Fink B" -> family: "Fink", given: "B")
  * from Western name order ("Benjamin Fink" -> family: "Fink", given: "Benjamin"),
@@ -139,33 +171,33 @@ export function parseAuthorName(rawInput: any): CslAuthorName {
     }
     if ("family" in rawInput || "given" in rawInput) {
       const rawGiven = rawInput.given ? String(rawInput.given).trim() : undefined;
-      const given = rawGiven && /^[A-Z]{2,4}$/.test(rawGiven)
-        ? rawGiven.split("").join(". ") + "."
-        : rawGiven;
       return {
         family: rawInput.family ? String(rawInput.family).trim() : undefined,
-        given,
+        given: normalizeGivenInitials(rawGiven),
         suffix: rawInput.suffix ? String(rawInput.suffix).trim() : undefined,
         "dropping-particle": rawInput["dropping-particle"],
         "non-dropping-particle": rawInput["non-dropping-particle"],
       };
     }
     if ("familyName" in rawInput || "givenName" in rawInput) {
+      const rawGiven = rawInput.givenName ? String(rawInput.givenName).trim() : undefined;
       return {
         family: rawInput.familyName ? String(rawInput.familyName).trim() : undefined,
-        given: rawInput.givenName ? String(rawInput.givenName).trim() : undefined,
+        given: normalizeGivenInitials(rawGiven),
       };
     }
     if ("lastName" in rawInput || "firstName" in rawInput) {
+      const rawGiven = rawInput.firstName ? String(rawInput.firstName).trim() : undefined;
       return {
         family: rawInput.lastName ? String(rawInput.lastName).trim() : undefined,
-        given: rawInput.firstName ? String(rawInput.firstName).trim() : undefined,
+        given: normalizeGivenInitials(rawGiven),
       };
     }
     if ("surname" in rawInput || "forename" in rawInput) {
+      const rawGiven = rawInput.forename ? String(rawInput.forename).trim() : undefined;
       return {
         family: rawInput.surname ? String(rawInput.surname).trim() : undefined,
-        given: rawInput.forename ? String(rawInput.forename).trim() : undefined,
+        given: normalizeGivenInitials(rawGiven),
       };
     }
     if ("name" in rawInput && typeof rawInput.name === "string") {
@@ -204,7 +236,7 @@ export function parseAuthorName(rawInput: any): CslAuthorName {
       }
       return {
         family: family || undefined,
-        given: parts[1] || undefined,
+        given: normalizeGivenInitials(parts[1]),
         suffix,
       };
     } else if (parts.length >= 3) {
@@ -213,7 +245,7 @@ export function parseAuthorName(rawInput: any): CslAuthorName {
       const given = parts.slice(2).join(" ");
       return {
         family: family || undefined,
-        given: given || undefined,
+        given: normalizeGivenInitials(given),
         suffix: suffix || undefined,
       };
     }
@@ -237,13 +269,10 @@ export function parseAuthorName(rawInput: any): CslAuthorName {
     const initialsTokens: string[] = [];
     while (tokens.length > 1 && isInitialsToken(tokens[tokens.length - 1])) {
       const tok = tokens.pop()!;
-      // When NLM / PubMed concatenates initials without spaces (e.g. "JL", "JA", "ABC"),
+      // When NLM / PubMed concatenates initials without spaces (e.g. "JL", "JA", "ABC", "JL."),
       // separate with periods so CSL citeproc engines initialize each letter (e.g. "J. L.")
-      if (/^[A-Z]{2,4}$/.test(tok)) {
-        initialsTokens.unshift(tok.split("").join(". ") + ".");
-      } else {
-        initialsTokens.unshift(tok);
-      }
+      const normalizedTok = normalizeGivenInitials(tok);
+      initialsTokens.unshift(normalizedTok || tok);
     }
     const family = tokens.join(" ");
     const given = initialsTokens.join(" ");
@@ -257,9 +286,7 @@ export function parseAuthorName(rawInput: any): CslAuthorName {
   // 6. Western format with initial at start ("B. Fink", "B Fink", "JL Alcazar")
   if (isInitialsToken(tokens[0]) && tokens.length === 2) {
     const rawInit = tokens[0];
-    const given = /^[A-Z]{2,4}$/.test(rawInit)
-      ? rawInit.split("").join(". ") + "."
-      : rawInit;
+    const given = normalizeGivenInitials(rawInit) || rawInit;
     return {
       family: tokens[1],
       given,

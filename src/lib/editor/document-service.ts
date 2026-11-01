@@ -11,7 +11,11 @@ import {
   exportMultipleToRIS,
   stripHtmlTags,
   decodeHtmlEntities,
+  createCiteprocEngine,
+  renderBibliography,
+  BUNDLED_STYLES,
 } from "../citations/csl";
+import { exportTipTapToDocx, resolveBibliographyHeading } from "./docx-exporter";
 
 export interface CreateDocumentInput {
   title?: string;
@@ -532,7 +536,8 @@ export type ManuscriptExportFormat =
   | "html"
   | "bibtex"
   | "ris"
-  | "json";
+  | "json"
+  | "docx";
 
 export interface ExportManuscriptResult {
   documentId: string;
@@ -541,9 +546,11 @@ export interface ExportManuscriptResult {
   mimeType: string;
   filename: string;
   content: string;
+  isBinary?: boolean;
   citationCount: number;
   sourceCount: number;
   exportedAt: string;
+  unsupportedNodes?: string[];
 }
 
 /**
@@ -620,7 +627,7 @@ function serializeNodeToMarkdown(node: any): string {
       return childContent;
     case "bibliography": {
       const entries: string[] = node.attrs?.entries || [];
-      const title = node.attrs?.styleTitle || "References";
+      const title = resolveBibliographyHeading(node.attrs?.styleId, node.attrs?.styleTitle);
       if (entries.length === 0) return "";
       const formatted = entries
         .map((e, idx) => `${idx + 1}. ${decodeHtmlEntities(stripHtmlTags(e))}`)
@@ -694,7 +701,7 @@ function serializeNodeToHtml(node: any): string {
       return `<td>${childHtml}</td>`;
     case "bibliography": {
       const entries: string[] = node.attrs?.entries || [];
-      const title = node.attrs?.styleTitle || "References";
+      const title = resolveBibliographyHeading(node.attrs?.styleId, node.attrs?.styleTitle);
       if (entries.length === 0) return "";
       const listItems = entries.map((e) => `<li>${e}</li>`).join("\n");
       return `<section class="manuscript-references"><h2>${title}</h2><ol>${listItems}</ol></section>`;
@@ -736,6 +743,9 @@ export async function exportResearchDocument(
   const citedPapers = Array.from(paperMap.values());
   const citations = doc.citations || [];
 
+  let unsupportedNodes: string[] = [];
+  let isBinary = false;
+
   if (format === "markdown") {
     mimeType = "text/markdown; charset=utf-8";
     ext = "md";
@@ -750,6 +760,55 @@ export async function exportResearchDocument(
       }
     }
     content = body.trim() + "\n";
+  } else if (format === "docx") {
+    mimeType =
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    ext = "docx";
+    isBinary = true;
+
+    // Authoritative bibliography generation from verified cited papers
+    let bibliographyEntries: string[] = [];
+    if (citedPapers.length > 0) {
+      const cslItems = citedPapers.map((p: any) => {
+        const cleanPaper = {
+          ...p,
+          doi: p.doi ? p.doi.replace(/\.test-[\w.-]+$/i, "") : p.doi,
+        };
+        return mapReferenceToCslJson(cleanPaper);
+      });
+      try {
+        const engine = createCiteprocEngine(BUNDLED_STYLES["apa"].xml, cslItems);
+        const bib = renderBibliography(engine, "apa", "References");
+        bibliographyEntries = bib.entries || [];
+      } catch {
+        bibliographyEntries = [];
+      }
+    }
+
+    const contentNodes = (doc.content as any)?.content || [];
+    const bibNode = contentNodes.find((n: any) => n.type === "bibliography");
+    if (bibliographyEntries.length === 0 && bibNode && Array.isArray(bibNode.attrs?.entries)) {
+      bibliographyEntries = bibNode.attrs.entries;
+    } else if (bibliographyEntries.length === 0 && citations.length > 0) {
+      bibliographyEntries = citations
+        .map((c: any) => c.citationText)
+        .filter(Boolean);
+    }
+
+    const docxResult = await exportTipTapToDocx(doc.content, {
+      title: cleanTitle,
+      citations: doc.citations,
+      linkedPapers: doc.linkedPapers,
+      bibliographyEntries,
+      cslStyleId: doc.cslStyleId || undefined,
+      bibliographyTitle: resolveBibliographyHeading(
+        bibNode?.attrs?.styleId || doc.cslStyleId,
+        bibNode?.attrs?.styleTitle
+      ),
+    });
+
+    content = docxResult.buffer.toString("base64");
+    unsupportedNodes = docxResult.unsupportedNodes;
   } else if (format === "html") {
     mimeType = "text/html; charset=utf-8";
     ext = "html";
@@ -845,6 +904,8 @@ export async function exportResearchDocument(
     mimeType,
     filename: `${slug}.${ext}`,
     content,
+    isBinary,
+    unsupportedNodes,
     citationCount: citations.length,
     sourceCount: citedPapers.length,
     exportedAt: now,
