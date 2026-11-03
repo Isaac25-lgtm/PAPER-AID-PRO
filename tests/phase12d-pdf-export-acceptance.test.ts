@@ -59,6 +59,7 @@ import {
   exportTipTapToPdf,
   parseCslEntryToPdfRuns,
   MAX_PDF_PAYLOAD_BYTES,
+  getNodeText,
 } from "../src/lib/editor/pdf-exporter";
 import { extractText, getDocumentProxy } from "unpdf";
 import { NextRequest } from "next/server";
@@ -2323,6 +2324,357 @@ describe("Phase 12D: Native PDF Manuscript Export Acceptance", () => {
         "Every wrapped clickable segment of a long DOI must target the complete unbroken URL"
       );
     }
+  });
+
+  // TEST 43: In-text parenthetical citation spacing boundary handling
+  test("43. Parenthetical in-text citations ensure clean whitespace separation for missing-space boundaries while preserving already-spaced boundaries and punctuation", async () => {
+    // 1. Test missing-space boundary in paragraph
+    const docMissing = await createResearchDocument(testAuthorUser.id, {
+      title: "Missing Space Boundary Test",
+      initialContent: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "Controlled experimental evaluation of the specified research problem.",
+              },
+              {
+                type: "citation",
+                attrs: {
+                  citationId: "cit_p12d_miss_1",
+                  renderedText: "(Morales et al., 2026, p. 5)",
+                  items: [{ id: testMoralesPaper.id, locator: "5" }],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const exportResMissing = await exportResearchDocument(testAuthorUser.id, docMissing.id, "pdf");
+    const fullTextMissing = await extractFullPdfText(Buffer.from(exportResMissing.content, "base64"));
+
+    assert.ok(
+      fullTextMissing.includes("problem. (Morales et al., 2026, p. 5)"),
+      "Paragraph must insert a single space before parenthetical citation when preceding text ends without whitespace"
+    );
+    assert.ok(
+      !fullTextMissing.includes("problem.(Morales"),
+      "Paragraph must not glue citation to preceding period without whitespace"
+    );
+
+    // 2. Test missing-space boundary in bullet list items (exact reproduction of Hyperplasia manuscript)
+    const docList = await createResearchDocument(testAuthorUser.id, {
+      title: "Bullet List Citation Whitespace Test",
+      initialContent: {
+        type: "doc",
+        content: [
+          {
+            type: "bulletList",
+            content: [
+              {
+                type: "listItem",
+                content: [
+                  {
+                    type: "paragraph",
+                    content: [
+                      {
+                        type: "text",
+                        text: "Formulate and execute a controlled experimental evaluation of the specified research problem.",
+                      },
+                      {
+                        type: "citation",
+                        attrs: {
+                          citationId: "cit_p12d_list_1",
+                          renderedText: "(Morales et al., 2026, p. 5)",
+                          items: [{ id: testMoralesPaper.id, locator: "5" }],
+                        },
+                      },
+                      { type: "text", text: " " },
+                    ],
+                  },
+                ],
+              },
+              {
+                type: "listItem",
+                content: [
+                  {
+                    type: "paragraph",
+                    content: [
+                      {
+                        type: "text",
+                        text: "Evaluate empirical outcomes against state-of-the-art benchmarks and multi-cohort data.",
+                      },
+                      {
+                        type: "citation",
+                        attrs: {
+                          citationId: "cit_p12d_list_2",
+                          renderedText: "(Morales et al., 2026, p. 5)",
+                          items: [{ id: testMoralesPaper.id, locator: "5" }],
+                        },
+                      },
+                      { type: "text", text: " " },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const exportResList = await exportResearchDocument(testAuthorUser.id, docList.id, "pdf");
+    const fullTextList = await extractFullPdfText(Buffer.from(exportResList.content, "base64"));
+    const normalizedListText = fullTextList.replace(/\s+/g, " ");
+
+    assert.ok(
+      fullTextList.includes("problem. (Morales"),
+      "Bullet list must insert a single space before citation when preceding text ends with period and no space"
+    );
+    assert.ok(
+      normalizedListText.includes("problem. (Morales et al., 2026, p. 5)"),
+      "Bullet list must preserve complete citation text with single space separation"
+    );
+    assert.ok(
+      fullTextList.includes("data. (Morales"),
+      "Bullet list must insert a single space before citation for multi-cohort data bullet"
+    );
+    assert.ok(
+      normalizedListText.includes("data. (Morales et al., 2026, p. 5)"),
+      "Bullet list must preserve complete data citation text with single space separation"
+    );
+    assert.ok(
+      !normalizedListText.includes("problem.(Morales"),
+      "Bullet list must not output 'problem.(Morales'"
+    );
+    assert.ok(
+      !normalizedListText.includes("data.(Morales"),
+      "Bullet list must not output 'data.(Morales'"
+    );
+
+    // 3. Test already-spaced boundary preserves exactly one space (no double spaces)
+    const docSpaced = await createResearchDocument(testAuthorUser.id, {
+      title: "Already Spaced Boundary Test",
+      initialContent: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "Controlled experimental evaluation of the specified research problem. ",
+              },
+              {
+                type: "citation",
+                attrs: {
+                  citationId: "cit_p12d_spaced_1",
+                  renderedText: "(Morales et al., 2026, p. 5)",
+                  items: [{ id: testMoralesPaper.id, locator: "5" }],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const exportResSpaced = await exportResearchDocument(testAuthorUser.id, docSpaced.id, "pdf");
+    const fullTextSpaced = await extractFullPdfText(Buffer.from(exportResSpaced.content, "base64"));
+
+    assert.ok(
+      fullTextSpaced.includes("problem. (Morales et al., 2026, p. 5)"),
+      "Already-spaced boundary must retain single space"
+    );
+    assert.ok(
+      !fullTextSpaced.includes("problem.  (Morales"),
+      "Already-spaced boundary must never introduce double spaces"
+    );
+
+    // 4. Test citation at start of paragraph (no leading space)
+    const docStart = await createResearchDocument(testAuthorUser.id, {
+      title: "Citation At Start Test",
+      initialContent: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "citation",
+                attrs: {
+                  citationId: "cit_p12d_start_1",
+                  renderedText: "(Morales et al., 2026)",
+                  items: [{ id: testMoralesPaper.id }],
+                },
+              },
+              {
+                type: "text",
+                text: " demonstrated that prospective ultrasound features are reliable.",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const exportResStart = await exportResearchDocument(testAuthorUser.id, docStart.id, "pdf");
+    const fullTextStart = await extractFullPdfText(Buffer.from(exportResStart.content, "base64"));
+
+    assert.ok(
+      fullTextStart.includes("(Morales et al., 2026) demonstrated"),
+      "Citation at start of paragraph must render cleanly without extra leading space"
+    );
+
+    // 5. Test citation followed by punctuation preserves punctuation boundary
+    const docPunct = await createResearchDocument(testAuthorUser.id, {
+      title: "Citation Followed By Punctuation Test",
+      initialContent: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "As reported by " },
+              {
+                type: "citation",
+                attrs: {
+                  citationId: "cit_p12d_punct_1",
+                  renderedText: "(Morales et al., 2026)",
+                  items: [{ id: testMoralesPaper.id }],
+                },
+              },
+              { type: "text", text: ", diagnostic criteria were rigorously validated." },
+            ],
+          },
+        ],
+      },
+    });
+
+    const exportResPunct = await exportResearchDocument(testAuthorUser.id, docPunct.id, "pdf");
+    const fullTextPunct = await extractFullPdfText(Buffer.from(exportResPunct.content, "base64"));
+
+    assert.ok(
+      fullTextPunct.includes("(Morales et al., 2026), diagnostic criteria"),
+      "Citation followed by comma must keep comma directly attached to closing parenthesis"
+    );
+
+    // 6. Direct unit assertions for getNodeText
+    const mockNodeMissing = {
+      type: "paragraph",
+      content: [
+        { type: "text", text: "problem." },
+        { type: "citation", attrs: { renderedText: "(Morales et al., 2026)" } },
+      ],
+    };
+    assert.equal(getNodeText(mockNodeMissing), "problem. (Morales et al., 2026)");
+
+    const mockNodeSpaced = {
+      type: "paragraph",
+      content: [
+        { type: "text", text: "problem. " },
+        { type: "citation", attrs: { renderedText: "(Morales et al., 2026)" } },
+      ],
+    };
+    assert.equal(getNodeText(mockNodeSpaced), "problem. (Morales et al., 2026)");
+
+    const mockNodeStart = {
+      type: "paragraph",
+      content: [
+        { type: "citation", attrs: { renderedText: "(Morales et al., 2026)" } },
+        { type: "text", text: " demonstrated" },
+      ],
+    };
+    assert.equal(getNodeText(mockNodeStart), "(Morales et al., 2026) demonstrated");
+
+    // 7. Nested ordinary parenthetical text (no citation nodes) is preserved byte-for-byte
+    const mockNestedParenthetical = {
+      type: "listItem",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "Cohort A" }] },
+        { type: "paragraph", content: [{ type: "text", text: "(n = 120) enrolled" }] },
+      ],
+    };
+    assert.equal(
+      getNodeText(mockNestedParenthetical),
+      "Cohort A(n = 120) enrolled",
+      "Nested parenthetical text without citation nodes must not receive an inserted space"
+    );
+
+    // 8. Nested actual citation still receives the required single space
+    const mockNestedCitation = {
+      type: "listItem",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "research problem." }] },
+        {
+          type: "paragraph",
+          content: [
+            { type: "citation", attrs: { renderedText: "(Morales et al., 2026, p. 5)" } },
+            { type: "text", text: " " },
+          ],
+        },
+      ],
+    };
+    assert.equal(
+      getNodeText(mockNestedCitation),
+      "research problem. (Morales et al., 2026, p. 5) ",
+      "Nested citation node must be separated from preceding unspaced text"
+    );
+
+    // 9. Export-level: nested parenthetical preserved, nested citation spaced, in list items
+    const docNested = await createResearchDocument(testAuthorUser.id, {
+      title: "Nested Citation Structure Test",
+      initialContent: {
+        type: "doc",
+        content: [
+          {
+            type: "bulletList",
+            content: [
+              mockNestedParenthetical,
+              {
+                type: "listItem",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: "research problem." }] },
+                  {
+                    type: "paragraph",
+                    content: [
+                      {
+                        type: "citation",
+                        attrs: {
+                          citationId: "cit_p12d_nested_1",
+                          renderedText: "(Morales et al., 2026, p. 5)",
+                          items: [{ id: testMoralesPaper.id, locator: "5" }],
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const exportResNested = await exportResearchDocument(testAuthorUser.id, docNested.id, "pdf");
+    const nestedText = (
+      await extractFullPdfText(Buffer.from(exportResNested.content, "base64"))
+    ).replace(/\s+/g, " ");
+
+    assert.ok(
+      nestedText.includes("Cohort A(n = 120) enrolled"),
+      "Exported nested parenthetical text must be preserved without inserted space"
+    );
+    assert.ok(
+      nestedText.includes("research problem. (Morales et al., 2026, p. 5)"),
+      "Exported nested citation must be separated by a single space"
+    );
+    assert.ok(!nestedText.includes("problem.(Morales"), "Nested citation must not be glued");
   });
 });
 

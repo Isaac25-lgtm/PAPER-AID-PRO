@@ -53,7 +53,25 @@ function normalizeTitleString(str?: string | null): string {
 }
 
 /**
+ * Returns true when the first text-contributing leaf of a TipTap node is an actual
+ * citation node. Used to decide citation spacing structurally (including citations
+ * nested inside container nodes) without touching ordinary parenthetical text.
+ */
+function startsWithCitationNode(node: any): boolean {
+  if (!node || typeof node !== "object") return false;
+  if (node.type === "citation") return true;
+  if (node.type === "text" || !Array.isArray(node.content)) return false;
+  for (const child of node.content) {
+    if (getNodeText(child)) return startsWithCitationNode(child);
+  }
+  return false;
+}
+
+/**
  * Extracts plain text recursively from a TipTap node.
+ * Inserts a single separating space before an actual citation node (direct or nested)
+ * when the preceding text ends without whitespace; already-spaced boundaries,
+ * leading citations, trailing punctuation, and ordinary parenthetical text are preserved.
  */
 export function getNodeText(node: any): string {
   if (!node) return "";
@@ -61,7 +79,23 @@ export function getNodeText(node: any): string {
   if (node.type === "text") return node.text || "";
   if (node.type === "citation") return node.attrs?.renderedText || "(Citation)";
   if (Array.isArray(node.content)) {
-    return node.content.map(getNodeText).join("");
+    let result = "";
+    for (let i = 0; i < node.content.length; i++) {
+      const child = node.content[i];
+      const childText = getNodeText(child);
+      if (!childText) continue;
+
+      if (
+        result.length > 0 &&
+        !/\s$/.test(result) &&
+        !/^\s/.test(childText) &&
+        startsWithCitationNode(child)
+      ) {
+        result += " ";
+      }
+      result += childText;
+    }
+    return result;
   }
   return "";
 }
@@ -639,6 +673,8 @@ export async function exportTipTapToPdf(
 
     doc.fillColor("#1e293b");
 
+    let lastEmittedText = "";
+
     for (let rIdx = 0; rIdx < runs.length; rIdx++) {
       const run = runs[rIdx];
       const isLast = rIdx === runs.length - 1;
@@ -680,11 +716,15 @@ export async function exportTipTapToPdf(
         };
 
         doc.text(text, textOptions);
+        lastEmittedText = text;
         if (hasLink) {
           doc.fillColor("#1e293b");
         }
       } else if (run.type === "citation") {
-        const citationText = cleanPdfText(run.attrs?.renderedText || "(Citation)");
+        let citationText = cleanPdfText(run.attrs?.renderedText || "(Citation)");
+        if (lastEmittedText.length > 0 && !/\s$/.test(lastEmittedText) && !/^\s/.test(citationText)) {
+          citationText = " " + citationText;
+        }
         doc.font("Times-Roman").fontSize(10.5).fillColor("#1e293b");
         doc.text(citationText, {
           continued: !isLast,
@@ -694,6 +734,7 @@ export async function exportTipTapToPdf(
           strike: false,
           link: null,
         });
+        lastEmittedText = citationText;
       }
     }
   }
