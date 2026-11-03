@@ -218,3 +218,57 @@
   height: 0;
   pointer-events: none;
 }
+
+/* Academic Print Media Styling (A4, 25.4mm margins, clean typography) */
+@media print {
+  @page {
+    size: A4;
+    margin: 25.4mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-family: Georgia, Cambria, "Times New Roman", Times, serif !important;
+    font-size: 11pt !important;
+    line-height: 1.6 !important;
+  }
+
+  /* Hide app navigation, sidebars, toolbars, buttons */
+  header, nav, aside, footer, .no-print, button, [role="toolbar"], .sticky {
+    display: none !important;
+  }
+
+  .ProseMirror {
+    min-height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  p, li, blockquote {
+    orphans: 3;
+    widows: 3;
+  }
+
+  table {
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+}

@@ -16,6 +16,11 @@ import {
   BUNDLED_STYLES,
 } from "../citations/csl";
 import { exportTipTapToDocx, resolveBibliographyHeading } from "./docx-exporter";
+import {
+  exportTipTapToPdf,
+  reconcileExportTipTapAst,
+  REFERENCES_GUIDANCE_TEXT,
+} from "./pdf-exporter";
 
 export interface CreateDocumentInput {
   title?: string;
@@ -537,7 +542,8 @@ export type ManuscriptExportFormat =
   | "bibtex"
   | "ris"
   | "json"
-  | "docx";
+  | "docx"
+  | "pdf";
 
 export interface ExportManuscriptResult {
   documentId: string;
@@ -711,6 +717,13 @@ function serializeNodeToHtml(node: any): string {
   }
 }
 
+export {
+  getNodeText as extractPlainTextFromTipTapNode,
+  isReferencesHeadingNode,
+  isPlaceholderParagraphNode,
+  reconcileExportTipTapAst,
+} from "./pdf-exporter";
+
 /**
  * Exports a research document in the requested academic format.
  * Validates document ownership, serializes manuscript content, and incorporates citations.
@@ -746,18 +759,57 @@ export async function exportResearchDocument(
   let unsupportedNodes: string[] = [];
   let isBinary = false;
 
+  // Authoritative bibliography generation from verified cited papers
+  let bibliographyEntries: string[] = [];
+  if (citedPapers.length > 0) {
+    const cslItems = citedPapers.map((p: any) => {
+      const cleanPaper = {
+        ...p,
+        doi: p.doi ? p.doi.replace(/\.test-[\w.-]+$/i, "") : p.doi,
+      };
+      return mapReferenceToCslJson(cleanPaper);
+    });
+    try {
+      const engine = createCiteprocEngine(BUNDLED_STYLES["apa"].xml, cslItems);
+      const bib = renderBibliography(engine, "apa", "References");
+      bibliographyEntries = bib.entries || [];
+    } catch {
+      bibliographyEntries = [];
+    }
+  }
+
+  const contentNodes = (doc.content as any)?.content || [];
+  const bibNode = contentNodes.find((n: any) => n.type === "bibliography");
+  if (bibliographyEntries.length === 0 && bibNode && Array.isArray(bibNode.attrs?.entries)) {
+    bibliographyEntries = bibNode.attrs.entries;
+  } else if (bibliographyEntries.length === 0 && citations.length > 0) {
+    bibliographyEntries = citations
+      .map((c: any) => c.citationText)
+      .filter(Boolean);
+  }
+
+  const bibliographyTitle = resolveBibliographyHeading(
+    bibNode?.attrs?.styleId || doc.cslStyleId,
+    bibNode?.attrs?.styleTitle
+  );
+
+  // In-memory reconciled AST for clean academic export: replaces untouched placeholders when bibliography is generated
+  const exportContent = reconcileExportTipTapAst(
+    doc.content,
+    bibliographyEntries,
+    doc.cslStyleId,
+    bibliographyTitle
+  );
+
   if (format === "markdown") {
     mimeType = "text/markdown; charset=utf-8";
     ext = "md";
-    let body = serializeNodeToMarkdown(doc.content);
-    if (!body.includes("## References") && citations.length > 0) {
+    let body = serializeNodeToMarkdown(exportContent);
+    if (!body.includes("## References") && !body.includes("## Works Cited") && bibliographyEntries.length > 0) {
       body += `\n\n## References\n\n`;
-      const uniqueCites = Array.from(
-        new Set(citations.map((c: any) => c.citationText).filter(Boolean))
-      );
-      if (uniqueCites.length > 0) {
-        body += uniqueCites.map((c, i) => `${i + 1}. ${c}`).join("\n\n");
-      }
+      body += bibliographyEntries
+        .map((c, i) => `${i + 1}. ${decodeHtmlEntities(stripHtmlTags(c))}`)
+        .join("\n\n");
     }
     content = body.trim() + "\n";
   } else if (format === "docx") {
@@ -766,53 +818,37 @@ export async function exportResearchDocument(
     ext = "docx";
     isBinary = true;
 
-    // Authoritative bibliography generation from verified cited papers
-    let bibliographyEntries: string[] = [];
-    if (citedPapers.length > 0) {
-      const cslItems = citedPapers.map((p: any) => {
-        const cleanPaper = {
-          ...p,
-          doi: p.doi ? p.doi.replace(/\.test-[\w.-]+$/i, "") : p.doi,
-        };
-        return mapReferenceToCslJson(cleanPaper);
-      });
-      try {
-        const engine = createCiteprocEngine(BUNDLED_STYLES["apa"].xml, cslItems);
-        const bib = renderBibliography(engine, "apa", "References");
-        bibliographyEntries = bib.entries || [];
-      } catch {
-        bibliographyEntries = [];
-      }
-    }
-
-    const contentNodes = (doc.content as any)?.content || [];
-    const bibNode = contentNodes.find((n: any) => n.type === "bibliography");
-    if (bibliographyEntries.length === 0 && bibNode && Array.isArray(bibNode.attrs?.entries)) {
-      bibliographyEntries = bibNode.attrs.entries;
-    } else if (bibliographyEntries.length === 0 && citations.length > 0) {
-      bibliographyEntries = citations
-        .map((c: any) => c.citationText)
-        .filter(Boolean);
-    }
-
-    const docxResult = await exportTipTapToDocx(doc.content, {
+    const docxResult = await exportTipTapToDocx(exportContent, {
       title: cleanTitle,
       citations: doc.citations,
       linkedPapers: doc.linkedPapers,
       bibliographyEntries,
       cslStyleId: doc.cslStyleId || undefined,
-      bibliographyTitle: resolveBibliographyHeading(
-        bibNode?.attrs?.styleId || doc.cslStyleId,
-        bibNode?.attrs?.styleTitle
-      ),
+      bibliographyTitle,
     });
 
     content = docxResult.buffer.toString("base64");
     unsupportedNodes = docxResult.unsupportedNodes;
+  } else if (format === "pdf") {
+    mimeType = "application/pdf";
+    ext = "pdf";
+    isBinary = true;
+
+    const pdfResult = await exportTipTapToPdf(exportContent, {
+      title: cleanTitle,
+      citations: doc.citations,
+      linkedPapers: doc.linkedPapers,
+      bibliographyEntries,
+      cslStyleId: doc.cslStyleId || undefined,
+      bibliographyTitle,
+    });
+
+    content = pdfResult.buffer.toString("base64");
+    unsupportedNodes = pdfResult.unsupportedNodes;
   } else if (format === "html") {
     mimeType = "text/html; charset=utf-8";
     ext = "html";
-    const body = serializeNodeToHtml(doc.content);
+    const body = serializeNodeToHtml(exportContent);
     content = `<!DOCTYPE html>
 <html lang="en">
 <head>

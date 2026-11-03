@@ -18,6 +18,7 @@ import {
   Quote,
   ChevronDown,
   Download,
+  Printer,
 } from "lucide-react";
 import { DocumentType } from "@prisma/client";
 import { useOptionalWorkspace } from "@/components/layout/workspace-context";
@@ -85,11 +86,34 @@ export function EditorHeader({
   const [isExporting, setIsExporting] = useState(false);
 
   const handleExport = async (
-    format: "markdown" | "bibtex" | "html" | "text" | "docx" | "ris"
+    format: "markdown" | "bibtex" | "html" | "text" | "docx" | "ris" | "pdf"
   ) => {
     setIsExportOpen(false);
     setIsExporting(true);
     try {
+      if (format === "pdf") {
+        const resp = await fetch(`/api/editor/${documentId}/pdf`);
+        if (!resp.ok) {
+          const errText = await resp.text();
+          alert(errText || "Failed to export PDF manuscript.");
+          return;
+        }
+        const blob = await resp.blob();
+        const disposition = resp.headers.get("Content-Disposition");
+        const filenameMatch = disposition?.match(/filename="?([^"]+)"?/);
+        const filename = filenameMatch ? filenameMatch[1] : `${title || "manuscript"}.pdf`;
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        return;
+      }
+
       const res = await exportDocumentAction(documentId, format);
       if (res.success && res.export) {
         let blob: Blob;
@@ -330,6 +354,17 @@ export function EditorHeader({
                 </div>
                 <button
                   type="button"
+                  onClick={() => handleExport("pdf")}
+                  className="w-full text-left px-3 py-1.5 text-slate-700 hover:bg-slate-50 flex items-center justify-between font-medium group"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-rose-600" />
+                    <span>PDF Document</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-rose-600 bg-rose-50 px-1 py-0.5 rounded font-semibold">.pdf</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleExport("docx")}
                   className="w-full text-left px-3 py-1.5 text-slate-700 hover:bg-slate-50 flex items-center justify-between font-medium group"
                 >
@@ -338,6 +373,20 @@ export function EditorHeader({
                     <span>Word Document</span>
                   </span>
                   <span className="text-[10px] font-mono text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded font-semibold">.docx</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsExportOpen(false);
+                    window.print();
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-slate-700 hover:bg-slate-50 flex items-center justify-between font-medium group"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Printer className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Print / Save as PDF</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1 py-0.5 rounded">Print</span>
                 </button>
                 <button
                   type="button"
