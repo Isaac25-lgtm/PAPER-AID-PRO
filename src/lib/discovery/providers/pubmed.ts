@@ -144,6 +144,20 @@ export class PubMedProvider implements ScholarlyProvider {
       const abstract = abstractMap.get(pmid) || null;
       const normalizedPmid = normalizePmid(pmid);
 
+      // Volume, Issue, Pages (preserve only what PubMed ESummary supplies)
+      const volume =
+        typeof item.volume === "string" || typeof item.volume === "number"
+          ? String(item.volume).trim() || null
+          : null;
+      const issue =
+        typeof item.issue === "string" || typeof item.issue === "number"
+          ? String(item.issue).trim() || null
+          : null;
+      const pages =
+        typeof item.pages === "string" || typeof item.pages === "number"
+          ? String(item.pages).trim() || null
+          : null;
+
       const hasPmc = Boolean(pmcid);
 
       papers.push({
@@ -154,6 +168,9 @@ export class PubMedProvider implements ScholarlyProvider {
         publicationDate: item.pubdate || null,
         year,
         journal: item.source || item.fulljournalname || null,
+        volume,
+        issue,
+        pages,
         doi,
         pmid: normalizedPmid,
         pmcid,
@@ -173,6 +190,9 @@ export class PubMedProvider implements ScholarlyProvider {
             uid: item.uid,
             pubtype: item.pubtype,
             recordStatus: item.recordstatus,
+            ...(volume ? { volume } : {}),
+            ...(issue ? { issue } : {}),
+            ...(pages ? { pages } : {}),
           },
         },
       });

@@ -118,6 +118,20 @@ export function mergePaperRecords(
     journal = incoming.journal || journal;
   }
 
+  // Volume, Issue, Pages: Preserve populated values; prefer Crossref when both supply
+  let volume = existing.volume || incoming.volume || null;
+  if (incoming.volume && incoming.sourceProviders.includes("CROSSREF")) {
+    volume = incoming.volume;
+  }
+  let issue = existing.issue || incoming.issue || null;
+  if (incoming.issue && incoming.sourceProviders.includes("CROSSREF")) {
+    issue = incoming.issue;
+  }
+  let pages = existing.pages || incoming.pages || null;
+  if (incoming.pages && incoming.sourceProviders.includes("CROSSREF")) {
+    pages = incoming.pages;
+  }
+
   // Publication Year & Date
   const year = existing.year || incoming.year || null;
   const publicationDate = existing.publicationDate || incoming.publicationDate || null;
@@ -167,6 +181,9 @@ export function mergePaperRecords(
     publicationDate,
     year,
     journal,
+    volume,
+    issue,
+    pages,
     doi,
     pmid,
     pmcid,

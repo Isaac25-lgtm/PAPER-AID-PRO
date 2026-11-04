@@ -34,28 +34,69 @@ export class CrossrefProvider implements ScholarlyProvider {
     const limit = options.limitPerProvider || 10;
     const timeoutMs = options.timeoutMs || 8000;
 
-    // Use query.bibliographic to target title, abstract, and authors rather than publisher/funder metadata
-    const searchUrl = `${CROSSREF_BASE}?query.bibliographic=${encodeURIComponent(
-      query
-    )}&rows=${limit}&select=DOI,title,author,published-print,published-online,container-title,abstract,is-referenced-by-count,URL,link,license`;
+    const cleanDoi = normalizeDoi(query);
+    const isCanonicalDoi = Boolean(
+      cleanDoi && /^10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+$/i.test(cleanDoi)
+    );
+    const directDoi = isCanonicalDoi ? cleanDoi : null;
+    let items: any[] = [];
 
-    const res = await fetch(searchUrl, {
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: {
-        "User-Agent": this.getUserAgent(),
-        Accept: "application/json",
-      },
-    });
+    // If query is a canonical academic DOI or DOI URL, perform direct lookup exclusively
+    if (directDoi) {
+      const directUrl = `${CROSSREF_BASE}/${encodeURIComponent(directDoi)}`;
+      const directRes = await fetch(directUrl, {
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: {
+          "User-Agent": this.getUserAgent(),
+          Accept: "application/json",
+        },
+      });
 
-    if (!res.ok) {
-      if (res.status === 429) {
+      if (directRes.status === 404) {
+        // Explicitly not found in Crossref by canonical DOI
+        return [];
+      }
+      if (directRes.status === 429) {
         throw new Error("Crossref rate limit reached (HTTP 429).");
       }
-      throw new Error(`Crossref search failed with HTTP ${res.status}.`);
-    }
+      if (!directRes.ok) {
+        throw new Error(`Crossref search failed with HTTP ${directRes.status}.`);
+      }
 
-    const data = await res.json();
-    const items = data?.message?.items || [];
+      const directData = await directRes.json();
+      const item = directData?.message?.items
+        ? directData.message.items[0]
+        : directData?.message;
+      if (item?.DOI && normalizeDoi(item.DOI) === directDoi) {
+        items = [item];
+      } else {
+        // Canonical DOI request received non-matching or missing DOI metadata: terminate with absence
+        return [];
+      }
+    } else {
+      // Ordinary text/keyword search: query.bibliographic targets title, abstract, and authors
+      const searchUrl = `${CROSSREF_BASE}?query.bibliographic=${encodeURIComponent(
+        query
+      )}&rows=${limit}&select=DOI,title,author,published-print,published-online,container-title,volume,issue,page,abstract,is-referenced-by-count,URL,link,license`;
+
+      const res = await fetch(searchUrl, {
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: {
+          "User-Agent": this.getUserAgent(),
+          Accept: "application/json",
+        },
+      });
+
+      if (!res.ok) {
+        if (res.status === 429) {
+          throw new Error("Crossref rate limit reached (HTTP 429).");
+        }
+        throw new Error(`Crossref search failed with HTTP ${res.status}.`);
+      }
+
+      const data = await res.json();
+      items = data?.message?.items || [];
+    }
 
     const papers: NormalizedExternalPaper[] = [];
 
@@ -111,6 +152,22 @@ export class CrossrefProvider implements ScholarlyProvider {
         ? item["container-title"][0] || null
         : item["container-title"] || null;
 
+      // Volume, Issue, Pages (preserve only what Crossref supplies)
+      const volume =
+        typeof item.volume === "string" || typeof item.volume === "number"
+          ? String(item.volume).trim() || null
+          : null;
+      const rawIssue = item.issue ?? item["journal-issue"]?.issue;
+      const issue =
+        typeof rawIssue === "string" || typeof rawIssue === "number"
+          ? String(rawIssue).trim() || null
+          : null;
+      const rawPages = item.page ?? item.pages;
+      const pages =
+        typeof rawPages === "string" || typeof rawPages === "number"
+          ? String(rawPages).trim() || null
+          : null;
+
       // Abstract (often in JATS XML format)
       let abstract: string | null = null;
       if (item.abstract) {
@@ -152,6 +209,9 @@ export class CrossrefProvider implements ScholarlyProvider {
         publicationDate,
         year,
         journal,
+        volume,
+        issue,
+        pages,
         doi,
         pmid: null,
         pmcid: null,
@@ -169,6 +229,9 @@ export class CrossrefProvider implements ScholarlyProvider {
             publisher: item.publisher,
             prefix: item.prefix,
             type: item.type,
+            ...(volume ? { volume } : {}),
+            ...(issue ? { issue } : {}),
+            ...(pages ? { page: pages, pages } : {}),
           },
         },
       });

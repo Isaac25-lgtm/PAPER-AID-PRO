@@ -15,6 +15,48 @@ import {
 } from "./full-text-service";
 import { conservativeNormalizeTitle } from "./deduplicate";
 
+function cleanBibliographicField(val: unknown): string | undefined {
+  if (typeof val === "string" || typeof val === "number") {
+    const trimmed = String(val).trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  return undefined;
+}
+
+function isBlankValue(val: unknown): boolean {
+  if (val === undefined || val === null) return true;
+  if (typeof val === "string" && val.trim().length === 0) return true;
+  return false;
+}
+
+/**
+ * Preservation-aware metadata merger.
+ * Recursively merges incoming provider metadata into target metadata:
+ * - Retains existing target properties and nested provider sibling objects.
+ * - Ignores undefined, null, empty (""), and whitespace-only incoming values.
+ * - Non-blank incoming values enrich or update target values.
+ */
+export function mergePreservingMetadata(
+  target: Record<string, any> = {},
+  incoming: Record<string, any> = {}
+): Record<string, any> {
+  const result: Record<string, any> = { ...target };
+
+  for (const [key, incomingVal] of Object.entries(incoming)) {
+    if (incomingVal && typeof incomingVal === "object" && !Array.isArray(incomingVal)) {
+      const targetSub =
+        target[key] && typeof target[key] === "object" && !Array.isArray(target[key])
+          ? target[key]
+          : {};
+      result[key] = mergePreservingMetadata(targetSub, incomingVal);
+    } else if (!isBlankValue(incomingVal)) {
+      result[key] = typeof incomingVal === "string" ? incomingVal.trim() : incomingVal;
+    }
+  }
+
+  return result;
+}
+
 /**
  * Internal core service for importing external paper metadata into the local database
  * and associating it with a user's library.
@@ -39,6 +81,36 @@ export async function executePaperMetadataImport(
   const cleanArxiv = normalizeArxivId(externalPaper.arxivId);
   const cleanS2Id = normalizeSemanticScholarId(externalPaper.semanticScholarId);
 
+  const rawProviderMeta = (externalPaper.rawProviderMetadata as Record<string, any>) || {};
+  const rawCr = (rawProviderMeta.crossref as Record<string, any>) || {};
+  const rawPm = (rawProviderMeta.pubmed as Record<string, any>) || {};
+
+  const incomingVolume =
+    cleanBibliographicField(externalPaper.volume) ??
+    cleanBibliographicField(rawProviderMeta.volume) ??
+    cleanBibliographicField(rawCr.volume) ??
+    cleanBibliographicField(rawPm.volume);
+
+  const incomingIssue =
+    cleanBibliographicField(externalPaper.issue) ??
+    cleanBibliographicField(rawProviderMeta.issue) ??
+    cleanBibliographicField(rawCr.issue) ??
+    cleanBibliographicField(rawPm.issue);
+
+  const incomingPages =
+    cleanBibliographicField(externalPaper.pages) ??
+    cleanBibliographicField(rawProviderMeta.pages) ??
+    cleanBibliographicField(rawProviderMeta.page) ??
+    cleanBibliographicField(rawCr.pages) ??
+    cleanBibliographicField(rawCr.page) ??
+    cleanBibliographicField(rawPm.pages) ??
+    cleanBibliographicField(rawPm.page);
+
+  const incomingPublisher =
+    cleanBibliographicField(externalPaper.publisher) ??
+    cleanBibliographicField(rawProviderMeta.publisher) ??
+    cleanBibliographicField(rawCr.publisher);
+
   // 1. Idempotency Check: Does this paper already exist in the database?
   let existing = await prisma.paper.findFirst({
     where: {
@@ -55,14 +127,33 @@ export async function executePaperMetadataImport(
     },
   });
 
-  // Fallback title check if identifiers are absent
+  // Fallback title check if identifiers do not conflict
   if (!existing && externalPaper.title) {
     const normSearchTitle = conservativeNormalizeTitle(externalPaper.title);
     if (normSearchTitle.length >= 20) {
       const candidates = await prisma.paper.findMany({
-        select: { id: true, title: true, status: true, storagePath: true },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          storagePath: true,
+          doi: true,
+          pmid: true,
+          pmcid: true,
+          arxivId: true,
+          semanticScholarId: true,
+        },
       });
       for (const cand of candidates) {
+        const hasIdentifierConflict =
+          (cleanDoi && cand.doi && normalizeDoi(cand.doi) !== cleanDoi) ||
+          (cleanPmid && cand.pmid && normalizePmid(cand.pmid) !== cleanPmid) ||
+          (cleanPmcid && cand.pmcid && normalizePmcid(cand.pmcid) !== cleanPmcid) ||
+          (cleanArxiv && cand.arxivId && normalizeArxivId(cand.arxivId) !== cleanArxiv) ||
+          (cleanS2Id && cand.semanticScholarId && normalizeSemanticScholarId(cand.semanticScholarId) !== cleanS2Id);
+        if (hasIdentifierConflict) {
+          continue;
+        }
         if (conservativeNormalizeTitle(cand.title) === normSearchTitle) {
           existing = (await prisma.paper.findUnique({
             where: { id: cand.id },
@@ -75,7 +166,93 @@ export async function executePaperMetadataImport(
   }
 
   if (existing) {
-    // 1. Ensure a personal Bookmark association exists for this authenticated user
+    // 1. Enrich missing bibliographic fields on re-import while preserving existing populated values
+    const existingProv = ((existing.sourceProvenance as Record<string, any>) || {});
+    const existingRawMeta = ((existingProv.rawMetadata as Record<string, any>) || {});
+
+    const existingVolume =
+      cleanBibliographicField(existingProv.volume) ??
+      cleanBibliographicField(existingRawMeta.volume) ??
+      cleanBibliographicField(existingRawMeta.crossref?.volume) ??
+      cleanBibliographicField(existingRawMeta.pubmed?.volume);
+
+    const existingIssue =
+      cleanBibliographicField(existingProv.issue) ??
+      cleanBibliographicField(existingRawMeta.issue) ??
+      cleanBibliographicField(existingRawMeta.crossref?.issue) ??
+      cleanBibliographicField(existingRawMeta.pubmed?.issue);
+
+    const existingPages =
+      cleanBibliographicField(existingProv.pages) ??
+      cleanBibliographicField(existingProv.pageRange) ??
+      cleanBibliographicField(existingRawMeta.pages) ??
+      cleanBibliographicField(existingRawMeta.page) ??
+      cleanBibliographicField(existingRawMeta.crossref?.pages) ??
+      cleanBibliographicField(existingRawMeta.crossref?.page) ??
+      cleanBibliographicField(existingRawMeta.pubmed?.pages) ??
+      cleanBibliographicField(existingRawMeta.pubmed?.page);
+
+    const existingPublisher =
+      cleanBibliographicField(existingProv.publisher) ??
+      cleanBibliographicField(existingRawMeta.publisher) ??
+      cleanBibliographicField(existingRawMeta.crossref?.publisher);
+
+    const mergedVolume = existingVolume ?? incomingVolume;
+    const mergedIssue = existingIssue ?? incomingIssue;
+    const mergedPages = existingPages ?? incomingPages;
+    const mergedPublisher = existingPublisher ?? incomingPublisher;
+
+    const needsProvenanceUpdate =
+      (!existingVolume && Boolean(incomingVolume)) ||
+      (!existingIssue && Boolean(incomingIssue)) ||
+      (!existingPages && Boolean(incomingPages)) ||
+      (!existingPublisher && Boolean(incomingPublisher)) ||
+      (existingVolume && existingProv.volume !== existingVolume) ||
+      (existingIssue && existingProv.issue !== existingIssue) ||
+      (existingPages && existingProv.pages !== existingPages) ||
+      (existingPublisher && existingProv.publisher !== existingPublisher) ||
+      (!existing.journal && Boolean(externalPaper.journal?.trim()));
+
+    if (needsProvenanceUpdate) {
+      const mergedProviders = Array.from(
+        new Set([
+          ...(Array.isArray(existingProv.sourceProviders) ? existingProv.sourceProviders : []),
+          ...(Array.isArray(externalPaper.sourceProviders) ? externalPaper.sourceProviders : []),
+        ])
+      );
+
+      const updatedRawMeta = mergePreservingMetadata(
+        existingRawMeta,
+        rawProviderMeta
+      );
+
+      if (mergedVolume) updatedRawMeta.volume = mergedVolume;
+      if (mergedIssue) updatedRawMeta.issue = mergedIssue;
+      if (mergedPages) updatedRawMeta.pages = mergedPages;
+      if (mergedPublisher) updatedRawMeta.publisher = mergedPublisher;
+
+      const updatedProvenance: Record<string, any> = {
+        ...existingProv,
+        ...(mergedProviders.length > 0 ? { sourceProviders: mergedProviders } : {}),
+        ...(mergedVolume ? { volume: mergedVolume } : {}),
+        ...(mergedIssue ? { issue: mergedIssue } : {}),
+        ...(mergedPages ? { pages: mergedPages } : {}),
+        ...(mergedPublisher ? { publisher: mergedPublisher } : {}),
+        rawMetadata: updatedRawMeta,
+      };
+
+      await prisma.paper.update({
+        where: { id: existing.id },
+        data: {
+          ...(!existing.journal && externalPaper.journal?.trim()
+            ? { journal: externalPaper.journal.trim() }
+            : {}),
+          sourceProvenance: updatedProvenance as any,
+        },
+      });
+    }
+
+    // 2. Ensure a personal Bookmark association exists for this authenticated user
     try {
       await prisma.bookmark.upsert({
         where: {
@@ -154,10 +331,20 @@ export async function executePaperMetadataImport(
       arxivId: cleanArxiv,
       semanticScholarId: cleanS2Id,
     },
+    ...(incomingVolume ? { volume: incomingVolume } : {}),
+    ...(incomingIssue ? { issue: incomingIssue } : {}),
+    ...(incomingPages ? { pages: incomingPages } : {}),
+    ...(incomingPublisher ? { publisher: incomingPublisher } : {}),
     externalUrl: externalPaper.externalUrl,
     isOpenAccess: externalPaper.isOpenAccess,
     openAccessPdfUrl: externalPaper.openAccessPdfUrl,
-    rawMetadata: externalPaper.rawProviderMetadata || {},
+    rawMetadata: {
+      ...mergePreservingMetadata({}, rawProviderMeta),
+      ...(incomingVolume ? { volume: incomingVolume } : {}),
+      ...(incomingIssue ? { issue: incomingIssue } : {}),
+      ...(incomingPages ? { pages: incomingPages } : {}),
+      ...(incomingPublisher ? { publisher: incomingPublisher } : {}),
+    },
   };
 
   // 3. Atomic Database Insertion: Paper + Author Junctions

@@ -30,6 +30,10 @@ export interface LookupPaperMetadata {
   abstract: string;
   authors: string[];
   journal?: string | null;
+  volume?: string | null;
+  issue?: string | null;
+  pages?: string | null;
+  rawProviderMetadata?: Record<string, any> | null;
   publicationDate?: string | null;
   doi?: string | null;
   pmid?: string | null;
@@ -165,6 +169,65 @@ export async function lookupPaperByIdentifier(
   if (existingPaper) {
     const hasFullText = Boolean(existingPaper.storagePath && existingPaper._count.chunks > 0);
     const prov = (existingPaper.sourceProvenance as any) || {};
+    const rawMeta = prov?.rawMetadata || {};
+    let resolvedVolume: string | null =
+      prov?.volume || rawMeta?.crossref?.volume || rawMeta?.pubmed?.volume || null;
+    let resolvedIssue: string | null =
+      prov?.issue || rawMeta?.crossref?.issue || rawMeta?.pubmed?.issue || null;
+    let resolvedPages: string | null =
+      prov?.pages ||
+      prov?.page ||
+      rawMeta?.crossref?.page ||
+      rawMeta?.crossref?.pages ||
+      rawMeta?.pubmed?.pages ||
+      rawMeta?.pubmed?.page ||
+      null;
+    let resolvedRawMetadata: Record<string, any> = { ...rawMeta };
+
+    // If existing record is missing volume, issue, or pages, opportunistically query provider to enrich
+    if (!resolvedVolume || !resolvedIssue || !resolvedPages) {
+      try {
+        if (classified.type === "DOI" || existingPaper.doi) {
+          const targetDoi = existingPaper.doi || classified.normalizedValue;
+          const crResults = await new CrossrefProvider()
+            .search(targetDoi, { limitPerProvider: 1, timeoutMs: 5000 })
+            .catch(() => []);
+          const crPaper =
+            crResults.find((p) => normalizeDoi(p.doi) === normalizeDoi(targetDoi)) ||
+            (targetDoi ? undefined : crResults[0]);
+          if (crPaper) {
+            resolvedVolume = resolvedVolume || crPaper.volume || null;
+            resolvedIssue = resolvedIssue || crPaper.issue || null;
+            resolvedPages = resolvedPages || crPaper.pages || null;
+            if (crPaper.rawProviderMetadata) {
+              resolvedRawMetadata = mergeProviderMetadata(
+                resolvedRawMetadata,
+                crPaper.rawProviderMetadata
+              );
+            }
+          }
+        } else if (classified.type === "PMID" || existingPaper.pmid) {
+          const targetPmid = existingPaper.pmid || classified.normalizedValue;
+          const pmResults = await new PubMedProvider()
+            .search(targetPmid, { limitPerProvider: 1, timeoutMs: 5000 })
+            .catch(() => []);
+          const pmPaper =
+            pmResults.find((p) => normalizePmid(p.pmid) === normalizePmid(targetPmid)) ||
+            (targetPmid ? undefined : pmResults[0]);
+          if (pmPaper) {
+            resolvedVolume = resolvedVolume || pmPaper.volume || null;
+            resolvedIssue = resolvedIssue || pmPaper.issue || null;
+            resolvedPages = resolvedPages || pmPaper.pages || null;
+            if (pmPaper.rawProviderMetadata) {
+              resolvedRawMetadata = mergeProviderMetadata(
+                resolvedRawMetadata,
+                pmPaper.rawProviderMetadata
+              );
+            }
+          }
+        }
+      } catch {}
+    }
 
     // For DOI in database, also check if OA full-text could be discovered if it's currently METADATA_ONLY
     let oaMetadata: Partial<LookupPaperMetadata> = {};
@@ -198,6 +261,11 @@ export async function lookupPaperByIdentifier(
         abstract: sanitizeScientificAbstract(existingPaper.abstract),
         authors: existingPaper.authors.map((a) => a.author.name),
         journal: existingPaper.journal,
+        volume: resolvedVolume,
+        issue: resolvedIssue,
+        pages: resolvedPages,
+        rawProviderMetadata:
+          Object.keys(resolvedRawMetadata).length > 0 ? resolvedRawMetadata : null,
         publicationDate: existingPaper.publicationDate
           ? existingPaper.publicationDate.toISOString()
           : null,
@@ -237,7 +305,7 @@ export async function lookupPaperByIdentifier(
       const paper =
         crossrefResults.find(
           (p) => normalizeDoi(p.doi) === classified.normalizedValue
-        ) || crossrefResults[0];
+        ) || (classified.type === "DOI" ? undefined : crossrefResults[0]);
 
       // Title determination: Crossref > OA discovery result
       const title = paper?.title || oaResult.title;
@@ -278,6 +346,10 @@ export async function lookupPaperByIdentifier(
           abstract,
           authors,
           journal,
+          volume: paper?.volume || null,
+          issue: paper?.issue || null,
+          pages: paper?.pages || null,
+          rawProviderMetadata: paper?.rawProviderMetadata || null,
           publicationDate,
           doi: classified.normalizedValue,
           citationCount: paper?.citationCount ?? undefined,
@@ -340,6 +412,10 @@ export async function lookupPaperByIdentifier(
               typeof a === "string" ? a : a.name
             ),
             journal: paper.journal,
+            volume: paper.volume || null,
+            issue: paper.issue || null,
+            pages: paper.pages || null,
+            rawProviderMetadata: paper.rawProviderMetadata || null,
             publicationDate: paper.publicationDate || null,
             doi: paper.doi || null,
             pmid: paper.pmid,
@@ -373,6 +449,46 @@ export async function lookupPaperByIdentifier(
  * 4. Resolves legitimate scholarly source locations and attaches provenance.
  * 5. Returns immediately WITHOUT starting PDF download, storage upload, or AI processing jobs.
  */
+/**
+ * Deep merges provider raw metadata objects while preserving existing nested
+ * properties when incoming fields are omitted, null, or blank strings.
+ */
+function isBlankValue(val: unknown): boolean {
+  if (val === undefined || val === null) return true;
+  if (typeof val === "string" && val.trim().length === 0) return true;
+  return false;
+}
+
+export function mergeProviderMetadata(
+  existingMeta: Record<string, any> = {},
+  incomingMeta: Record<string, any> = {}
+): Record<string, any> {
+  const result: Record<string, any> = { ...existingMeta };
+
+  for (const [providerKey, incomingVal] of Object.entries(incomingMeta)) {
+    if (incomingVal && typeof incomingVal === "object" && !Array.isArray(incomingVal)) {
+      const existingVal =
+        existingMeta[providerKey] &&
+        typeof existingMeta[providerKey] === "object" &&
+        !Array.isArray(existingMeta[providerKey])
+          ? existingMeta[providerKey]
+          : {};
+
+      const mergedProvider: Record<string, any> = { ...existingVal };
+      for (const [k, v] of Object.entries(incomingVal)) {
+        if (!isBlankValue(v)) {
+          mergedProvider[k] = typeof v === "string" ? v.trim() : v;
+        }
+      }
+      result[providerKey] = mergedProvider;
+    } else if (!isBlankValue(incomingVal)) {
+      result[providerKey] = typeof incomingVal === "string" ? incomingVal.trim() : incomingVal;
+    }
+  }
+
+  return result;
+}
+
 export async function importPaperByIdentifier(params: {
   userId: string;
   identifier: string;
@@ -416,6 +532,50 @@ export async function importPaperByIdentifier(params: {
       where: { id: paperId },
       select: { status: true, storagePath: true, doi: true, sourceProvenance: true },
     });
+
+    if (existingPaper) {
+      const prevProv = (existingPaper.sourceProvenance as Record<string, any>) || {};
+      const prevRawMeta = (prevProv.rawMetadata as Record<string, any>) || {};
+      const existingVol =
+        prevProv.volume || prevRawMeta.crossref?.volume || prevRawMeta.pubmed?.volume;
+      const existingIssue =
+        prevProv.issue || prevRawMeta.crossref?.issue || prevRawMeta.pubmed?.issue;
+      const existingPages =
+        prevProv.pages ||
+        prevProv.page ||
+        prevRawMeta.crossref?.page ||
+        prevRawMeta.crossref?.pages ||
+        prevRawMeta.pubmed?.pages ||
+        prevRawMeta.pubmed?.page;
+
+      const resolvedVolume = existingVol || meta.volume || undefined;
+      const resolvedIssue = existingIssue || meta.issue || undefined;
+      const resolvedPages = existingPages || meta.pages || undefined;
+
+      const needsProvenanceUpdate =
+        (!prevProv.volume && Boolean(resolvedVolume)) ||
+        (!prevProv.issue && Boolean(resolvedIssue)) ||
+        (!prevProv.pages && Boolean(resolvedPages));
+
+      if (needsProvenanceUpdate) {
+        const mergedRawMeta = mergeProviderMetadata(
+          prevRawMeta,
+          meta.rawProviderMetadata || {}
+        );
+        await prisma.paper.update({
+          where: { id: paperId },
+          data: {
+            sourceProvenance: {
+              ...prevProv,
+              ...(resolvedVolume ? { volume: resolvedVolume } : {}),
+              ...(resolvedIssue ? { issue: resolvedIssue } : {}),
+              ...(resolvedPages ? { pages: resolvedPages } : {}),
+              ...(Object.keys(mergedRawMeta).length > 0 ? { rawMetadata: mergedRawMeta } : {}),
+            },
+          },
+        });
+      }
+    }
 
     let autoDownloaded = false;
     // Only attempt full text acquisition if explicitly requested (default is false)
@@ -464,6 +624,10 @@ export async function importPaperByIdentifier(params: {
     importedByUserId: userId,
     importedAt: new Date().toISOString(),
     isMetadataOnly: true,
+    ...(meta.volume ? { volume: meta.volume } : {}),
+    ...(meta.issue ? { issue: meta.issue } : {}),
+    ...(meta.pages ? { pages: meta.pages } : {}),
+    ...(meta.rawProviderMetadata ? { rawMetadata: meta.rawProviderMetadata } : {}),
     openAccessStatus: meta.openAccessStatus || "NO_OPEN_ACCESS_LOCATED",
     openAccessVersion: meta.openAccessVersion || null,
     openAccessLicense: meta.openAccessLicense || null,

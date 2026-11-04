@@ -37,6 +37,10 @@ export interface NormalizedExternalPaper {
   publicationDate?: string | null;
   year?: number | null;
   journal?: string | null;
+  publisher?: string | null;
+  volume?: string | null;
+  issue?: string | null;
+  pages?: string | null;
   doi?: string | null;
   pmid?: string | null;
   pmcid?: string | null;

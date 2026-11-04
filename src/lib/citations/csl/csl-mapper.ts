@@ -412,6 +412,21 @@ export interface GenericReferenceInput {
 }
 
 /**
+ * Normalizes candidate bibliographic fields and returns the first non-blank value.
+ * Preserves candidate precedence and returns undefined if all candidates are absent or blank.
+ */
+export function pickFirstNonBlank(...candidates: Array<unknown>): string | undefined {
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const str = String(candidate).trim();
+    if (str.length > 0) {
+      return str;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Reusable mapper converting existing paper, library item, or citation input into CSL-JSON.
  * Guarantee: Zero metadata fabrication. Missing fields are handled gracefully.
  */
@@ -486,31 +501,48 @@ export function mapReferenceToCslJson(input: GenericReferenceInput): CslItem {
     .replace(/&#39;/g, "'");
 
   // 5. Volume, Issue, Page
-  const volume =
-    input.volume ||
-    rawMeta.volume ||
-    prov.volume ||
-    prov.rawMetadata?.volume ||
-    undefined;
-  const issue =
-    input.issue ||
-    rawMeta.issue ||
-    prov.issue ||
-    prov.rawMetadata?.issue ||
-    undefined;
-  const page = (
-    input.pages ||
-    rawMeta.pages ||
-    rawMeta.page ||
-    prov.pages ||
-    prov.pageRange ||
-    prov.rawMetadata?.pages ||
-    ""
-  ).trim() || undefined;
+  const volume = pickFirstNonBlank(
+    input.volume,
+    rawMeta.volume,
+    prov.volume,
+    prov.rawMetadata?.volume,
+    prov.rawMetadata?.crossref?.volume,
+    prov.rawMetadata?.pubmed?.volume
+  );
+
+  const issue = pickFirstNonBlank(
+    input.issue,
+    rawMeta.issue,
+    prov.issue,
+    prov.rawMetadata?.issue,
+    prov.rawMetadata?.crossref?.issue,
+    prov.rawMetadata?.pubmed?.issue
+  );
+
+  const page = pickFirstNonBlank(
+    input.pages,
+    rawMeta.pages,
+    rawMeta.page,
+    prov.pages,
+    prov.pageRange,
+    prov.rawMetadata?.pages,
+    prov.rawMetadata?.page,
+    prov.rawMetadata?.crossref?.pages,
+    prov.rawMetadata?.crossref?.page,
+    prov.rawMetadata?.pubmed?.pages,
+    prov.rawMetadata?.pubmed?.page
+  );
   const articleNumber = input.articleNumber || rawMeta.articleNumber || undefined;
 
   // 6. Publisher & Institution
-  const publisher = (input.publisher || rawMeta.publisher || input.institution || "").trim() || undefined;
+  const publisher = pickFirstNonBlank(
+    input.publisher,
+    rawMeta.publisher,
+    input.institution,
+    prov.publisher,
+    prov.rawMetadata?.publisher,
+    prov.rawMetadata?.crossref?.publisher
+  );
 
   // 7. Type
   const cslType = mapDocumentTypeToCsl(

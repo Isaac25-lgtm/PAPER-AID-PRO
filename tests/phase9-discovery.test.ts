@@ -25,7 +25,17 @@
  * T. Duplicate full-text import does not duplicate processing
  */
 
-import "../scratch/load-env";
+import {
+  loadIsolatedTestEnvironment,
+  assertIsolatedTestEnvironment,
+  assertDisposableDatabaseMarker,
+  enableMockStorage,
+} from "../src/lib/test-guard";
+
+loadIsolatedTestEnvironment();
+assertIsolatedTestEnvironment();
+enableMockStorage();
+
 import { prisma } from "../src/lib/prisma";
 import {
   deduplicateExternalPapers,
@@ -52,6 +62,7 @@ import {
   normalizeArxivId,
   normalizeSemanticScholarId,
 } from "../src/lib/identifiers";
+import { executePaperMetadataImport } from "../src/lib/discovery/import-service";
 
 async function runPhase9Tests() {
   console.log("==========================================================");
@@ -371,51 +382,70 @@ async function runPhase9Tests() {
     "Test Q: Malformed provider response isolated without failing entire search"
   );
 
-  // --- DATABASE INTEGRATION TESTS (G, H, I, J, K, L, T) ---
+  // --- DATABASE INTEGRATION TESTS (G, H, I, J, K, L, T, U) ---
+  // Enforce disposable database marker validation before any mutations
+  await assertDisposableDatabaseMarker(prisma);
 
-  const testPaperIdsToClean: string[] = [];
+  const ts = Date.now();
+  const createdPaperIds = new Set<string>();
+  const createdDocumentIds = new Set<string>();
+  const phase9TestUser = await prisma.user.create({
+    data: {
+      email: `phase9-discovery-${ts}@test.local`,
+      name: "Dr. Phase 9 Tester",
+      role: "USER",
+      passwordHash: "$2a$10$abcdefghijklmnopqrstuvwxyz012345",
+    },
+  });
 
   try {
     console.log("\n--- Database Integration & Idempotency Tests ---");
 
     // Test G: Existing local DOI -> Already in Library
-    // Ensure test paper with target DOI exists in library
-    const existingDocG = await prisma.paper.upsert({
-      where: { doi: "10.3390/cancers14020277" },
-      create: {
-        title: "Influence of CAD Design on Ultrasound Breast Cancer",
+    const testGoi = `10.3390/cancers14020277.phase9.${ts}`;
+    const existingDocG = await prisma.paper.create({
+      data: {
+        title: `Influence of CAD Design on Ultrasound Breast Cancer [Phase9-G-${ts}]`,
         abstract: "Breast cancer ultrasound study.",
-        doi: "10.3390/cancers14020277",
+        doi: testGoi,
         status: "COMPLETED",
         isOpenAccess: true,
       },
-      update: {},
     });
-    testPaperIdsToClean.push(existingDocG.id);
+    createdPaperIds.add(existingDocG.id);
+
+    await prisma.bookmark.create({
+      data: {
+        userId: phase9TestUser.id,
+        paperId: existingDocG.id,
+      },
+    });
 
     const queryWithExisting: NormalizedExternalPaper = {
-      id: "doi:10.3390/cancers14020277",
-      title: "Influence of CAD Design on Ultrasound Breast Cancer",
-      doi: "10.3390/cancers14020277",
+      id: `doi:${testGoi}`,
+      title: existingDocG.title,
+      doi: testGoi,
       authors: [],
       sourceProviders: ["CROSSREF"],
       isOpenAccess: true,
       fullTextAvailability: "METADATA_ONLY",
     };
-    const matched = await matchPapersAgainstLocalLibrary([queryWithExisting]);
+    const matched = await matchPapersAgainstLocalLibrary([queryWithExisting], phase9TestUser.id);
     assert(
-      matched.length === 1 && matched[0].localStatus?.inLibrary === true,
+      matched.length === 1 &&
+        matched[0].localStatus?.inLibrary === true &&
+        matched[0].localStatus?.paperId === existingDocG.id,
       "Test G: Existing local DOI recognized as Already in Library",
       `inLibrary: ${matched[0]?.localStatus?.inLibrary}, paperId: ${matched[0]?.localStatus?.paperId}`
     );
 
     // Test H: Metadata import creates one Paper in METADATA_ONLY status
-    const testImportDoi = "10.9999/phase9.test." + Date.now();
-    const testPmid = "99" + Math.floor(100000 + Math.random() * 900000);
+    const testImportDoi = `10.9999/phase9.test.${ts}`;
+    const testPmid = "99" + String(ts).slice(-6);
 
     const paperToImport: NormalizedExternalPaper = {
       id: `doi:${testImportDoi}`,
-      title: "Phase 9 Automated Metadata Import Verification " + Date.now(),
+      title: `Phase 9 Automated Metadata Import Verification [Phase9-H-${ts}]`,
       abstract: "Abstract of metadata-only manuscript for Phase 9 validation.",
       authors: [{ name: "Dr. Alice Researcher", institution: "Oxford" }],
       year: 2024,
@@ -431,7 +461,6 @@ async function runPhase9Tests() {
       fullTextAvailability: "METADATA_ONLY",
     };
 
-    // Use direct Prisma creation simulating importPaperMetadataAction transaction
     const createdPaper = await prisma.paper.create({
       data: {
         title: paperToImport.title,
@@ -448,7 +477,14 @@ async function runPhase9Tests() {
         },
       },
     });
-    testPaperIdsToClean.push(createdPaper.id);
+    createdPaperIds.add(createdPaper.id);
+
+    await prisma.bookmark.create({
+      data: {
+        userId: phase9TestUser.id,
+        paperId: createdPaper.id,
+      },
+    });
 
     assert(
       createdPaper.status === "METADATA_ONLY" &&
@@ -459,7 +495,6 @@ async function runPhase9Tests() {
     );
 
     // Test I: Repeated import remains idempotent
-    // Querying by DOI finds the existing record and returns it without inserting a second
     const findExisting = await prisma.paper.findFirst({
       where: {
         OR: [{ doi: normalizeDoi(testImportDoi) }, { pmid: testPmid }],
@@ -473,11 +508,11 @@ async function runPhase9Tests() {
     // Test J: Same paper imported from another provider (e.g. S2 variant) remains one Paper
     const s2Variant: NormalizedExternalPaper = {
       ...paperToImport,
-      id: "s2:some_hex_id",
-      semanticScholarId: "some_hex_id",
+      id: `s2:hex_${ts}`,
+      semanticScholarId: `hex_${ts}`,
       sourceProviders: ["SEMANTIC_SCHOLAR"],
     };
-    const s2Match = await matchPapersAgainstLocalLibrary([s2Variant]);
+    const s2Match = await matchPapersAgainstLocalLibrary([s2Variant], phase9TestUser.id);
     assert(
       s2Match[0].localStatus?.inLibrary === true &&
         s2Match[0].localStatus?.paperId === createdPaper.id,
@@ -495,7 +530,6 @@ async function runPhase9Tests() {
     );
 
     // Test L: Metadata-only paper does not enter Phase 7 or Phase 8 RAG
-    // Phase 8 discovery strictly checks: AND p.status = 'COMPLETED'
     const ragEligible = await prisma.paper.findMany({
       where: {
         id: createdPaper.id,
@@ -508,20 +542,19 @@ async function runPhase9Tests() {
     );
 
     // Test T: Duplicate full-text import does not duplicate processing
-    // If paper status is already COMPLETED, acquireAndIngestLawfulFullText returns early
     const testDocT = await prisma.paper.create({
       data: {
-        title: "Completed Ingestion Test Paper " + Date.now(),
+        title: `Completed Ingestion Test Paper [Phase9-T-${ts}]`,
         abstract: "Test abstract for completed paper.",
         status: "COMPLETED",
-        storagePath: "test/completed.pdf",
+        storagePath: `test/completed-${ts}.pdf`,
         isOpenAccess: true,
         sourceProvenance: {
           isLawfulOpenAccess: true,
         },
       },
     });
-    testPaperIdsToClean.push(testDocT.id);
+    createdPaperIds.add(testDocT.id);
 
     const duplicateAcq = await acquireAndIngestLawfulFullText(
       testDocT.id,
@@ -531,17 +564,131 @@ async function runPhase9Tests() {
       duplicateAcq.success && duplicateAcq.storagePath === testDocT.storagePath,
       "Test T: Duplicate full-text acquisition skips reprocessing for already completed papers"
     );
-  } finally {
-    // Cleanup synthetic test records
-    console.log("\nCleaning up synthetic test records...");
-    for (const id of testPaperIdsToClean) {
-      try {
-        await prisma.paper.delete({ where: { id } });
-      } catch {
-        // ignore
-      }
+
+    // Test U: Regression — Importing & cleaning up a test paper with the same title
+    // but a different DOI preserves the existing paper and its citation links.
+    const sharedCollisionTitle = `Diagnostic accuracy of transvaginal ultrasound for adenomyosis cohort study [Collision-Guard-${ts}]`;
+    const existingBaselineDoi = `10.1002/uog.baseline.${ts}`;
+    const differentTestDoi = `10.1002/uog.fixture.${ts}`;
+
+    const existingBaselinePaper = await prisma.paper.create({
+      data: {
+        title: sharedCollisionTitle,
+        abstract: "Existing baseline paper with manuscript citation links.",
+        journal: "Ultrasound in Obstetrics & Gynecology",
+        doi: existingBaselineDoi,
+        status: "COMPLETED",
+        isOpenAccess: true,
+        sourceProvenance: {
+          volume: "68",
+          pages: "426-433",
+        },
+      },
+    });
+    createdPaperIds.add(existingBaselinePaper.id);
+
+    const baselineDocument = await prisma.researchDocument.create({
+      data: {
+        userId: phase9TestUser.id,
+        title: `Collision Guard Manuscript ${ts}`,
+        cslStyleId: "apa",
+        content: { type: "doc", content: [] },
+      },
+    });
+    createdDocumentIds.add(baselineDocument.id);
+
+    await prisma.documentPaper.create({
+      data: {
+        documentId: baselineDocument.id,
+        paperId: existingBaselinePaper.id,
+      },
+    });
+
+    await prisma.documentCitation.create({
+      data: {
+        documentId: baselineDocument.id,
+        paperId: existingBaselinePaper.id,
+        citationKey: `csl-collision-guard-${ts}`,
+        citationText: "(Morales et al., 2026, p. 5)",
+        pageNumber: 5,
+      },
+    });
+
+    const sameTitleDifferentDoiInput: NormalizedExternalPaper = {
+      id: `doi:${differentTestDoi}`,
+      title: sharedCollisionTitle,
+      abstract: "Fixture paper with identical title but distinct DOI.",
+      authors: [{ name: "C. Morales" }],
+      journal: "Ultrasound in Obstetrics & Gynecology",
+      year: 2026,
+      doi: differentTestDoi,
+      volume: "68",
+      issue: "3",
+      pages: "426-433",
+      sourceProviders: ["CROSSREF"],
+      isOpenAccess: false,
+      fullTextAvailability: "METADATA_ONLY",
+    };
+
+    const collisionImport = await executePaperMetadataImport(
+      sameTitleDifferentDoiInput,
+      phase9TestUser.id,
+      { attemptFullTextFetch: false }
+    );
+
+    assert(
+      collisionImport.success === true &&
+        collisionImport.isExisting === false &&
+        Boolean(collisionImport.paperId) &&
+        collisionImport.paperId !== existingBaselinePaper.id,
+      "Test U.1: Importing a test paper with the same title but a different DOI creates a distinct Paper instead of colliding with the existing paper",
+      `existingId=${existingBaselinePaper.id}, importedId=${collisionImport.paperId}, isExisting=${collisionImport.isExisting}`
+    );
+
+    // Clean up ONLY the newly imported test paper
+    if (collisionImport.paperId && !collisionImport.isExisting) {
+      await prisma.bookmark.deleteMany({ where: { paperId: collisionImport.paperId } });
+      await prisma.paperAuthor.deleteMany({ where: { paperId: collisionImport.paperId } });
+      await prisma.paper.delete({ where: { id: collisionImport.paperId } });
     }
-    console.log(`Cleaned up ${testPaperIdsToClean.length} test record(s).`);
+
+    // Verify the existing paper and its citation links remain 100% preserved
+    const preservedPaper = await prisma.paper.findUnique({
+      where: { id: existingBaselinePaper.id },
+      include: {
+        documentCitations: { where: { documentId: baselineDocument.id } },
+        documentPapers: { where: { documentId: baselineDocument.id } },
+      },
+    });
+    const preservedProv = (preservedPaper?.sourceProvenance as Record<string, any>) || {};
+
+    assert(
+      preservedPaper !== null &&
+        preservedPaper.doi === existingBaselineDoi &&
+        preservedProv.issue === undefined &&
+        preservedPaper.documentCitations.length === 1 &&
+        preservedPaper.documentPapers.length === 1,
+      "Test U.2: Cleaning up the same-title/different-DOI test paper preserves the existing paper, its provenance, and its DocumentCitation / DocumentPaper links",
+      `paperExists=${Boolean(preservedPaper)}, citations=${preservedPaper?.documentCitations.length}, links=${preservedPaper?.documentPapers.length}`
+    );
+  } finally {
+    // Cleanup strictly restricted to rows created by this test run
+    console.log("\nCleaning up synthetic test records created by this run...");
+    const docIds = Array.from(createdDocumentIds);
+    if (docIds.length > 0) {
+      await prisma.documentCitation.deleteMany({ where: { documentId: { in: docIds } } }).catch(() => {});
+      await prisma.documentPaper.deleteMany({ where: { documentId: { in: docIds } } }).catch(() => {});
+      await prisma.researchDocument.deleteMany({ where: { id: { in: docIds } } }).catch(() => {});
+    }
+    const paperIds = Array.from(createdPaperIds);
+    if (paperIds.length > 0) {
+      await prisma.bookmark.deleteMany({ where: { paperId: { in: paperIds } } }).catch(() => {});
+      await prisma.paperAuthor.deleteMany({ where: { paperId: { in: paperIds } } }).catch(() => {});
+      await prisma.paper.deleteMany({ where: { id: { in: paperIds } } }).catch(() => {});
+    }
+    await prisma.bookmark.deleteMany({ where: { userId: phase9TestUser.id } }).catch(() => {});
+    await prisma.user.delete({ where: { id: phase9TestUser.id } }).catch(() => {});
+    console.log(`Cleaned up ${paperIds.length} test paper(s) and ${docIds.length} test document(s).`);
   }
 
   console.log("\n==========================================================");
