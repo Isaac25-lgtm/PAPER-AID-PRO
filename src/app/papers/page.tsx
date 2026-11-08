@@ -24,6 +24,7 @@ import { Card } from "@/components/ui/card";
 import { PaperCard } from "@/components/shared/paper-card";
 import { searchPapersHybrid } from "@/lib/search/hybrid-search";
 import { ADMIN_TEST_FIXTURE_IDS, isPublicScholarlyPaper, getPublicPaperWhereInput } from "@/lib/auth/paper-authorization";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 
 export const metadata = {
   title: "Scholarly Literature Catalog | AI Research Hub",
@@ -68,7 +69,7 @@ export default async function PapersPage({
   let loadError: string | null = null;
 
   try {
-    const publicWhere = getPublicPaperWhereInput();
+    const visibilityWhere = paperVisibilityFilter(session?.user?.id, { role: session?.user?.role });
     const [sr, cats, candidatePapers] = await Promise.all([
       searchPapersHybrid({
         query,
@@ -76,37 +77,41 @@ export default async function PapersPage({
         sort,
         limit: 50,
         excludeFixtures,
+        userId: session?.user?.id,
+        role: session?.user?.role,
       }),
       prisma.category.findMany({
         include: {
           _count: {
-            select: { papers: true },
+            select: {
+              papers: {
+                where: {
+                  paper: visibilityWhere,
+                },
+              },
+            },
           },
         },
         orderBy: { name: "asc" },
       }),
-      excludeFixtures
-        ? prisma.paper.findMany({
-            where: publicWhere,
-            select: {
-              id: true,
-              doi: true,
-              arxivId: true,
-              pmid: true,
-              pmcid: true,
-              semanticScholarId: true,
-              isOpenAccess: true,
-              storagePath: true,
-              sourceProvenance: true,
-            },
-          })
-        : null,
+      prisma.paper.findMany({
+        where: visibilityWhere,
+        select: {
+          id: true,
+          doi: true,
+          arxivId: true,
+          pmid: true,
+          pmcid: true,
+          semanticScholarId: true,
+          isOpenAccess: true,
+          storagePath: true,
+          sourceProvenance: true,
+        },
+      }),
     ]);
     searchResult = sr;
     categories = cats;
-    totalPaperCount = excludeFixtures && candidatePapers
-      ? candidatePapers.filter(isPublicScholarlyPaper).length
-      : await prisma.paper.count();
+    totalPaperCount = candidatePapers.length;
   } catch (err: any) {
     console.error("[PapersPage] Database query error:", err?.message || err);
     loadError = "The database connection was temporarily busy. Showing cached or fallback state.";

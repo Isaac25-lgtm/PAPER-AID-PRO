@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 import { ArrowRight, BookOpen, Layers, Dna, Brain, Cpu, Eye, Stethoscope, FileText } from "lucide-react";
 import { SectionHeader } from "@/components/shared/section-header";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -20,10 +23,19 @@ const iconMap: Record<string, any> = {
 };
 
 export default async function CategoriesPage() {
+  const session = await getServerSession(authOptions);
+  const visibilityWhere = paperVisibilityFilter(session?.user?.id, { role: session?.user?.role });
+
   const categories = await prisma.category.findMany({
     include: {
       _count: {
-        select: { papers: true },
+        select: {
+          papers: {
+            where: {
+              paper: visibilityWhere,
+            },
+          },
+        },
       },
     },
     orderBy: { name: "asc" },

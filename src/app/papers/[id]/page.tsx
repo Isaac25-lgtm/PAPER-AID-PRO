@@ -32,6 +32,7 @@ import { SavePaperButton } from "@/components/papers/save-paper-button";
 import { PaperQA } from "@/components/papers/paper-qa";
 import { getPaperStatusBadge } from "@/lib/ui/status-mapper";
 import { authorizePaperAccess } from "@/lib/auth/paper-authorization";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 import { OpenAccessDiscoveryButton } from "@/components/papers/open-access-discovery-button";
 import { isLocalPdfAvailable } from "@/lib/storage";
 
@@ -39,7 +40,10 @@ export async function generateMetadata({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   const paper = await prisma.paper.findFirst({
     where: {
-      OR: [{ id: params.id }, { doi: params.id }],
+      AND: [
+        { OR: [{ id: params.id }, { doi: params.id }] },
+        paperVisibilityFilter(session?.user?.id, { role: session?.user?.role }),
+      ],
     },
   });
 
@@ -69,7 +73,10 @@ export default async function PaperDetailPage({
 
   const paper = await prisma.paper.findFirst({
     where: {
-      OR: [{ id: params.id }, { doi: params.id }],
+      AND: [
+        { OR: [{ id: params.id }, { doi: params.id }] },
+        paperVisibilityFilter(session?.user?.id, { role: session?.user?.role }),
+      ],
     },
     include: {
       authors: {

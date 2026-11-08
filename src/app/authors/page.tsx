@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 import { Users, Search, GraduationCap, Building2, BookOpen, Quote, Award } from "lucide-react";
 import { SectionHeader } from "@/components/shared/section-header";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -18,6 +21,8 @@ export default async function AuthorsPage({
   searchParams?: { q?: string };
 }) {
   const query = searchParams?.q?.trim() || "";
+  const session = await getServerSession(authOptions);
+  const visibilityWhere = paperVisibilityFilter(session?.user?.id, { role: session?.user?.role });
 
   const authors = await prisma.author.findMany({
     where: query
@@ -31,7 +36,13 @@ export default async function AuthorsPage({
       : undefined,
     include: {
       _count: {
-        select: { papers: true },
+        select: {
+          papers: {
+            where: {
+              paper: visibilityWhere,
+            },
+          },
+        },
       },
     },
     orderBy: { citationCount: "desc" },

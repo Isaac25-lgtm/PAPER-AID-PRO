@@ -115,9 +115,14 @@ export async function assertPaperAccess(
   }
 
   // Check private document ownership
-  const isPrivate = provenance.isPrivate === true || provenance.ownerUserId !== undefined;
+  const ownerId =
+    provenance.ownerUserId ||
+    provenance.userId ||
+    provenance.ownerId ||
+    provenance.uploadedByUserId ||
+    provenance.attachedByUserId;
+  const isPrivate = provenance.isPrivate === true || Boolean(ownerId);
   if (isPrivate) {
-    const ownerId = provenance.ownerUserId || provenance.userId;
     if (ownerId && ownerId !== userId) {
       throw new Error(`Paper '${paperId}' is a private manuscript belonging to another researcher.`);
     }

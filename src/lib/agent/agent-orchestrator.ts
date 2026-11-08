@@ -39,6 +39,7 @@ import { extractStudyEvidence } from "./study-extractor";
 import { synthesizeResearchBrief } from "./brief-synthesizer";
 import { RetrievedEvidenceChunk } from "@/lib/synthesis/types";
 import { NormalizedExternalPaper } from "@/lib/discovery/types";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 
 export const DEFAULT_MAX_AGENT_STEPS = 10;
 export const HARD_MAX_AGENT_STEPS = 12;
@@ -259,7 +260,12 @@ export class AgentOrchestrator {
 
     // Check existing completed papers in local library to provide context to planner
     const localPapers = await prisma.paper.findMany({
-      where: { status: "COMPLETED" },
+      where: {
+        AND: [
+          { status: "COMPLETED" },
+          paperVisibilityFilter(state.userId),
+        ],
+      },
       select: { id: true, title: true },
       take: 8,
     });
@@ -322,17 +328,23 @@ export class AgentOrchestrator {
     const discoveredIds = new Set<string>();
 
     for (const q of queries.slice(0, 2)) {
-      const candidates = await this.toolRegistry.searchLocalLibrary(q, { limit: 6 });
+      const candidates = await this.toolRegistry.searchLocalLibrary(q, {
+        limit: 6,
+        userId: state.userId,
+      });
       for (const c of candidates) {
         discoveredIds.add(c.paperId);
       }
     }
 
-    // Strictly verify status === 'COMPLETED'
+    // Strictly verify status === 'COMPLETED' and user visibility permissions
     const validPapers = await prisma.paper.findMany({
       where: {
-        id: { in: Array.from(discoveredIds) },
-        status: "COMPLETED",
+        AND: [
+          { id: { in: Array.from(discoveredIds) } },
+          { status: "COMPLETED" },
+          paperVisibilityFilter(state.userId),
+        ],
       },
       select: { id: true, title: true },
     });

@@ -3,6 +3,7 @@ import { prisma } from "../prisma";
 import { generateEmbedding } from "../ai/embeddings";
 import { RetrievedEvidenceChunk, EvidenceType, RetrievalMethod, PermissionScope, StructuredChunkMetadata } from "./types";
 import { authorizePaperAccess, UserContext, classifyPaper } from "../auth/paper-authorization";
+import { paperVisibilityFilter } from "../auth/paper-visibility";
 import { createHash } from "crypto";
 
 export interface RetrievePaperEvidenceOptions {

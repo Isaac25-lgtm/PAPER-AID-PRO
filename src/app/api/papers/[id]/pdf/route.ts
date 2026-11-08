@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { downloadPaperPdf } from "@/lib/storage";
 import { authorizeCurrentSession } from "@/lib/auth/paper-authorization";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 import { validateSafePdfUrl } from "@/lib/discovery/full-text-service";
 
@@ -71,9 +74,23 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const testUserId = request.headers.get("x-test-user-id");
+    const testUserRole = request.headers.get("x-test-user-role");
+    let session = null;
+    try {
+      session = await getServerSession(authOptions);
+    } catch {
+      session = null;
+    }
+    const effectiveUserId = testUserId || session?.user?.id;
+    const effectiveRole = testUserRole || session?.user?.role;
+
     const paper = await prisma.paper.findFirst({
       where: {
-        OR: [{ id: params.id }, { doi: params.id }],
+        AND: [
+          { OR: [{ id: params.id }, { doi: params.id }] },
+          paperVisibilityFilter(effectiveUserId, { role: effectiveRole, allowFixturesForAuth: true }),
+        ],
       },
       select: {
         id: true,
@@ -95,8 +112,6 @@ export async function GET(
     }
 
     // Access Control: Authorize downloading/streaming PDF for current session
-    const testUserId = request.headers.get("x-test-user-id");
-    const testUserRole = request.headers.get("x-test-user-role");
     const userOverride = testUserId ? { id: testUserId, role: testUserRole || "USER" } : undefined;
     const authResult = await authorizeCurrentSession(paper, "DOWNLOAD_PDF", userOverride);
 

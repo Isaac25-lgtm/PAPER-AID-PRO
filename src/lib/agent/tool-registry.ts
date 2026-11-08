@@ -30,6 +30,7 @@ import {
   NormalizedExternalPaper,
   FullTextAvailabilityStatus,
 } from "@/lib/discovery/types";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 
 export interface AgentToolRegistry {
   /**
@@ -37,7 +38,7 @@ export interface AgentToolRegistry {
    */
   searchLocalLibrary(
     query: string,
-    options?: { limit?: number }
+    options?: { limit?: number; userId?: string | null; userRole?: string | null }
   ): Promise<DiscoveredPaper[]>;
 
   /**
@@ -51,7 +52,10 @@ export interface AgentToolRegistry {
   /**
    * Retrieves paper metadata, chunk counts, and processing status from the local database.
    */
-  inspectPaperDetails(paperId: string): Promise<{
+  inspectPaperDetails(
+    paperId: string,
+    options?: { userId?: string | null; userRole?: string | null }
+  ): Promise<{
     id: string;
     title: string;
     doi: string | null;
@@ -67,7 +71,12 @@ export interface AgentToolRegistry {
   retrievePaperEvidence(
     paperIds: string[],
     question: string,
-    options?: { chunksPerPaper?: number; globalChunkCap?: number }
+    options?: {
+      chunksPerPaper?: number;
+      globalChunkCap?: number;
+      userId?: string | null;
+      userRole?: string | null;
+    }
   ): Promise<{
     evidenceSets: PaperEvidenceSet[];
     allChunks: RetrievedEvidenceChunk[];
@@ -94,12 +103,14 @@ export class DefaultAgentToolRegistry implements AgentToolRegistry {
 
   async searchLocalLibrary(
     query: string,
-    options: { limit?: number } = {}
+    options: { limit?: number; userId?: string | null; userRole?: string | null } = {}
   ): Promise<DiscoveredPaper[]> {
     const limit = options.limit || 8;
     const res = await discoverRelevantPapers(query, {
       candidateLimit: limit * 2,
       maxSelected: limit,
+      userId: options.userId || undefined,
+      userRole: options.userRole || undefined,
     });
     // PART 1.1: Return filtered selectedPapers (enforces minSimilarity and anatomical domain alignment)
     return res.selectedPapers;
@@ -114,9 +125,17 @@ export class DefaultAgentToolRegistry implements AgentToolRegistry {
     });
   }
 
-  async inspectPaperDetails(paperId: string) {
-    const paper = await prisma.paper.findUnique({
-      where: { id: paperId },
+  async inspectPaperDetails(
+    paperId: string,
+    options?: { userId?: string | null; userRole?: string | null }
+  ) {
+    const paper = await prisma.paper.findFirst({
+      where: {
+        AND: [
+          { id: paperId },
+          paperVisibilityFilter(options?.userId, { role: options?.userRole }),
+        ],
+      },
       include: {
         _count: {
           select: { chunks: true },
@@ -164,7 +183,12 @@ export class DefaultAgentToolRegistry implements AgentToolRegistry {
   async retrievePaperEvidence(
     paperIds: string[],
     question: string,
-    options: { chunksPerPaper?: number; globalChunkCap?: number } = {}
+    options: {
+      chunksPerPaper?: number;
+      globalChunkCap?: number;
+      userId?: string | null;
+      userRole?: string | null;
+    } = {}
   ): Promise<{
     evidenceSets: PaperEvidenceSet[];
     allChunks: RetrievedEvidenceChunk[];
@@ -175,7 +199,13 @@ export class DefaultAgentToolRegistry implements AgentToolRegistry {
     const queryVector = await generateEmbedding(question);
 
     const papers = await prisma.paper.findMany({
-      where: { id: { in: paperIds }, status: "COMPLETED" },
+      where: {
+        AND: [
+          { id: { in: paperIds } },
+          { status: "COMPLETED" },
+          paperVisibilityFilter(options.userId, { role: options.userRole }),
+        ],
+      },
       include: {
         authors: {
           include: { author: true },
@@ -201,6 +231,8 @@ export class DefaultAgentToolRegistry implements AgentToolRegistry {
       queryVector,
       chunksPerPaper,
       maxTotalChunks: globalChunkCap,
+      userId: options.userId,
+      userRole: options.userRole,
     });
 
     return {

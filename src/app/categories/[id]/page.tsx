@@ -37,6 +37,7 @@ export async function generateMetadata({ params }: { params: { id: string } }) {
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { ADMIN_TEST_FIXTURE_IDS, isPublicScholarlyPaper, getPublicPaperWhereInput } from "@/lib/auth/paper-authorization";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 
 export default async function CategoryDetailPage({
   params,
@@ -52,7 +53,9 @@ export default async function CategoryDetailPage({
     },
     include: {
       papers: {
-        where: isAdmin ? {} : { paper: getPublicPaperWhereInput() },
+        where: {
+          paper: paperVisibilityFilter(session?.user?.id, { role: session?.user?.role }),
+        },
         include: {
           paper: {
             include: {

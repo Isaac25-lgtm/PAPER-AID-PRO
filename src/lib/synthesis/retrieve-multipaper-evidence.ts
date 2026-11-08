@@ -2,11 +2,14 @@ import "server-only";
 import { prisma } from "../prisma";
 import { DiscoveredPaper, PaperEvidenceSet } from "./types";
 import { ChunkMetadata, RetrievedEvidenceChunk, StructuredChunkMetadata } from "../rag/types";
+import { paperVisibilityFilter, paperVisibilitySql } from "../auth/paper-visibility";
 
 export interface RetrieveMultiPaperEvidenceOptions {
   chunksPerPaper?: number; // Target chunks per paper (default: 4, max: 5)
   maxTotalChunks?: number; // Global evidence cap across all papers (default: 20)
   queryVector: number[];   // Reused from discovery
+  userId?: string | null;
+  userRole?: string | null;
 }
 
 export const DEFAULT_CHUNKS_PER_PAPER = 4;
@@ -81,8 +84,19 @@ export async function retrieveMultiPaperEvidence(
   const allChunks: RetrievedEvidenceChunk[] = [];
   let cumulativeChunks = 0;
 
-  // Retrieve evidence independently for each selected paper
-  for (const paper of selectedPapers) {
+  // Authorize candidate papers strictly against requesting user's visibility permissions
+  const allowedPapers = await prisma.paper.findMany({
+    where: {
+      id: { in: selectedPapers.map((p) => p.paperId) },
+      ...paperVisibilityFilter(options.userId, { role: options.userRole }),
+    },
+    select: { id: true },
+  });
+  const allowedPaperIds = new Set(allowedPapers.map((p) => p.id));
+  const authorizedPapers = selectedPapers.filter((p) => allowedPaperIds.has(p.paperId));
+
+  // Retrieve evidence independently for each authorized paper
+  for (const paper of authorizedPapers) {
     if (cumulativeChunks >= maxTotalChunks) {
       break;
     }

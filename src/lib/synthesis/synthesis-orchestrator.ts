@@ -2,6 +2,7 @@ import { prisma } from "../prisma";
 import { getOpenAIClient, AI_CONFIG } from "../ai/config";
 import { generateEmbedding } from "../ai/embeddings";
 import { authorizePaperAccess, UserContext } from "../auth/paper-authorization";
+import { paperVisibilityFilter } from "../auth/paper-visibility";
 import { discoverRelevantPapers, DEFAULT_MAX_SELECTED_PAPERS } from "./discover-papers";
 import { retrieveMultiPaperEvidence } from "./retrieve-multipaper-evidence";
 import { validateMultiPaperSynthesis } from "./validate-multipaper-citations";
@@ -159,7 +160,12 @@ export async function synthesizeResearchQuestion(
   if (candidatePaperIds.length > 0) {
     // Explicit or inherited multi-paper selection: Authorize every paper on server
     const fetchedCandidatePapers = await prisma.paper.findMany({
-      where: { id: { in: candidatePaperIds } },
+      where: {
+        AND: [
+          { id: { in: candidatePaperIds } },
+          paperVisibilityFilter(userContext.id, { role: userContext.role }),
+        ],
+      },
       select: {
         id: true,
         title: true,
@@ -269,6 +275,8 @@ export async function synthesizeResearchQuestion(
         queryVector,
         chunksPerPaper: 4,
         maxTotalChunks: 20,
+        userId: userContext.id,
+        userRole: userContext.role,
       });
     }
 
@@ -360,6 +368,8 @@ export async function synthesizeResearchQuestion(
       queryVector: discovery.queryVector,
       chunksPerPaper: 4,
       maxTotalChunks: 20,
+      userId: userContext.id,
+      userRole: userContext.role,
     });
   }
 

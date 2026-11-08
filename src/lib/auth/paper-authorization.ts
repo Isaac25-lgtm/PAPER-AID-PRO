@@ -311,3 +311,6 @@ export async function authorizeCurrentSession(
   }
   return authorizePaperAccess(paper, session?.user, action);
 }
+
+export { paperVisibilityFilter, paperVisibilitySql, type PaperVisibilityOptions } from "./paper-visibility";
+

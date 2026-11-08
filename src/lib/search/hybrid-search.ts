@@ -3,6 +3,7 @@ import { prisma } from "../prisma";
 import { generateEmbedding } from "../ai/embeddings";
 import { Paper } from "../types/paper";
 import { ADMIN_TEST_FIXTURE_IDS, isPublicScholarlyPaper, getPublicPaperWhereInput } from "../auth/paper-authorization";
+import { paperVisibilityFilter, paperVisibilitySql } from "../auth/paper-visibility";
 
 export interface MatchedEvidenceSnippet {
   chunkId: string;
@@ -36,6 +37,8 @@ export interface SearchPapersOptions {
   sort?: string;
   limit?: number;
   excludeFixtures?: boolean; // Defaults to true to hide admin test fixtures
+  userId?: string | null;
+  role?: string | null;
 }
 
 // RRF constant k (standard information retrieval setting)
@@ -65,6 +68,22 @@ export function isPaperPermittedForPublicSearch(p: any): boolean {
   return isPublicScholarlyPaper(p);
 }
 
+export function isPaperPermittedForUserSearch(p: any, userId?: string | null): boolean {
+  if (!p) return false;
+  if (isPublicScholarlyPaper(p)) return true;
+  if (userId) {
+    const prov = (p.sourceProvenance as any) || {};
+    const ownerId =
+      prov.ownerId ||
+      prov.uploadedByUserId ||
+      prov.attachedByUserId ||
+      prov.ownerUserId ||
+      p.uploadedByUserId;
+    if (ownerId === userId) return true;
+  }
+  return false;
+}
+
 /**
  * Executes hybrid search combining PostgreSQL lexical search and pgvector semantic retrieval.
  * Uses Reciprocal Rank Fusion (RRF) with exact-match priority boosts.
@@ -81,14 +100,27 @@ export async function searchPapersHybrid(
 
   // If query is empty, return default listing sorted by citationCount or requested sort
   if (!rawQuery) {
-    return browsePapers({ categorySlug, sort: options.sort, limit, excludeFixtures });
+    return browsePapers({
+      categorySlug,
+      sort: options.sort,
+      limit,
+      excludeFixtures,
+      userId: options.userId,
+      role: options.role,
+    });
   }
 
   // Guard against overly long queries
   const safeQuery = rawQuery.slice(0, 500);
 
   // 1. Execute Lexical Retrieval (PostgreSQL)
-  const lexicalPapers = await fetchLexicalCandidates(safeQuery, categorySlug, excludeFixtures);
+  const lexicalPapers = await fetchLexicalCandidates(
+    safeQuery,
+    categorySlug,
+    excludeFixtures,
+    options.userId,
+    options.role
+  );
 
   // 2. Execute Semantic Retrieval (OpenAI Embeddings + pgvector Cosine Search)
   let semanticCandidates: Map<string, { rank: number; snippet: MatchedEvidenceSnippet }> = new Map();
@@ -96,7 +128,13 @@ export async function searchPapersHybrid(
 
   try {
     const queryVector = await generateEmbedding(safeQuery);
-    semanticCandidates = await fetchSemanticCandidates(queryVector, categorySlug, excludeFixtures);
+    semanticCandidates = await fetchSemanticCandidates(
+      queryVector,
+      categorySlug,
+      excludeFixtures,
+      options.userId,
+      options.role
+    );
   } catch (embeddingError: any) {
     console.warn(
       "[HybridSearch] Embedding generation failed. Falling back gracefully to lexical search:",
@@ -161,7 +199,12 @@ export async function searchPapersHybrid(
   let semanticOnlyPapers: any[] = [];
   if (semanticOnlyIds.length > 0) {
     semanticOnlyPapers = await prisma.paper.findMany({
-      where: { id: { in: semanticOnlyIds } },
+      where: {
+        AND: [
+          { id: { in: semanticOnlyIds } },
+          paperVisibilityFilter(options.userId, { role: options.role }),
+        ],
+      },
       include: {
         authors: {
           include: { author: true },
@@ -208,7 +251,7 @@ export async function searchPapersHybrid(
 
   // Filter by privacy and fixture quarantine when excludeFixtures is true
   const eligibleScores = Array.from(paperScores.values()).filter((item) => {
-    if (excludeFixtures && !isPaperPermittedForPublicSearch(item.paper)) {
+    if (excludeFixtures && !isPaperPermittedForUserSearch(item.paper, options.userId)) {
       return false;
     }
     return true;
@@ -246,28 +289,39 @@ export async function searchPapersHybrid(
 async function fetchLexicalCandidates(
   query: string,
   categorySlug?: string,
-  excludeFixtures: boolean = true
+  excludeFixtures: boolean = true,
+  userId?: string | null,
+  role?: string | null
 ): Promise<any[]> {
   const where: any = {
-    OR: [
-      { title: { contains: query, mode: "insensitive" } },
-      { abstract: { contains: query, mode: "insensitive" } },
-      { doi: { contains: query, mode: "insensitive" } },
-      { keywords: { has: query } },
+    AND: [
+      paperVisibilityFilter(userId, { role }),
       {
-        authors: {
-          some: {
-            author: {
-              name: { contains: query, mode: "insensitive" },
+        OR: [
+          { title: { contains: query, mode: "insensitive" } },
+          { abstract: { contains: query, mode: "insensitive" } },
+          { doi: { contains: query, mode: "insensitive" } },
+          { keywords: { has: query } },
+          {
+            authors: {
+              some: {
+                author: {
+                  name: { contains: query, mode: "insensitive" },
+                },
+              },
             },
           },
-        },
+        ],
       },
     ],
   };
 
   if (excludeFixtures) {
-    Object.assign(where, getPublicPaperWhereInput());
+    if (!userId) {
+      Object.assign(where, getPublicPaperWhereInput());
+    } else {
+      where.id = { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) };
+    }
   }
 
   if (categorySlug) {
@@ -297,7 +351,7 @@ async function fetchLexicalCandidates(
   });
 
   if (excludeFixtures) {
-    return rawPapers.filter(isPaperPermittedForPublicSearch);
+    return rawPapers.filter((p) => isPaperPermittedForUserSearch(p, userId));
   }
 
   return rawPapers;
@@ -310,11 +364,13 @@ async function fetchLexicalCandidates(
 async function fetchSemanticCandidates(
   queryVector: number[],
   categorySlug?: string,
-  excludeFixtures: boolean = true
+  excludeFixtures: boolean = true,
+  userId?: string | null,
+  role?: string | null
 ): Promise<Map<string, { rank: number; snippet: MatchedEvidenceSnippet }>> {
   const vectorString = `[${queryVector.join(",")}]`;
 
-  // Raw parameterized SQL query on pgvector
+  // Raw parameterized SQL query on pgvector with strict multi-tenant visibility filter
   let rawChunks: Array<{
     chunkId: string;
     paperId: string;
@@ -342,6 +398,7 @@ async function fetchSemanticCandidates(
       WHERE c.embedding IS NOT NULL
         AND (c."embeddingModel" IS NULL OR c."embeddingModel" != 'mock-sha256')
         AND cat.slug = ${categorySlug}
+        AND ${paperVisibilitySql(userId, "p", { role })}
       ORDER BY c.embedding <=> ${vectorString}::vector ASC
       LIMIT 50;
     `;
@@ -359,6 +416,7 @@ async function fetchSemanticCandidates(
       JOIN "papers" p ON c."paperId" = p.id
       WHERE c.embedding IS NOT NULL
         AND (c."embeddingModel" IS NULL OR c."embeddingModel" != 'mock-sha256')
+        AND ${paperVisibilitySql(userId, "p", { role })}
       ORDER BY c.embedding <=> ${vectorString}::vector ASC
       LIMIT 50;
     `;
@@ -421,12 +479,20 @@ async function browsePapers(options: {
   sort?: string;
   limit: number;
   excludeFixtures?: boolean;
+  userId?: string | null;
+  role?: string | null;
 }): Promise<HybridSearchResult> {
   const startTime = Date.now();
-  const where: any = {};
+  const where: any = {
+    ...paperVisibilityFilter(options.userId, { role: options.role }),
+  };
 
   if (options.excludeFixtures !== false) {
-    Object.assign(where, getPublicPaperWhereInput());
+    if (!options.userId) {
+      Object.assign(where, getPublicPaperWhereInput());
+    } else {
+      where.id = { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) };
+    }
   }
 
   if (options.categorySlug) {
@@ -465,7 +531,7 @@ async function browsePapers(options: {
   });
 
   const filteredPapers = options.excludeFixtures !== false
-    ? dbPapers.filter(isPaperPermittedForPublicSearch).slice(0, options.limit)
+    ? dbPapers.filter((p) => isPaperPermittedForUserSearch(p, options.userId)).slice(0, options.limit)
     : dbPapers.slice(0, options.limit);
 
   const papers: RankedPaperResult[] = filteredPapers.map((p, idx) => ({

@@ -3,6 +3,7 @@ import { prisma } from "../prisma";
 import { generateEmbedding } from "../ai/embeddings";
 import { DiscoveredPaper } from "./types";
 import { authorizePaperAccess } from "../auth/paper-authorization";
+import { paperVisibilitySql } from "../auth/paper-visibility";
 
 export interface DiscoverPapersOptions {
   candidateLimit?: number; // Maximum candidate papers to discover (default: 20)
@@ -78,6 +79,7 @@ export async function discoverRelevantPapers(
     JOIN "papers" p ON c."paperId" = p.id
     WHERE c.embedding IS NOT NULL
       AND p.status = 'COMPLETED'
+      AND ${paperVisibilitySql(options.userId, "p", { role: options.userRole })}
       AND (c.section IS NULL OR (
         c.section NOT ILIKE '%reference%' 
         AND c.section NOT ILIKE '%bibliography%'

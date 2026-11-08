@@ -12,6 +12,7 @@ import {
 } from "@/lib/synthesis/types";
 
 import { authorizePaperAccess } from "@/lib/auth/paper-authorization";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 import { getUserLibraryItems } from "@/lib/library/user-library-service";
 
 export interface ResearchActionResult {
@@ -97,7 +98,12 @@ export async function getSelectedPapersDetailsAction(
   const cleanIds = Array.from(new Set(paperIds.map((id) => id.trim()).filter(Boolean)));
 
   const candidates = await prisma.paper.findMany({
-    where: { id: { in: cleanIds } },
+    where: {
+      AND: [
+        { id: { in: cleanIds } },
+        paperVisibilityFilter(session.user.id, { role: session.user.role }),
+      ],
+    },
     select: {
       id: true,
       title: true,
