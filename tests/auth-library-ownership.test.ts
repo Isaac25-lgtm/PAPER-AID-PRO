@@ -18,7 +18,16 @@
  * 6. Chat with PDF for Document Owners without Admin Privileges
  */
 
-import "../scratch/load-env";
+import {
+  loadIsolatedTestEnvironment,
+  assertIsolatedTestEnvironment,
+  enableMockStorage,
+} from "../src/lib/test-guard";
+
+loadIsolatedTestEnvironment();
+assertIsolatedTestEnvironment();
+enableMockStorage();
+
 import { prisma } from "../src/lib/prisma";
 import {
   uploadUserPrivateDocument,
@@ -502,7 +511,7 @@ async function runAuthAndOwnershipTestSuite() {
     } catch (e: any) {
       caughtStorageError = true;
     } finally {
-      setStorageClientOverride(null);
+      enableMockStorage();
     }
 
     assert(caughtStorageError, "Storage failure thrown as expected error");

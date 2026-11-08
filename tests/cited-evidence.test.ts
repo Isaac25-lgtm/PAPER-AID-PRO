@@ -12,7 +12,7 @@
  * 8. Aggregator integration & failure isolation
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import { citedEvidenceClient, CitedEvidenceClient } from "../src/lib/citedevidence/client";
 import { CitedEvidenceProvider } from "../src/lib/discovery/providers/cited-evidence";
 import { ScholarlyAggregator } from "../src/lib/discovery/scholarly-aggregator";

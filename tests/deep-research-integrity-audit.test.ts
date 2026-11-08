@@ -23,7 +23,7 @@
  *   - Historical/legacy research runs render safely without runtime errors
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import {
   computeCorpusGapEvidence,
   validateCorpusGap,

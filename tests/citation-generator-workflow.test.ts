@@ -24,7 +24,7 @@
  * 10. Error message rendering & polite authentication boundary
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import {
   verifyCitation,
   calculateTitleSimilarity,

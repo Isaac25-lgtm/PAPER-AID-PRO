@@ -1,10 +1,7 @@
 /**
- * AI RESEARCH HUB â€” AUDIT-FIRST VERIFICATION
+ * AI RESEARCH HUB — AUDIT-FIRST VERIFICATION
  * Comprehensive Multi-Tenant Private Paper Isolation Suite Across All 12 Retrieval Paths
- *
- * Asserts that a private manuscript created by User B with distinctive text
- * ("SECRET_USER_B_PATIENT_COHORT_XY77") is strictly inaccessible to User A (and anonymous visitors)
- * across ALL 12 catalog, RAG, synthesis, agent, and storage retrieval paths.
+ * + Additional Isolation Paths (3a-3e) + Admin Scope + Prisma vs Raw SQL Parity
  */
 
 import {
@@ -24,15 +21,23 @@ import { discoverRelevantPapers } from "../src/lib/synthesis/discover-papers";
 import { retrieveMultiPaperEvidence } from "../src/lib/synthesis/retrieve-multipaper-evidence";
 import { retrievePaperEvidence } from "../src/lib/rag/retrieve-paper-evidence";
 import { DefaultAgentToolRegistry } from "../src/lib/agent/tool-registry";
-import { assertPaperAccess } from "../src/lib/editor/document-service";
-import { authorizePaperAccess, authorizeCurrentSession } from "../src/lib/auth/paper-authorization";
+import {
+  assertPaperAccess,
+  createResearchDocument,
+  getResearchDocument,
+  exportResearchDocument,
+} from "../src/lib/editor/document-service";
+import { authorizePaperAccess, ADMIN_TEST_FIXTURE_IDS } from "../src/lib/auth/paper-authorization";
 import { paperVisibilityFilter, paperVisibilitySql } from "../src/lib/auth/paper-visibility";
+import { matchPapersAgainstLocalLibrary } from "../src/lib/discovery/library-matcher";
+import { addPaperToCollection } from "../src/lib/library/collections-service";
+import { getUserLibraryItems } from "../src/lib/library/user-library-service";
 import { GET as pdfRouteGet } from "../src/app/api/papers/[id]/pdf/route";
 import { NextRequest } from "next/server";
 
 async function runIsolationSuite() {
   console.log("======================================================================");
-  console.log("AI RESEARCH HUB â€” MULTI-TENANT PRIVATE PAPER ISOLATION SUITE (12 PATHS)");
+  console.log("AI RESEARCH HUB — MULTI-TENANT PRIVATE PAPER ISOLATION SUITE (12+ PATHS)");
   console.log("======================================================================\n");
 
   let passed = 0;
@@ -40,10 +45,10 @@ async function runIsolationSuite() {
 
   function assert(condition: boolean, testName: string, detail?: string) {
     if (condition) {
-      console.log(`âœ… PASS: ${testName}`);
+      console.log(`✅ PASS: ${testName}`);
       passed++;
     } else {
-      console.error(`â Œ FAIL: ${testName}${detail ? ` - ${detail}` : ""}`);
+      console.error(`❌ FAIL: ${testName}${detail ? ` - ${detail}` : ""}`);
       failed++;
     }
   }
@@ -65,6 +70,14 @@ async function runIsolationSuite() {
       email: `user_b_${timestamp}@researchhub.test`,
       name: `Dr. User B ${timestamp}`,
       role: "USER",
+    },
+  });
+
+  const adminUser = await prisma.user.create({
+    data: {
+      email: `admin_${timestamp}@researchhub.test`,
+      name: `Platform Admin ${timestamp}`,
+      role: "ADMIN",
     },
   });
 
@@ -138,10 +151,40 @@ async function runIsolationSuite() {
     },
   });
 
+  // 5. Create Additional Parity Fixture Papers
+  const privatePaperA = await prisma.paper.create({
+    data: {
+      title: `User A Private Research Paper ${timestamp}`,
+      abstract: `User A proprietary study for parity verification.`,
+      status: "COMPLETED",
+      isOpenAccess: false,
+      sourceProvenance: {
+        isPrivate: true,
+        ownerId: userA.id,
+        ownerUserId: userA.id,
+      },
+    },
+  });
+
+  const incompleteProvenancePaper = await prisma.paper.create({
+    data: {
+      title: `Incomplete Provenance Paper ${timestamp}`,
+      abstract: `Orphaned private paper without ownerId.`,
+      status: "COMPLETED",
+      isOpenAccess: false,
+      sourceProvenance: {
+        isPrivate: true,
+      },
+    },
+  });
+
   try {
-    // ------------------------------------------------------------------------
+    // ========================================================================
+    // SECTION 1: THE CORE 12 RETRIEVAL PATHS
+    // ========================================================================
+    console.log("--- Section 1: The Core 12 Retrieval Paths ---");
+
     // PATH 1: Hybrid Search (Lexical + Vector Retrieval)
-    // ------------------------------------------------------------------------
     const searchUserA = await searchPapersHybrid({
       query: DISTINCTIVE_SECRET,
       userId: userA.id,
@@ -169,9 +212,7 @@ async function runIsolationSuite() {
       "Path 1C: Hybrid search permits User B to find their own private paper"
     );
 
-    // ------------------------------------------------------------------------
     // PATH 2: Public Paper Catalog (/papers)
-    // ------------------------------------------------------------------------
     const catalogPapersUserA = await prisma.paper.findMany({
       where: {
         AND: [
@@ -186,9 +227,7 @@ async function runIsolationSuite() {
       "Path 2: /papers catalog filter strictly excludes User B's private paper for User A"
     );
 
-    // ------------------------------------------------------------------------
     // PATH 3: Direct Paper View (/papers/[id])
-    // ------------------------------------------------------------------------
     const viewMetadataUserA = await authorizePaperAccess(privatePaperB, userA, "VIEW_METADATA");
     assert(
       !viewMetadataUserA.allowed && viewMetadataUserA.statusCode === 404,
@@ -201,9 +240,7 @@ async function runIsolationSuite() {
       "Path 3B: /papers/[id] allows User B to view their own private paper metadata"
     );
 
-    // ------------------------------------------------------------------------
     // PATH 4: PDF Streaming Route (/api/papers/[id]/pdf)
-    // ------------------------------------------------------------------------
     const reqUserA = new NextRequest(`http://localhost:3000/api/papers/${privatePaperB.id}/pdf`, {
       headers: {
         "x-test-user-id": userA.id,
@@ -216,9 +253,7 @@ async function runIsolationSuite() {
       `Path 4: /api/papers/[id]/pdf returns HTTP 404 for User A (got ${pdfResponseUserA.status})`
     );
 
-    // ------------------------------------------------------------------------
     // PATH 5: Quick Research Discovery (discoverRelevantPapers)
-    // ------------------------------------------------------------------------
     const discoveryUserA = await discoverRelevantPapers(DISTINCTIVE_SECRET, {
       userId: userA.id,
       userRole: userA.role,
@@ -230,9 +265,7 @@ async function runIsolationSuite() {
       "Path 5: Quick Research discovery never surfaces User B's private paper to User A"
     );
 
-    // ------------------------------------------------------------------------
     // PATH 6: Single-Paper RAG Evidence Retrieval (retrievePaperEvidence)
-    // ------------------------------------------------------------------------
     let ragLeaked = false;
     try {
       await retrievePaperEvidence(privatePaperB.id, DISTINCTIVE_SECRET, { user: userA });
@@ -245,9 +278,7 @@ async function runIsolationSuite() {
     }
     assert(!ragLeaked, "Path 6: Single-paper RAG never returns private evidence to User A");
 
-    // ------------------------------------------------------------------------
     // PATH 7: Multi-Paper Evidence Retrieval (retrieveMultiPaperEvidence)
-    // ------------------------------------------------------------------------
     const multiPaperEvidenceUserA = await retrieveMultiPaperEvidence(
       [
         {
@@ -276,9 +307,7 @@ async function runIsolationSuite() {
       "Path 7: retrieveMultiPaperEvidence drops unauthorized private paper IDs for User A"
     );
 
-    // ------------------------------------------------------------------------
     // PATH 8: Deep Research Agent Planner Discovery (stepPlanning)
-    // ------------------------------------------------------------------------
     const plannerPapersUserA = await prisma.paper.findMany({
       where: {
         AND: [
@@ -293,9 +322,7 @@ async function runIsolationSuite() {
       "Path 8: Deep Research planner context excludes User B's private paper for User A"
     );
 
-    // ------------------------------------------------------------------------
     // PATH 9: Deep Research Tool Registry (searchLocalLibrary & inspectPaperDetails)
-    // ------------------------------------------------------------------------
     const toolRegistry = new DefaultAgentToolRegistry();
     const inspectedUserA = await toolRegistry.inspectPaperDetails(privatePaperB.id, {
       userId: userA.id,
@@ -325,9 +352,7 @@ async function runIsolationSuite() {
       "Path 9C: toolRegistry.retrievePaperEvidence returns 0 chunks to User A for private paper"
     );
 
-    // ------------------------------------------------------------------------
     // PATH 10: Homepage / Anonymous Literature Access
-    // ------------------------------------------------------------------------
     const anonVisibilityFilter = paperVisibilityFilter(null);
     const anonVisiblePapers = await prisma.paper.findMany({
       where: {
@@ -343,9 +368,7 @@ async function runIsolationSuite() {
       "Path 10: Anonymous visitors cannot see User B's private paper"
     );
 
-    // ------------------------------------------------------------------------
     // PATH 11: Author & Category Counts and Listings
-    // ------------------------------------------------------------------------
     const categoryCountUserA = await prisma.category.findUnique({
       where: { id: category.id },
       include: {
@@ -403,9 +426,7 @@ async function runIsolationSuite() {
       `Path 11C: Author paper count for User A is 1 (excludes private paper, got ${authorCountUserA?._count.papers})`
     );
 
-    // ------------------------------------------------------------------------
     // PATH 12: Editor / Research Actions (assertPaperAccess)
-    // ------------------------------------------------------------------------
     let editorLeaked = false;
     try {
       await assertPaperAccess(userA.id, privatePaperB.id);
@@ -424,23 +445,333 @@ async function runIsolationSuite() {
       "Path 12C: User B can successfully attach their own private paper in editor"
     );
 
+    // ========================================================================
+    // SECTION 2: ADDITIONAL ISOLATION PATHS (3a, 3b, 3c, 3d, 3e)
+    // ========================================================================
+    console.log("\n--- Section 2: Additional Isolation Paths (3a-3e) ---");
+
+    // Path 3a: Discovery Library Matcher
+    const matchUserA = await matchPapersAgainstLocalLibrary(
+      [
+        {
+          id: "temp-ext-1",
+          sourceProviders: ["CROSSREF"],
+          title: privatePaperB.title,
+          authors: [],
+          year: 2026,
+          isOpenAccess: false,
+          fullTextAvailability: "METADATA_ONLY",
+        },
+      ],
+      userA.id
+    );
+    assert(
+      matchUserA[0].localStatus?.inLibrary !== true && matchUserA[0].localStatus?.paperId === undefined,
+      "Path 3a.1: matchPapersAgainstLocalLibrary hides User B's private paper from User A (inLibrary: false, paperId: undefined)"
+    );
+
+    const matchUserB = await matchPapersAgainstLocalLibrary(
+      [
+        {
+          id: "temp-ext-2",
+          sourceProviders: ["CROSSREF"],
+          title: privatePaperB.title,
+          authors: [],
+          year: 2026,
+          isOpenAccess: false,
+          fullTextAvailability: "METADATA_ONLY",
+        },
+      ],
+      userB.id
+    );
+    assert(
+      matchUserB[0].localStatus?.inLibrary === true && matchUserB[0].localStatus?.paperId === privatePaperB.id,
+      "Path 3a.2: matchPapersAgainstLocalLibrary allows User B to match their own private paper (inLibrary: true)"
+    );
+
+    // Path 3c: Collections & Bookmarks Isolation
+    let collectionAddFailed = false;
+    try {
+      await addPaperToCollection(userA.id, privatePaperB.id, "Oncology Reading List");
+    } catch (err: any) {
+      collectionAddFailed = true;
+      assert(
+        err.message.includes("Unauthorized") || err.message.includes("permission"),
+        `Path 3c.1: addPaperToCollection rejects User A adding User B's private paper: "${err.message}"`
+      );
+    }
+    assert(collectionAddFailed, "Path 3c.2: User A cannot add User B's private paper to a collection");
+
+    const libraryItemsUserA = await getUserLibraryItems(userA.id);
+    assert(
+      !libraryItemsUserA.some((item) => item.id === privatePaperB.id),
+      "Path 3c.3: getUserLibraryItems for User A strictly excludes User B's private paper"
+    );
+
+    // Path 3d: Editor Document Export & Citation Hydration Isolation
+    const userADoc = await createResearchDocument(userA.id, {
+      title: "User A Clinical Report",
+    });
+
+    // Directly insert a citation referencing privatePaperB to simulate forged or tampered citation
+    const forgedCitation = await prisma.documentCitation.create({
+      data: {
+        documentId: userADoc.id,
+        paperId: privatePaperB.id,
+        citationText: "User B Private Finding [1]",
+      },
+    });
+
+    const retrievedDocUserA = await getResearchDocument(userA.id, userADoc.id);
+    const hydratedCite = retrievedDocUserA.citations.find((c: any) => c.id === forgedCitation.id);
+    assert(
+      hydratedCite?.paper === null,
+      "Path 3d.1: getResearchDocument scrubs metadata of another researcher's private paper (paper: null)"
+    );
+
+    const exportMarkdown = await exportResearchDocument(userA.id, userADoc.id, "markdown");
+    assert(
+      !exportMarkdown.content.includes(DISTINCTIVE_SECRET),
+      "Path 3d.2: exportResearchDocument never leaks private paper title/secret into exported markdown or bibliography"
+    );
+
+    // Path 3e: Conversation Thread Access Isolation
+    const userBConversation = await prisma.aIConversation.create({
+      data: {
+        userId: userB.id,
+        title: `Internal Research Investigation ${timestamp}`,
+        paperId: privatePaperB.id,
+      },
+    });
+
+    const conversationQueryUserA = await prisma.aIConversation.findFirst({
+      where: {
+        id: userBConversation.id,
+        userId: userA.id,
+      },
+    });
+    assert(
+      conversationQueryUserA === null,
+      "Path 3e: User A query for User B conversation returns null (strict multi-tenant conversation isolation)"
+    );
+
+    // ========================================================================
+    // SECTION 3: ADMIN SCOPE ENFORCEMENT
+    // ========================================================================
+    console.log("\n--- Section 3: Admin Scope Enforcement ---");
+
+    // Admin in user-facing mode: MUST receive same multi-tenant isolation as normal users
+    const adminUserFacingFilter = paperVisibilityFilter(adminUser.id, {
+      role: adminUser.role,
+      isAdminRoute: false,
+      allowAdmin: false,
+    });
+    const adminUserFacingPapers = await prisma.paper.findMany({
+      where: {
+        AND: [
+          { id: { in: [publicPaper.id, privatePaperB.id] } },
+          adminUserFacingFilter,
+        ],
+      },
+      select: { id: true },
+    });
+    assert(
+      adminUserFacingPapers.length === 1 && adminUserFacingPapers[0].id === publicPaper.id,
+      "Admin Scope 1: In user-facing routes, ADMIN role does NOT see User B's private paper"
+    );
+
+    // Admin in admin route/action mode: receives administrative visibility bypass
+    const adminRouteFilter = paperVisibilityFilter(adminUser.id, {
+      role: adminUser.role,
+      isAdminRoute: true,
+    });
+    const adminRoutePapers = await prisma.paper.findMany({
+      where: {
+        AND: [
+          { id: { in: [publicPaper.id, privatePaperB.id] } },
+          adminRouteFilter,
+        ],
+      },
+      select: { id: true },
+    });
+    assert(
+      adminRoutePapers.length === 2,
+      "Admin Scope 2: With isAdminRoute: true, ADMIN role receives administrative catalog visibility"
+    );
+
+    // ========================================================================
+    // SECTION 4: VISIBILITY STORAGE PARITY (PRISMA VS RAW SQL)
+    // ========================================================================
+    console.log("\n--- Section 4: Prisma vs Raw SQL Parity ---");
+
+    const fixturePaperIds = [
+      publicPaper.id,
+      privatePaperA.id,
+      privatePaperB.id,
+      incompleteProvenancePaper.id,
+    ];
+
+    // Parity Check for User A
+    const prismaIdsUserA = (
+      await prisma.paper.findMany({
+        where: {
+          AND: [
+            { id: { in: fixturePaperIds } },
+            paperVisibilityFilter(userA.id, { role: "USER" }),
+          ],
+        },
+        select: { id: true },
+      })
+    ).map((p) => p.id);
+
+    const rawSqlIdsUserA = (
+      await prisma.$queryRaw<{ id: string }[]>(
+        Prisma.sql`
+          SELECT p.id
+          FROM "papers" p
+          WHERE p.id IN (${Prisma.join(fixturePaperIds)})
+            AND ${paperVisibilitySql(userA.id, "p", { role: "USER" })}
+        `
+      )
+    ).map((p) => p.id);
+
+    const setPrismaA = new Set(prismaIdsUserA);
+    const setRawSqlA = new Set(rawSqlIdsUserA);
+    const parityA =
+      setPrismaA.size === setRawSqlA.size &&
+      Array.from(setPrismaA).every((id) => setRawSqlA.has(id));
+
+    assert(
+      parityA,
+      `Parity User A: Prisma and Raw SQL return identical paper ID set (${Array.from(setPrismaA).join(", ")})`
+    );
+    assert(
+      setPrismaA.has(publicPaper.id) && setPrismaA.has(privatePaperA.id) && !setPrismaA.has(privatePaperB.id),
+      "Parity User A: User A sees public paper and own private paper, but NOT User B's private paper"
+    );
+
+    // Parity Check for User B
+    const prismaIdsUserB = (
+      await prisma.paper.findMany({
+        where: {
+          AND: [
+            { id: { in: fixturePaperIds } },
+            paperVisibilityFilter(userB.id, { role: "USER" }),
+          ],
+        },
+        select: { id: true },
+      })
+    ).map((p) => p.id);
+
+    const rawSqlIdsUserB = (
+      await prisma.$queryRaw<{ id: string }[]>(
+        Prisma.sql`
+          SELECT p.id
+          FROM "papers" p
+          WHERE p.id IN (${Prisma.join(fixturePaperIds)})
+            AND ${paperVisibilitySql(userB.id, "p", { role: "USER" })}
+        `
+      )
+    ).map((p) => p.id);
+
+    const setPrismaB = new Set(prismaIdsUserB);
+    const setRawSqlB = new Set(rawSqlIdsUserB);
+    const parityB =
+      setPrismaB.size === setRawSqlB.size &&
+      Array.from(setPrismaB).every((id) => setRawSqlB.has(id));
+
+    assert(
+      parityB,
+      `Parity User B: Prisma and Raw SQL return identical paper ID set (${Array.from(setPrismaB).join(", ")})`
+    );
+    assert(
+      setPrismaB.has(publicPaper.id) && setPrismaB.has(privatePaperB.id) && !setPrismaB.has(privatePaperA.id),
+      "Parity User B: User B sees public paper and own private paper, but NOT User A's private paper"
+    );
+
+    // Parity Check for Anonymous Visitor (null userId)
+    const prismaIdsAnon = (
+      await prisma.paper.findMany({
+        where: {
+          AND: [
+            { id: { in: fixturePaperIds } },
+            paperVisibilityFilter(null),
+          ],
+        },
+        select: { id: true },
+      })
+    ).map((p) => p.id);
+
+    const rawSqlIdsAnon = (
+      await prisma.$queryRaw<{ id: string }[]>(
+        Prisma.sql`
+          SELECT p.id
+          FROM "papers" p
+          WHERE p.id IN (${Prisma.join(fixturePaperIds)})
+            AND ${paperVisibilitySql(null, "p")}
+        `
+      )
+    ).map((p) => p.id);
+
+    const setPrismaAnon = new Set(prismaIdsAnon);
+    const setRawSqlAnon = new Set(rawSqlIdsAnon);
+    const parityAnon =
+      setPrismaAnon.size === setRawSqlAnon.size &&
+      Array.from(setPrismaAnon).every((id) => setRawSqlAnon.has(id));
+
+    assert(
+      parityAnon,
+      `Parity Anonymous: Prisma and Raw SQL return identical paper ID set (${Array.from(setPrismaAnon).join(", ")})`
+    );
+    assert(
+      setPrismaAnon.has(publicPaper.id) && !setPrismaAnon.has(privatePaperA.id) && !setPrismaAnon.has(privatePaperB.id),
+      "Parity Anonymous: Anonymous visitor sees ONLY public paper"
+    );
+
   } finally {
     // Teardown: Clean up created test entities
+    const allPaperIds = [
+      publicPaper.id,
+      privatePaperB.id,
+      privatePaperA.id,
+      incompleteProvenancePaper.id,
+    ];
+
+    await prisma.documentCitation.deleteMany({
+      where: { paperId: { in: allPaperIds } },
+    });
+    await prisma.collectionPaper.deleteMany({
+      where: { paperId: { in: allPaperIds } },
+    });
+    await prisma.collection.deleteMany({
+      where: { userId: { in: [userA.id, userB.id] } },
+    });
+    await prisma.researchDocument.deleteMany({
+      where: { userId: { in: [userA.id, userB.id] } },
+    });
+    await prisma.aIConversation.deleteMany({
+      where: { userId: { in: [userA.id, userB.id] } },
+    });
     await prisma.paperChunk.deleteMany({
-      where: { paperId: { in: [publicPaper.id, privatePaperB.id] } },
+      where: { paperId: { in: allPaperIds } },
     });
     await prisma.paperCategory.deleteMany({
-      where: { paperId: { in: [publicPaper.id, privatePaperB.id] } },
+      where: { paperId: { in: allPaperIds } },
     });
     await prisma.paperAuthor.deleteMany({
-      where: { paperId: { in: [publicPaper.id, privatePaperB.id] } },
+      where: { paperId: { in: allPaperIds } },
+    });
+    await prisma.bookmark.deleteMany({
+      where: { paperId: { in: allPaperIds } },
     });
     await prisma.paper.deleteMany({
-      where: { id: { in: [publicPaper.id, privatePaperB.id] } },
+      where: { id: { in: allPaperIds } },
     });
     await prisma.category.deleteMany({ where: { id: category.id } });
     await prisma.author.deleteMany({ where: { id: author.id } });
-    await prisma.user.deleteMany({ where: { id: { in: [userA.id, userB.id] } } });
+    await prisma.user.deleteMany({
+      where: { id: { in: [userA.id, userB.id, adminUser.id] } },
+    });
   }
 
   console.log("\n======================================================================");

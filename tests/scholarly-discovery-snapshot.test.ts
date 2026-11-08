@@ -14,7 +14,7 @@
  * 8. Academic Citation Formatting across all 5 styles (APA, MLA, Chicago, IEEE, BibTeX)
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { NormalizedExternalPaper } from "../src/lib/discovery/types";

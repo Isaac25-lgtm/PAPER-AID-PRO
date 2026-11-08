@@ -16,7 +16,7 @@
  * 12. Non-leakage of secret headers to redirected CDNs / external hosts
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import { validateToolRequest, APPROVED_RESEARCH_TOOLS } from "../src/lib/citedevidence/tool-allowlist";
 import {
   citedEvidenceSafeguards,

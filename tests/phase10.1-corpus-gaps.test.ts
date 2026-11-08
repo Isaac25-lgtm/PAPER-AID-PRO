@@ -15,7 +15,7 @@
  * J. corpus-level gap retains assessed paper IDs for auditability
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import {
   computeCorpusGapEvidence,
   validateCorpusGap,

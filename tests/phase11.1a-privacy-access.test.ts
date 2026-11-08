@@ -357,7 +357,7 @@ async function runPhase11_1ATests() {
       assert(
         Boolean(userInDb?.passwordHash) &&
         userInDb!.passwordHash !== plaintextPw &&
-        userInDb!.passwordHash.startsWith("$2"),
+        Boolean(userInDb!.passwordHash?.startsWith("$2")),
         "Test M.1: Stored password is a valid bcrypt hash, never plaintext"
       );
 

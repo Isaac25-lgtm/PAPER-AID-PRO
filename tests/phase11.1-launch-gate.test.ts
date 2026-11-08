@@ -3,7 +3,7 @@
  * Production Readiness & Scientific Guard Audit
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import * as fs from "fs";
 import * as path from "path";
 import { prisma } from "../src/lib/prisma";

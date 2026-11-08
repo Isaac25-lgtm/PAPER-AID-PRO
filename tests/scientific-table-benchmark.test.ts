@@ -15,7 +15,7 @@
  * 6. Verifies atomic persistence and audit logging in isolated local PostgreSQL.
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import { PrismaClient } from "../prisma/generated-client";
 import { TableEvidenceOrchestrator } from "../src/lib/tables/table-orchestrator";
 import { PrismaTableRepository } from "../src/lib/tables/prisma-table-repository";

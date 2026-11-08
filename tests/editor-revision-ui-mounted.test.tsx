@@ -8,7 +8,7 @@
  * 4. Button semantics: all buttons declare explicit type="button" to prevent accidental form submission.
  */
 
-import "../scratch/mock-server-only.cjs";
+import "./test-setup";
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import React from "react";

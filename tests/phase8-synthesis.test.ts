@@ -1,4 +1,4 @@
-import "../scratch/load-env";
+import "./test-setup";
 import { prisma } from "../src/lib/prisma";
 import { validateMultiPaperSynthesis } from "../src/lib/synthesis/validate-multipaper-citations";
 import { discoverRelevantPapers } from "../src/lib/synthesis/discover-papers";

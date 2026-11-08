@@ -31,7 +31,7 @@
  * Z. research trace contains actions but no hidden reasoning
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import { prisma } from "../src/lib/prisma";
 import { AgentOrchestrator, DEFAULT_MAX_AGENT_STEPS } from "../src/lib/agent/agent-orchestrator";
 import { AgentToolRegistry } from "../src/lib/agent/tool-registry";

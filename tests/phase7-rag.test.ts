@@ -1,4 +1,4 @@
-import "../scratch/load-env";
+import "./test-setup";
 import { prisma } from "../src/lib/prisma";
 import { retrievePaperEvidence } from "../src/lib/rag/retrieve-paper-evidence";
 import { validateQACitations } from "../src/lib/rag/validate-qa-citations";

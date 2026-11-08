@@ -10,7 +10,7 @@
  * 5. Document Deletion: removing private document cascades to disk and purges storage bytes.
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import { prisma } from "../src/lib/prisma";
 import {
   uploadUserPrivateDocument,

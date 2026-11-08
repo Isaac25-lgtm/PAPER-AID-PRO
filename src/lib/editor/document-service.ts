@@ -246,7 +246,51 @@ export async function getResearchDocument(userId: string, documentId: string) {
     throw new Error(`Research document '${documentId}' not found.`);
   }
 
-  return document;
+  // Multi-tenant privacy guard: filter out any private paper belonging to another researcher
+  const isAccessible = (p: any) => {
+    if (!p) return false;
+    const provenance = (p.sourceProvenance as any) || {};
+    const rawMeta = (p.rawMetadata as any) || {};
+    if (
+      ADMIN_TEST_FIXTURE_IDS.has(p.id) ||
+      provenance.isBenchmarkFixture === true ||
+      rawMeta.adminOnly === true
+    ) {
+      return false;
+    }
+    const ownerId =
+      provenance.ownerUserId ||
+      provenance.userId ||
+      provenance.ownerId ||
+      provenance.uploadedByUserId ||
+      provenance.attachedByUserId;
+    const isPrivate = provenance.isPrivate === true || Boolean(ownerId);
+    if (isPrivate && ownerId && ownerId !== userId) {
+      return false;
+    }
+    return true;
+  };
+
+  const sanitizedLinkedPapers = (document.linkedPapers || []).filter((lp) =>
+    isAccessible(lp.paper)
+  );
+
+  const sanitizedCitations = (document.citations || []).map((c) => {
+    if (!isAccessible(c.paper)) {
+      return {
+        ...c,
+        paper: null,
+        chunk: null,
+      };
+    }
+    return c;
+  });
+
+  return {
+    ...document,
+    linkedPapers: sanitizedLinkedPapers,
+    citations: sanitizedCitations,
+  };
 }
 
 /**
@@ -945,6 +989,7 @@ export function calculateCountsFromContent(content: any): { words: number; chars
 export async function exportDocumentAst(
   doc: {
     id: string;
+    userId?: string;
     title: string;
     docType: DocumentType;
     version: number;
@@ -954,7 +999,8 @@ export async function exportDocumentAst(
     citations?: any[];
     linkedPapers?: any[];
   },
-  format: ManuscriptExportFormat = "markdown"
+  format: ManuscriptExportFormat = "markdown",
+  exportUserId?: string
 ): Promise<ExportManuscriptResult> {
   const cleanTitle = (doc.title || "Untitled Research Document").trim();
   const slug =
@@ -968,12 +1014,37 @@ export async function exportDocumentAst(
   let ext = "txt";
   let content = "";
 
+  const effectiveUserId = exportUserId || doc.userId;
+  const isAccessibleForExport = (p: any) => {
+    if (!p) return false;
+    const prov = (p.sourceProvenance as any) || {};
+    const raw = (p.rawMetadata as any) || {};
+    if (
+      ADMIN_TEST_FIXTURE_IDS.has(p.id) ||
+      prov.isBenchmarkFixture === true ||
+      raw.adminOnly === true
+    ) {
+      return false;
+    }
+    const ownerId =
+      prov.ownerUserId ||
+      prov.userId ||
+      prov.ownerId ||
+      prov.uploadedByUserId ||
+      prov.attachedByUserId;
+    const isPrivate = prov.isPrivate === true || Boolean(ownerId);
+    if (effectiveUserId && isPrivate && ownerId && ownerId !== effectiveUserId) {
+      return false;
+    }
+    return true;
+  };
+
   const paperMap = new Map<string, any>();
   for (const lp of doc.linkedPapers || []) {
-    if (lp.paper?.id) paperMap.set(lp.paper.id, lp.paper);
+    if (lp.paper?.id && isAccessibleForExport(lp.paper)) paperMap.set(lp.paper.id, lp.paper);
   }
   for (const c of doc.citations || []) {
-    if (c.paper?.id && !paperMap.has(c.paper.id)) paperMap.set(c.paper.id, c.paper);
+    if (c.paper?.id && isAccessibleForExport(c.paper) && !paperMap.has(c.paper.id)) paperMap.set(c.paper.id, c.paper);
   }
   const citedPapers = Array.from(paperMap.values());
   const citations = doc.citations || [];
@@ -1180,7 +1251,7 @@ export async function exportResearchDocument(
   format: ManuscriptExportFormat = "markdown"
 ): Promise<ExportManuscriptResult> {
   const doc = await getResearchDocument(userId, documentId);
-  return await exportDocumentAst(doc, format);
+  return await exportDocumentAst(doc, format, userId);
 }
 
 

@@ -16,6 +16,7 @@ import { NormalizedExternalPaper, LocalPaperStatus } from "./types";
 import { normalizeDoi } from "@/lib/identifiers";
 import { conservativeNormalizeTitle } from "./deduplicate";
 import { ADMIN_TEST_FIXTURE_IDS, classifyPaper } from "@/lib/auth/paper-authorization";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 
 export async function matchPapersAgainstLocalLibrary(
   externalPapers: NormalizedExternalPaper[],
@@ -36,14 +37,18 @@ export async function matchPapersAgainstLocalLibrary(
     .map((p) => p.pmcid)
     .filter((id): id is string => Boolean(id));
 
-  // Query existing papers from local PostgreSQL library, excluding administrator fixtures
+  // Query existing papers from local PostgreSQL library, applying strict visibility filter
   const matchedPapers = await prisma.paper.findMany({
     where: {
-      id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
-      OR: [
-        ...(dois.length > 0 ? [{ doi: { in: dois } }] : []),
-        ...(pmids.length > 0 ? [{ pmid: { in: pmids } }] : []),
-        ...(pmcids.length > 0 ? [{ pmcid: { in: pmcids } }] : []),
+      AND: [
+        paperVisibilityFilter(userId),
+        {
+          OR: [
+            ...(dois.length > 0 ? [{ doi: { in: dois } }] : []),
+            ...(pmids.length > 0 ? [{ pmid: { in: pmids } }] : []),
+            ...(pmcids.length > 0 ? [{ pmcid: { in: pmcids } }] : []),
+          ],
+        },
       ],
     },
     select: {
@@ -90,7 +95,7 @@ export async function matchPapersAgainstLocalLibrary(
   if (hasUnidentified) {
     const allTitles = await prisma.paper.findMany({
       where: {
-        id: { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) },
+        ...paperVisibilityFilter(userId),
       },
       select: {
         id: true,

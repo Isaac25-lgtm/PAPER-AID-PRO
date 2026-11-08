@@ -14,6 +14,8 @@ import {
   acquireAndIngestLawfulFullText,
 } from "./full-text-service";
 import { conservativeNormalizeTitle } from "./deduplicate";
+import { classifyPaper } from "@/lib/auth/paper-authorization";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 
 function cleanBibliographicField(val: unknown): string | undefined {
   if (typeof val === "string" || typeof val === "number") {
@@ -112,7 +114,7 @@ export async function executePaperMetadataImport(
     cleanBibliographicField(rawCr.publisher);
 
   // 1. Idempotency Check: Does this paper already exist in the database?
-  let existing = await prisma.paper.findFirst({
+  let rawExisting = await prisma.paper.findFirst({
     where: {
       OR: [
         ...(cleanDoi ? [{ doi: cleanDoi }] : []),
@@ -127,11 +129,54 @@ export async function executePaperMetadataImport(
     },
   });
 
+  // Strict multi-tenant isolation: If rawExisting is a private document owned by ANOTHER user,
+  // User A must NEVER receive User B's record or ID.
+  let existing: typeof rawExisting = null;
+  if (rawExisting) {
+    const cls = classifyPaper(rawExisting);
+    if (cls === "PRIVATE_USER_DOCUMENT") {
+      const prov = rawExisting.sourceProvenance as any;
+      const ownerId = prov?.uploadedByUserId || prov?.ownerId || (rawExisting as any).uploadedByUserId;
+      if (ownerId === userId) {
+        existing = rawExisting;
+      } else {
+        // User B's private paper occupied the unique identifier.
+        // Migrate User B's private paper to store canonical identifiers in sourceProvenance to release the slot.
+        try {
+          await prisma.paper.update({
+            where: { id: rawExisting.id },
+            data: {
+              doi: null,
+              arxivId: null,
+              pmid: null,
+              pmcid: null,
+              semanticScholarId: null,
+              sourceProvenance: {
+                ...(prov || {}),
+                canonicalDoi: rawExisting.doi || prov?.canonicalDoi || null,
+                canonicalArxivId: rawExisting.arxivId || prov?.canonicalArxivId || null,
+                canonicalPmid: rawExisting.pmid || prov?.canonicalPmid || null,
+              },
+            },
+          });
+        } catch (migErr) {
+          console.warn("[ImportService] Failed to migrate private paper unique identifier:", migErr);
+        }
+        existing = null;
+      }
+    } else {
+      existing = rawExisting;
+    }
+  }
+
   // Fallback title check if identifiers do not conflict
   if (!existing && externalPaper.title) {
     const normSearchTitle = conservativeNormalizeTitle(externalPaper.title);
     if (normSearchTitle.length >= 20) {
       const candidates = await prisma.paper.findMany({
+        where: {
+          ...paperVisibilityFilter(userId),
+        },
         select: {
           id: true,
           title: true,

@@ -4,6 +4,7 @@ import { ADMIN_TEST_FIXTURE_IDS } from "./paper-authorization";
 export interface PaperVisibilityOptions {
   role?: string | null;
   allowAdmin?: boolean;
+  isAdminRoute?: boolean;
   allowFixturesForAuth?: boolean;
 }
 
@@ -11,17 +12,22 @@ export interface PaperVisibilityOptions {
  * Generates a Prisma where filter that guarantees:
  * 1. Admin test fixtures are strictly restricted to ADMIN role.
  * 2. Private manuscripts (isPrivate: true or ownerId/uploadedByUserId/attachedByUserId set)
- *    are visible ONLY to the owning user (and ADMIN).
- * 3. Public papers (not private and no owner) are visible to all users (and anonymous).
+ *    are visible ONLY to the owning user.
+ * 3. Administrative bypass (returning {}) applies ONLY when explicitly requested for
+ *    /admin routes or admin maintenance actions (isAdminRoute: true or allowAdmin: true).
+ *    In user-facing search and research tools, admins receive the same multi-tenant isolation as normal users.
+ * 4. Public papers (not private and no owner) are visible to all users (and anonymous).
  */
 export function paperVisibilityFilter(
   userId?: string | null,
   options?: PaperVisibilityOptions
 ): Prisma.PaperWhereInput {
-  const isAdmin = options?.allowAdmin !== false && options?.role === "ADMIN";
+  const isAdminBypass =
+    (options?.isAdminRoute === true || options?.allowAdmin === true) &&
+    options?.role === "ADMIN";
 
-  // Admins have unrestricted visibility across all catalog records
-  if (isAdmin) {
+  // Admin bypass applies ONLY to /admin routes and administrative maintenance actions
+  if (isAdminBypass) {
     return {};
   }
 
@@ -38,8 +44,10 @@ export function paperVisibilityFilter(
         ],
       },
       { sourceProvenance: { path: ["ownerId"], equals: Prisma.AnyNull } },
+      { sourceProvenance: { path: ["ownerUserId"], equals: Prisma.AnyNull } },
       { sourceProvenance: { path: ["uploadedByUserId"], equals: Prisma.AnyNull } },
       { sourceProvenance: { path: ["attachedByUserId"], equals: Prisma.AnyNull } },
+      { sourceProvenance: { path: ["userId"], equals: Prisma.AnyNull } },
     ],
   };
 
@@ -63,8 +71,10 @@ export function paperVisibilityFilter(
           publicPaperProvenanceFilter,
           // User's own papers
           { sourceProvenance: { path: ["ownerId"], equals: userId } },
+          { sourceProvenance: { path: ["ownerUserId"], equals: userId } },
           { sourceProvenance: { path: ["uploadedByUserId"], equals: userId } },
           { sourceProvenance: { path: ["attachedByUserId"], equals: userId } },
+          { sourceProvenance: { path: ["userId"], equals: userId } },
         ],
       },
     ],
@@ -89,9 +99,11 @@ export function paperVisibilitySql(
   tableAlias: string = "p",
   options?: PaperVisibilityOptions
 ): Prisma.Sql {
-  const isAdmin = options?.allowAdmin !== false && options?.role === "ADMIN";
+  const isAdminBypass =
+    (options?.isAdminRoute === true || options?.allowAdmin === true) &&
+    options?.role === "ADMIN";
 
-  if (isAdmin) {
+  if (isAdminBypass) {
     return Prisma.sql`1=1`;
   }
 
@@ -106,8 +118,10 @@ export function paperVisibilitySql(
     return Prisma.sql`(${fixtureExclusion} AND (
       (${alias}."sourceProvenance"->>'isPrivate' IS NULL OR ${alias}."sourceProvenance"->>'isPrivate' != 'true')
       AND ${alias}."sourceProvenance"->>'ownerId' IS NULL
+      AND ${alias}."sourceProvenance"->>'ownerUserId' IS NULL
       AND ${alias}."sourceProvenance"->>'uploadedByUserId' IS NULL
       AND ${alias}."sourceProvenance"->>'attachedByUserId' IS NULL
+      AND ${alias}."sourceProvenance"->>'userId' IS NULL
     ))`;
   }
 
@@ -115,11 +129,15 @@ export function paperVisibilitySql(
     (
       (${alias}."sourceProvenance"->>'isPrivate' IS NULL OR ${alias}."sourceProvenance"->>'isPrivate' != 'true')
       AND ${alias}."sourceProvenance"->>'ownerId' IS NULL
+      AND ${alias}."sourceProvenance"->>'ownerUserId' IS NULL
       AND ${alias}."sourceProvenance"->>'uploadedByUserId' IS NULL
       AND ${alias}."sourceProvenance"->>'attachedByUserId' IS NULL
+      AND ${alias}."sourceProvenance"->>'userId' IS NULL
     )
     OR ${alias}."sourceProvenance"->>'ownerId' = ${userId}
+    OR ${alias}."sourceProvenance"->>'ownerUserId' = ${userId}
     OR ${alias}."sourceProvenance"->>'uploadedByUserId' = ${userId}
     OR ${alias}."sourceProvenance"->>'attachedByUserId' = ${userId}
+    OR ${alias}."sourceProvenance"->>'userId' = ${userId}
   ))`;
 }

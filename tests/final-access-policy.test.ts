@@ -29,7 +29,7 @@
  * 6. Protection enforced at backend Server Action / API layers
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 
 // Dynamic session store for testing authentication states in standalone node
 let currentMockSession: { user: { id: string; role: string; email?: string } } | null = null;

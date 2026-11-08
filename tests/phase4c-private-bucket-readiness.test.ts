@@ -8,7 +8,7 @@
  * 4. Audit of isInternalSystemOperation against parameter injection / bypasses.
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import * as fs from "fs";
 import * as path from "path";
 

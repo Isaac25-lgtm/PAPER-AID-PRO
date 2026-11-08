@@ -11,7 +11,7 @@
  * 6. Access control and private history permission enforcement.
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import * as fs from "fs";
 import * as path from "path";
 import { prisma } from "../src/lib/prisma";

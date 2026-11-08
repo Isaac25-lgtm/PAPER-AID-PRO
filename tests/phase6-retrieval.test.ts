@@ -1,4 +1,4 @@
-import "../scratch/load-env";
+import "./test-setup";
 import { prisma } from "../src/lib/prisma";
 import { generateEmbedding, generateEmbeddingsBatch, prepareChunkEmbeddingInput } from "../src/lib/ai/embeddings";
 import { embedPaperChunks, getPaperEmbeddingStats } from "../src/lib/ai/embedding-pipeline";

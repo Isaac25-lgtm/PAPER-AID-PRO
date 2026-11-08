@@ -7,6 +7,7 @@ import { embedPaperChunks } from "@/lib/ai/embedding-pipeline";
 import { revalidatePath } from "next/cache";
 import { PaperProcessingStatus } from "@prisma/client";
 import { formatMetadataText } from "@/lib/utils";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 
 export const MAX_USER_PDF_SIZE_BYTES = 35 * 1024 * 1024; // 35 MB
 
@@ -795,7 +796,10 @@ export async function deleteUserLibraryItem(
 export async function getUserLibraryItems(userId: string): Promise<UserLibraryItem[]> {
   // 1. Fetch bookmarked papers
   const bookmarks = await prisma.bookmark.findMany({
-    where: { userId },
+    where: {
+      userId,
+      paper: paperVisibilityFilter(userId),
+    },
     include: {
       paper: {
         include: {

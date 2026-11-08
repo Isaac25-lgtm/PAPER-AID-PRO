@@ -15,7 +15,7 @@
  * 11. Public scholarly metadata remains accessible for open-access discovery and authorized AI reasoning.
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 
 // Dynamic session store for testing authentication states
 let currentMockSession: { user: { id: string; role: string; email?: string } } | null = null;

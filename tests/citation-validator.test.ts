@@ -19,7 +19,7 @@
  * 15. Citation formatting integrity (APA, MLA, Chicago, IEEE, BibTeX)
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import {
   verifyCitation,
   parseIdentifier,

@@ -8,7 +8,7 @@
  * 4. Correct study-level limitation attribution and external validation verification
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import { strict as assert } from "assert";
 import { isStudyEligibleForObjective, buildStudyEvidenceFromExtraction } from "../src/lib/agent/study-extractor";
 import { validateCrossStudyComparativeClaim, validateClaimEvidenceRefs, PaperLookup } from "../src/lib/agent/brief-synthesizer";

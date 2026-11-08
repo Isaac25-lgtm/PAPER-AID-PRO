@@ -13,7 +13,7 @@
  * 8. Public Isolation (Paper never appears in public catalog, hybrid search, or discovery).
  */
 
-import "../scratch/load-env";
+import "./test-setup";
 import { prisma } from "../src/lib/prisma";
 import { uploadUserPrivateDocument } from "../src/lib/library/user-library-service";
 import { retrievePaperEvidence } from "../src/lib/rag/retrieve-paper-evidence";
