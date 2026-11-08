@@ -1,35 +1,44 @@
 /**
- * AI RESEARCH HUB — PHASE 11.1A TEST SUITE
- * Pre-Deployment Privacy & Private-Beta Access Hardening
+ * AI RESEARCH HUB — PHASE 11.1A REGISTRATION & PRIVACY ACCESS CONTROL
  *
- * Covers:
- * A. Responses Paper Summary request sets store: false
- * B. Responses Paper Q&A request sets store: false
- * C. Responses Quick Research request sets store: false
+ * Scope:
+ * A. Responses Paper Summary sets store: false
+ * B. Responses Paper Q&A sets store: false
+ * C. Responses Quick Research sets store: false
  * D. Responses Deep Research extraction sets store: false
- * E. Responses Deep Research brief sets store: false
- * F. Invited normalized email can register
- * G. Uninvited email cannot register
- * H. Case differences in email do not bypass allowlist
- * I. Whitespace differences do not bypass allowlist
- * J. Empty allowlist in allowlist mode fails closed
- * K. Existing registered user can still log in even if no longer on registration allowlist
+ * E. Responses Deep Research brief and planner set store: false
+ * F. Open registration permits personal emails (e.g. gmail.com)
+ * G. Open registration permits institutional emails (e.g. ox.ac.uk)
+ * H. Email case normalization on registration
+ * I. Whitespace trimming on registration
+ * J. Password validation (< 6 chars rejected)
+ * K. Duplicate email registration rejected (409 Conflict)
  * L. USER role still cannot access admin
- * M. Registration error does not expose allowed emails
- * N. BETA_ALLOWED_EMAILS never reaches client bundle
+ * M. Password hashing verification (stored hash is bcrypt salt/hash, never plaintext)
+ * N. Registration page copy confirms Open Access
  */
 
-import "../scratch/load-env";
+import {
+  loadIsolatedTestEnvironment,
+  assertIsolatedTestEnvironment,
+  enableMockStorage,
+} from "../src/lib/test-guard";
+
+loadIsolatedTestEnvironment();
+assertIsolatedTestEnvironment();
+enableMockStorage();
+
 import * as fs from "fs";
 import * as path from "path";
+import bcrypt from "bcryptjs";
+import { NextRequest } from "next/server";
 import { prisma } from "../src/lib/prisma";
 import { authOptions } from "../src/lib/auth";
-import { isRegistrationAllowed, BETA_INVITE_ONLY_MESSAGE } from "../src/lib/auth/beta-access";
 import { POST as registerHandler } from "../src/app/api/auth/register/route";
 
 async function runPhase11_1ATests() {
   console.log("==========================================================");
-  console.log("AI RESEARCH HUB — PHASE 11.1A PRE-DEPLOYMENT HARDENING TESTS");
+  console.log("AI RESEARCH HUB — OPEN REGISTRATION & ACCESS CONTROL TESTS");
   console.log("==========================================================\n");
 
   let passed = 0;
@@ -45,9 +54,8 @@ async function runPhase11_1ATests() {
     }
   }
 
-  // Preserve initial env
-  const originalMode = process.env.BETA_REGISTRATION_MODE;
-  const originalAllowlist = process.env.BETA_ALLOWED_EMAILS;
+  const createdUserEmails: string[] = [];
+  const testRunId = Date.now();
 
   try {
     // --------------------------------------------------------------------------
@@ -126,301 +134,263 @@ async function runPhase11_1ATests() {
     }
 
     // --------------------------------------------------------------------------
-    // Test F: Invited normalized email can register
+    // Test F: Open registration permits personal emails (e.g. gmail.com)
     // --------------------------------------------------------------------------
     {
-      process.env.BETA_REGISTRATION_MODE = "allowlist";
-      process.env.BETA_ALLOWED_EMAILS = "invited-researcher@institution.edu,scholar@lab.org";
-
-      const check = isRegistrationAllowed("invited-researcher@institution.edu");
-      assert(
-        check.allowed === true,
-        "Test F.1: isRegistrationAllowed permits invited email in allowlist mode"
-      );
-
-      // Route-level verification: uninvited vs invited
-      const mockReq = new Request("http://localhost:3000/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: "Test Invited",
-          email: "invited-researcher@institution.edu",
-          password: "password123",
-        }),
-      });
-
-      const res = await registerHandler(mockReq);
-      const data = await res.json();
-      // Should NOT be 403 forbidden
-      assert(
-        res.status !== 403,
-        "Test F.2: Registration API does not return 403 Forbidden for invited email",
-        `status: ${res.status}, msg: ${data.message || data.error}`
-      );
-    }
-
-    // --------------------------------------------------------------------------
-    // Test G: Uninvited email cannot register
-    // --------------------------------------------------------------------------
-    {
-      process.env.BETA_REGISTRATION_MODE = "allowlist";
-      process.env.BETA_ALLOWED_EMAILS = "invited-researcher@institution.edu,scholar@lab.org";
-
-      const check = isRegistrationAllowed("uninvited-visitor@unknown.com");
-      assert(
-        check.allowed === false && check.reason === BETA_INVITE_ONLY_MESSAGE,
-        "Test G.1: isRegistrationAllowed blocks uninvited email with researcher-friendly message"
-      );
+      const personalEmail = `personal.scholar.${testRunId}@gmail.com`;
+      createdUserEmails.push(personalEmail);
 
       const mockReq = new Request("http://localhost:3000/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "Uninvited Visitor",
-          email: "uninvited-visitor@unknown.com",
-          password: "password123",
+          name: "Personal Scholar",
+          email: personalEmail,
+          password: "SecurePassword123!",
         }),
       });
 
       const res = await registerHandler(mockReq);
       const data = await res.json();
       assert(
-        res.status === 403 && data.error === BETA_INVITE_ONLY_MESSAGE,
-        "Test G.2: Registration API returns 403 Forbidden with exact safe invite-only message",
+        res.status === 201 && data.user?.email === personalEmail,
+        "Test F: Open registration permits personal emails (e.g. gmail.com) with 201 Created",
         `status: ${res.status}, error: ${data.error}`
       );
     }
 
     // --------------------------------------------------------------------------
-    // Test H: Case differences in email do not bypass allowlist
+    // Test G: Open registration permits institutional emails (e.g. ox.ac.uk)
     // --------------------------------------------------------------------------
     {
-      process.env.BETA_REGISTRATION_MODE = "allowlist";
-      process.env.BETA_ALLOWED_EMAILS = "Scholar@Lab.ORG";
-
-      const checkUpper = isRegistrationAllowed("SCHOLAR@LAB.ORG");
-      const checkMixed = isRegistrationAllowed("sChOlAr@lAb.OrG");
-      const checkLower = isRegistrationAllowed("scholar@lab.org");
-
-      assert(
-        checkUpper.allowed && checkMixed.allowed && checkLower.allowed,
-        "Test H.1: Case variations of invited email correctly match normalized allowlist"
-      );
-
-      const checkUninvitedUpper = isRegistrationAllowed("NOT-INVITED@LAB.ORG");
-      assert(
-        !checkUninvitedUpper.allowed,
-        "Test H.2: Uppercase uninvited email is strictly blocked"
-      );
-    }
-
-    // --------------------------------------------------------------------------
-    // Test I: Whitespace differences do not bypass allowlist
-    // --------------------------------------------------------------------------
-    {
-      process.env.BETA_REGISTRATION_MODE = "allowlist";
-      process.env.BETA_ALLOWED_EMAILS = "   lead.scientist@lab.org  ,   fellow@lab.org   ";
-
-      const checkWhitespaceInput = isRegistrationAllowed("  lead.scientist@lab.org \n ");
-      assert(
-        checkWhitespaceInput.allowed === true,
-        "Test I.1: Leading/trailing whitespace on input email is cleanly trimmed and matched"
-      );
-
-      const checkWhitespaceEnv = isRegistrationAllowed("fellow@lab.org");
-      assert(
-        checkWhitespaceEnv.allowed === true,
-        "Test I.2: Whitespace surrounding items in BETA_ALLOWED_EMAILS is stripped"
-      );
-    }
-
-    // --------------------------------------------------------------------------
-    // Test J: Empty allowlist in allowlist mode fails closed
-    // --------------------------------------------------------------------------
-    {
-      process.env.BETA_REGISTRATION_MODE = "allowlist";
-      process.env.BETA_ALLOWED_EMAILS = "";
-
-      let capturedWarn = "";
-      const originalWarn = console.warn;
-      console.warn = (...args: any[]) => {
-        capturedWarn += args.join(" ");
-      };
-
-      const checkEmpty = isRegistrationAllowed("anyone@anywhere.com");
-
-      console.warn = originalWarn;
-
-      assert(
-        checkEmpty.allowed === false && checkEmpty.reason === BETA_INVITE_ONLY_MESSAGE,
-        "Test J.1: Empty allowlist fails closed for new registration"
-      );
-      assert(
-        capturedWarn.includes("Failing closed"),
-        "Test J.2: System logs sanitized configuration warning when allowlist is empty in allowlist mode"
-      );
-      assert(
-        !capturedWarn.includes("anyone@anywhere.com"),
-        "Test J.3: Warning does not expose candidate email"
-      );
-    }
-
-    // --------------------------------------------------------------------------
-    // Test K: Existing registered user can still log in even if no longer on registration allowlist
-    // --------------------------------------------------------------------------
-    {
-      const { hash } = await import("bcryptjs");
-      const testEmail = `existing-scholar-${Date.now()}@university.edu`;
-      const testPassword = "SafeBetaPassword123!";
-      const passwordHash = await hash(testPassword, 10);
-
-      // Create an existing registered user in the database
-      const existingUser = await prisma.user.create({
-        data: {
-          name: "Dr. Existing Researcher",
-          email: testEmail,
-          passwordHash,
-          role: "USER",
-        },
-      });
-
-      try {
-        // Configure allowlist to strictly NOT contain this existing user
-        process.env.BETA_REGISTRATION_MODE = "allowlist";
-        process.env.BETA_ALLOWED_EMAILS = "completely-different-person@lab.edu,another-invitee@nih.gov";
-
-        // Verify that this email is NOT allowed to register anew
-        const isAllowedOnRegistration = isRegistrationAllowed(existingUser.email);
-        assert(
-          isAllowedOnRegistration.allowed === false,
-          "Test K.1: Existing user is not on the registration allowlist"
-        );
-
-        // Verify NextAuth authorize does NOT check allowlist for existing users
-        const credentialsProvider = authOptions.providers.find(
-          (p: any) => p.id === "credentials" || p.name === "Credentials"
-        ) as any;
-
-        assert(Boolean(credentialsProvider), "Test K.2: CredentialsProvider is present in authOptions");
-
-        // Test login with valid credentials via NextAuth authorize handler
-        const authorizeFn = credentialsProvider.options?.authorize || credentialsProvider.authorize;
-        const loginResult = await authorizeFn({
-          email: existingUser.email,
-          password: testPassword,
-        });
-
-        assert(
-          Boolean(loginResult) && loginResult.id === existingUser.id,
-          "Test K.3: Existing registered user logs in successfully despite not being on registration allowlist",
-          `Authenticated user id: ${loginResult?.id}`
-        );
-      } finally {
-        // Clean up test user
-        await prisma.user.delete({ where: { id: existingUser.id } }).catch(() => {});
-      }
-    }
-
-    // --------------------------------------------------------------------------
-    // Test L: USER still cannot access admin
-    // --------------------------------------------------------------------------
-    {
-      // Test middleware RBAC logic
-      const simulateMiddleware = (pathname: string, token: { role?: string } | null) => {
-        if (pathname.startsWith("/admin")) {
-          if (token?.role !== "ADMIN") {
-            return { redirected: true, destination: "/?error=unauthorized" };
-          }
-        }
-        return { redirected: false };
-      };
-
-      const regularUserAttempt = simulateMiddleware("/admin/papers", { role: "USER" });
-      const guestAttempt = simulateMiddleware("/admin/papers", null);
-      const adminAttempt = simulateMiddleware("/admin/papers", { role: "ADMIN" });
-
-      assert(
-        regularUserAttempt.redirected && regularUserAttempt.destination === "/?error=unauthorized",
-        "Test L.1: Regular USER token is intercepted from /admin and redirected with error=unauthorized"
-      );
-      assert(
-        guestAttempt.redirected && guestAttempt.destination === "/?error=unauthorized",
-        "Test L.2: Unauthenticated token is intercepted from /admin"
-      );
-      assert(
-        !adminAttempt.redirected,
-        "Test L.3: ADMIN role is allowed to access /admin"
-      );
-    }
-
-    // --------------------------------------------------------------------------
-    // Test M: Registration error does not expose allowed emails
-    // --------------------------------------------------------------------------
-    {
-      process.env.BETA_REGISTRATION_MODE = "allowlist";
-      const sensitiveEmails = "secret-dean@harvard.edu,confidential-pi@mit.edu";
-      process.env.BETA_ALLOWED_EMAILS = sensitiveEmails;
+      const instEmail = `fellow.${testRunId}@ox.ac.uk`;
+      createdUserEmails.push(instEmail);
 
       const mockReq = new Request("http://localhost:3000/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "Curious Hacker",
-          email: "probe@external.org",
-          password: "password123",
+          name: "Oxford Fellow",
+          email: instEmail,
+          password: "SecurePassword123!",
         }),
       });
 
       const res = await registerHandler(mockReq);
-      const body = await res.json();
-      const stringifiedBody = JSON.stringify(body);
-
+      const data = await res.json();
       assert(
-        !stringifiedBody.includes("secret-dean") &&
-        !stringifiedBody.includes("harvard.edu") &&
-        !stringifiedBody.includes("confidential-pi") &&
-        !stringifiedBody.includes("mit.edu"),
-        "Test M: Registration error response never leaks allowlist entries or email domains"
+        res.status === 201 && data.user?.email === instEmail,
+        "Test G: Open registration permits institutional emails (e.g. ox.ac.uk) with 201 Created",
+        `status: ${res.status}, error: ${data.error}`
       );
     }
 
     // --------------------------------------------------------------------------
-    // Test N: BETA_ALLOWED_EMAILS never reaches client bundle
+    // Test H: Case normalization on registration
     // --------------------------------------------------------------------------
     {
-      // Verify no NEXT_PUBLIC_ prefix is used
-      const hasClientPrefix = "NEXT_PUBLIC_BETA_ALLOWED_EMAILS" in process.env;
+      const rawEmail = `MixedCase.${testRunId}@Lab.ORG`;
+      const normalizedExpected = `mixedcase.${testRunId}@lab.org`;
+      createdUserEmails.push(normalizedExpected);
+
+      const mockReq = new Request("http://localhost:3000/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Case Test User",
+          email: rawEmail,
+          password: "SecurePassword123!",
+        }),
+      });
+
+      const res = await registerHandler(mockReq);
+      const data = await res.json();
       assert(
-        !hasClientPrefix,
-        "Test N.1: BETA_ALLOWED_EMAILS does NOT have NEXT_PUBLIC_ prefix"
+        res.status === 201 && data.user?.email === normalizedExpected,
+        "Test H: Email case variations are normalized to lowercase on registration",
+        `status: ${res.status}, email: ${data.user?.email}`
+      );
+    }
+
+    // --------------------------------------------------------------------------
+    // Test I: Whitespace trimming on registration
+    // --------------------------------------------------------------------------
+    {
+      const rawWhitespaceEmail = `   spaced.${testRunId}@university.edu   \n `;
+      const trimmedExpected = `spaced.${testRunId}@university.edu`;
+      createdUserEmails.push(trimmedExpected);
+
+      const mockReq = new Request("http://localhost:3000/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Whitespace User",
+          email: rawWhitespaceEmail,
+          password: "SecurePassword123!",
+        }),
+      });
+
+      const res = await registerHandler(mockReq);
+      const data = await res.json();
+      assert(
+        res.status === 201 && data.user?.email === trimmedExpected,
+        "Test I: Leading/trailing whitespace on email is trimmed during registration",
+        `status: ${res.status}, email: ${data.user?.email}`
+      );
+    }
+
+    // --------------------------------------------------------------------------
+    // Test J: Short password validation (< 6 chars rejected)
+    // --------------------------------------------------------------------------
+    {
+      const shortPwEmail = `shortpw.${testRunId}@test.org`;
+
+      const mockReq = new Request("http://localhost:3000/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Short Pw",
+          email: shortPwEmail,
+          password: "12345",
+        }),
+      });
+
+      const res = await registerHandler(mockReq);
+      const data = await res.json();
+      assert(
+        res.status === 400 && data.error?.includes("at least 6 characters"),
+        "Test J: Password shorter than 6 characters is rejected with 400 Bad Request",
+        `status: ${res.status}, error: ${data.error}`
+      );
+    }
+
+    // --------------------------------------------------------------------------
+    // Test K: Duplicate registration rejected (409 Conflict)
+    // --------------------------------------------------------------------------
+    {
+      const dupEmail = `duplicate.${testRunId}@university.edu`;
+      createdUserEmails.push(dupEmail);
+
+      // Create first user
+      const firstReq = new Request("http://localhost:3000/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Original User",
+          email: dupEmail,
+          password: "SecurePassword123!",
+        }),
+      });
+      const firstRes = await registerHandler(firstReq);
+      assert(firstRes.status === 201, "Test K.1: First registration succeeds");
+
+      // Attempt duplicate registration
+      const dupReq = new Request("http://localhost:3000/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Imposter User",
+          email: dupEmail.toUpperCase(),
+          password: "DifferentPassword123!",
+        }),
+      });
+      const dupRes = await registerHandler(dupReq);
+      const dupData = await dupRes.json();
+      assert(
+        dupRes.status === 409 && dupData.error?.includes("already exists"),
+        "Test K.2: Duplicate registration (even case variation) returns 409 Conflict",
+        `status: ${dupRes.status}, error: ${dupData.error}`
+      );
+    }
+
+    // --------------------------------------------------------------------------
+    // Test L: USER role cannot access admin
+    // --------------------------------------------------------------------------
+    {
+      const { default: middleware } = await import("../src/middleware");
+
+      const userReq = new NextRequest("http://localhost:3000/admin/papers");
+      const userAttempt = await (middleware as any)(userReq, {
+        token: { role: "USER", email: "user@institution.edu" },
+      });
+
+      assert(
+        Boolean(userAttempt?.status === 307 || userAttempt?.headers?.get("location")?.includes("unauthorized")),
+        "Test L.1: Middleware redirects USER role away from /admin"
       );
 
-      // Verify register/page.tsx does NOT import or read process.env.BETA_ALLOWED_EMAILS
+      const adminReq = new NextRequest("http://localhost:3000/admin/papers");
+      const adminAttempt = await (middleware as any)(adminReq, {
+        token: { role: "ADMIN", email: "admin@institution.edu" },
+      });
+
+      assert(
+        !adminAttempt?.headers?.get("location")?.includes("unauthorized"),
+        "Test L.2: ADMIN role is allowed to access /admin"
+      );
+    }
+
+    // --------------------------------------------------------------------------
+    // Test M: Password hashing verification
+    // --------------------------------------------------------------------------
+    {
+      const hashTestEmail = `hash.test.${testRunId}@university.edu`;
+      createdUserEmails.push(hashTestEmail);
+      const plaintextPw = "MySecretPassphrase2026!";
+
+      const mockReq = new Request("http://localhost:3000/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Hash Verifier",
+          email: hashTestEmail,
+          password: plaintextPw,
+        }),
+      });
+
+      await registerHandler(mockReq);
+
+      const userInDb = await prisma.user.findUnique({
+        where: { email: hashTestEmail },
+      });
+
+      assert(
+        Boolean(userInDb?.passwordHash) &&
+        userInDb!.passwordHash !== plaintextPw &&
+        userInDb!.passwordHash.startsWith("$2"),
+        "Test M.1: Stored password is a valid bcrypt hash, never plaintext"
+      );
+
+      const matches = await bcrypt.compare(plaintextPw, userInDb!.passwordHash!);
+      assert(matches === true, "Test M.2: bcrypt verifies plaintext password against stored hash");
+    }
+
+    // --------------------------------------------------------------------------
+    // Test N: Register page copy confirms Open Access
+    // --------------------------------------------------------------------------
+    {
       const registerPagePath = path.resolve(process.cwd(), "src/app/register/page.tsx");
       const registerCode = fs.readFileSync(registerPagePath, "utf-8");
 
       assert(
-        !registerCode.includes("BETA_ALLOWED_EMAILS"),
-        "Test N.2: Client-side register component (src/app/register/page.tsx) never references BETA_ALLOWED_EMAILS"
+        registerCode.includes("Open Access") &&
+        !registerCode.includes("BETA_ALLOWED_EMAILS") &&
+        !registerCode.includes("isRegistrationAllowed"),
+        "Test N: Register UI contains Open Access badge and does not reference beta allowlists"
       );
     }
 
   } finally {
-    // Restore original env
-    if (originalMode !== undefined) {
-      process.env.BETA_REGISTRATION_MODE = originalMode;
-    } else {
-      delete process.env.BETA_REGISTRATION_MODE;
-    }
-    if (originalAllowlist !== undefined) {
-      process.env.BETA_ALLOWED_EMAILS = originalAllowlist;
-    } else {
-      delete process.env.BETA_ALLOWED_EMAILS;
+    // Teardown created test users
+    if (createdUserEmails.length > 0) {
+      await prisma.user.deleteMany({
+        where: { email: { in: createdUserEmails } },
+      });
     }
   }
 
   console.log("\n==========================================================");
-  console.log(`PHASE 11.1A TEST SUMMARY: ${passed} PASSED / ${failed} FAILED`);
+  console.log(`OPEN REGISTRATION TEST SUMMARY: ${passed} PASSED / ${failed} FAILED`);
   console.log("==========================================================");
 
   if (failed > 0) {

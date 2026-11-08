@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { isRegistrationAllowed } from "@/lib/auth/beta-access";
 
 export async function POST(req: Request) {
   try {
@@ -23,15 +22,6 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Please enter a valid email address (e.g. yourname@gmail.com)." },
         { status: 400 }
-      );
-    }
-
-    // Check private beta registration allowlist
-    const betaCheck = isRegistrationAllowed(normalizedEmail);
-    if (!betaCheck.allowed) {
-      return NextResponse.json(
-        { error: betaCheck.reason || "AI Research Hub is currently in private beta. This email has not yet been invited." },
-        { status: 403 }
       );
     }
 
