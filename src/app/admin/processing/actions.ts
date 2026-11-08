@@ -1,7 +1,6 @@
 "use server";
 
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { verifyAdminSession } from "@/lib/auth/admin-guard";
 import { processPaperDocument } from "@/lib/pdf/pipeline";
 import { revalidatePath } from "next/cache";
 
@@ -13,13 +12,13 @@ export interface ReprocessResponse {
 
 /**
  * Server Action for retrying/reprocessing an ingested academic paper.
- * Strictly verifies ADMIN session.
+ * Strictly verifies ADMIN role via authoritative database re-check.
  */
 export async function reprocessPaper(paperId: string): Promise<ReprocessResponse> {
-  const session = await getServerSession(authOptions);
+  const auth = await verifyAdminSession();
 
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return { success: false, error: "Unauthorized. Admin privileges required." };
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || "Unauthorized. Admin privileges required." };
   }
 
   try {

@@ -2,10 +2,8 @@
  * AI RESEARCH HUB — PHASE 8B: ADMIN CITATION STYLES CATALOG DASHBOARD
  */
 
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { verifyAdminSession } from "@/lib/auth/admin-guard";
 import { redirect } from "next/navigation";
-import { UserRole } from "@prisma/client";
 import { CslCatalogManager } from "@/lib/citations/csl/updater/catalog-storage";
 import { CitationsAdminClient } from "./citations-admin-client";
 
@@ -15,8 +13,8 @@ export const metadata = {
 };
 
 export default async function CitationsAdminPage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user || (session.user as any).role !== UserRole.ADMIN) {
+  const auth = await verifyAdminSession();
+  if (!auth.authorized) {
     redirect("/?error=unauthorized");
   }
 

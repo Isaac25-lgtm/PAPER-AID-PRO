@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { verifyAdminSession } from "@/lib/auth/admin-guard";
 import { redirect } from "next/navigation";
 import {
   LayoutDashboard,
@@ -16,14 +15,13 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Layer 2 Backend Authorization: Verify session & ADMIN role server-side
-  const session = await getServerSession(authOptions);
+  // Layer 2 Backend Authorization: Authoritative server-side DB role re-check
+  const auth = await verifyAdminSession();
 
-  if (!session?.user) {
-    redirect("/login?callbackUrl=/admin");
-  }
-
-  if (session.user.role !== "ADMIN") {
+  if (!auth.authorized) {
+    if (!auth.user) {
+      redirect("/login?callbackUrl=/admin");
+    }
     redirect("/?error=unauthorized");
   }
   return (

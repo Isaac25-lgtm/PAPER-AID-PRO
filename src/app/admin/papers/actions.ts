@@ -1,7 +1,6 @@
 "use server";
 
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { verifyAdminSession } from "@/lib/auth/admin-guard";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { uploadPaperPdf, deletePaperPdf } from "@/lib/storage";
@@ -69,10 +68,10 @@ async function validatePdfFile(file: File): Promise<Buffer> {
  * Strictly checks for ADMIN session.
  */
 export async function createPaper(formData: FormData): Promise<ActionResponse> {
-  const session = await getServerSession(authOptions);
+  const auth = await verifyAdminSession();
 
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return { success: false, error: "Unauthorized. Admin privileges required." };
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || "Unauthorized. Admin privileges required." };
   }
 
   try {
@@ -291,10 +290,10 @@ export async function updatePaper(
   paperId: string,
   formData: FormData
 ): Promise<ActionResponse> {
-  const session = await getServerSession(authOptions);
+  const auth = await verifyAdminSession();
 
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return { success: false, error: "Unauthorized. Admin privileges required." };
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || "Unauthorized. Admin privileges required." };
   }
 
   try {
@@ -526,10 +525,10 @@ export async function attachPaperPdfAction(
   paperId: string,
   formData: FormData
 ): Promise<ActionResponse> {
-  const session = await getServerSession(authOptions);
+  const auth = await verifyAdminSession();
 
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return { success: false, error: "Unauthorized. Admin privileges required." };
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || "Unauthorized. Admin privileges required." };
   }
 
   try {
@@ -595,15 +594,10 @@ export async function attachPaperPdfAction(
  * Server Action for deleting a paper. Cascades to junction relations and removes stored PDF.
  */
 export async function deletePaper(paperId: string): Promise<ActionResponse> {
-  let session = null;
-  try {
-    session = await getServerSession(authOptions);
-  } catch {
-    session = null;
-  }
+  const auth = await verifyAdminSession();
 
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return { success: false, error: "Unauthorized. Admin privileges required." };
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || "Unauthorized. Admin privileges required." };
   }
 
   try {
@@ -658,15 +652,10 @@ export async function generatePaperSummaryAction(
   paperId: string,
   options: { forceRegenerate?: boolean } = {}
 ): Promise<ActionResponse & { modelUsed?: string; promptVersion?: string }> {
-  let session = null;
-  try {
-    session = await getServerSession(authOptions);
-  } catch {
-    session = null;
-  }
+  const auth = await verifyAdminSession();
 
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return { success: false, error: "Unauthorized. Admin privileges required." };
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || "Unauthorized. Admin privileges required." };
   }
 
   try {
@@ -709,15 +698,10 @@ export async function generatePaperEmbeddingsAction(
   paperId: string,
   options: { force?: boolean } = {}
 ): Promise<ActionResponse & { embeddedCount?: number; skippedCount?: number }> {
-  let session = null;
-  try {
-    session = await getServerSession(authOptions);
-  } catch {
-    session = null;
-  }
+  const auth = await verifyAdminSession();
 
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return { success: false, error: "Unauthorized. Admin privileges required." };
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || "Unauthorized. Admin privileges required." };
   }
 
   try {
@@ -759,15 +743,10 @@ export async function generatePaperEmbeddingsAction(
 export async function backfillEmbeddingsAction(
   options: { force?: boolean } = {}
 ): Promise<ActionResponse & { totalEmbedded?: number; totalSkipped?: number }> {
-  let session = null;
-  try {
-    session = await getServerSession(authOptions);
-  } catch {
-    session = null;
-  }
+  const auth = await verifyAdminSession();
 
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return { success: false, error: "Unauthorized. Admin privileges required." };
+  if (!auth.authorized) {
+    return { success: false, error: auth.error || "Unauthorized. Admin privileges required." };
   }
 
   try {
