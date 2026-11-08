@@ -59,3 +59,43 @@ export function isRscSerializable(value: any): boolean {
 
   return true;
 }
+
+/**
+ * Deep structural comparison for TipTap JSON document ASTs and node attributes.
+ * - JSON Object keys are treated as unordered maps (e.g. { a: 1, b: 2 } === { b: 2, a: 1 }).
+ * - JSON Arrays (such as block content and marks) strictly preserve item order.
+ * - Primitives and nulls are compared via strict equality.
+ */
+export function areTipTapNodesEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") {
+    return a === b;
+  }
+
+  if (a instanceof Date && b instanceof Date) {
+    return a.getTime() === b.getTime();
+  }
+
+  const isArrA = Array.isArray(a);
+  const isArrB = Array.isArray(b);
+  if (isArrA !== isArrB) return false;
+
+  if (isArrA && isArrB) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!areTipTapNodesEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+
+  for (const key of keysA) {
+    if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+    if (!areTipTapNodesEqual(a[key], b[key])) return false;
+  }
+
+  return true;
+}

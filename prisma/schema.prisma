@@ -391,6 +391,7 @@ model ResearchDocument {
   user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   citations    DocumentCitation[]
   linkedPapers DocumentPaper[]
+  revisions    DocumentRevision[]
 
   @@index([userId])
   @@index([updatedAt])
@@ -437,6 +438,33 @@ model DocumentPaper {
   @@index([documentId])
   @@index([paperId])
   @@map("document_papers")
+}
+
+model DocumentRevision {
+  id              String       @id @default(cuid())
+  documentId      String
+  version         Int
+  title           String       @default("Untitled Research Document")
+  docType         DocumentType @default(DRAFT)
+  content         Json?
+  textContent     String?      @db.Text
+  wordCount       Int          @default(0)
+  charCount       Int          @default(0)
+  cslStyleId      String?      @default("apa")
+  cslRevisionSha  String?
+  citations       Json?
+  linkedPapers    Json?
+  description     String?
+  createdAt       DateTime     @default(now())
+  createdByUserId String?
+
+  // Relations
+  document ResearchDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([documentId, version])
+  @@index([createdAt])
+  @@map("document_revisions")
 }
 
 // ==========================================

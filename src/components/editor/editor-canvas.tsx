@@ -56,6 +56,8 @@ interface EditorCanvasProps {
   onContentChange: (content: any, textContent: string) => void;
   onCountsChange: (words: number, chars: number) => void;
   linkedPaperIds?: string[];
+  isRestoring?: boolean;
+  externalResetContent?: { content: any; id: number } | null;
   externalInsertText?: { text: string; id: number } | null;
   externalInsertCitation?: ExternalInsertCitation | null;
   externalSetBibliography?: ExternalSetBibliography | null;
@@ -73,6 +75,8 @@ export function EditorCanvas({
   onContentChange,
   onCountsChange,
   linkedPaperIds = [],
+  isRestoring = false,
+  externalResetContent,
   externalInsertText,
   externalInsertCitation,
   externalSetBibliography,
@@ -220,6 +224,22 @@ export function EditorCanvas({
       editor.chain().focus().insertContent(externalInsertText.text).run();
     }
   }, [editor, externalInsertText]);
+
+  // Handle external document content reset (e.g. from revision restore or conflict reload)
+  // emitUpdate is explicitly false to reset without emitting an edit event
+  useEffect(() => {
+    if (editor && externalResetContent) {
+      editor.commands.setContent(externalResetContent.content, { emitUpdate: false });
+    }
+  }, [editor, externalResetContent]);
+
+  // Lock canvas while restore request is settling
+  // emitUpdate is explicitly false so changing editability is silent
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(!isRestoring, false);
+    }
+  }, [editor, isRestoring]);
 
   // Handle external structured citation insertion
   useEffect(() => {

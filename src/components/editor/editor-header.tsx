@@ -39,6 +39,8 @@ interface EditorHeaderProps {
   sourcesCount: number;
   isSourcesOpen: boolean;
   onToggleSources: () => void;
+  isHistoryOpen?: boolean;
+  onToggleHistory?: () => void;
   onRename: (newTitle: string) => Promise<void>;
   onDocTypeChange?: (newType: DocumentType) => void;
   onManualSave?: () => void;
@@ -68,6 +70,8 @@ export function EditorHeader({
   sourcesCount,
   isSourcesOpen,
   onToggleSources,
+  isHistoryOpen,
+  onToggleHistory,
   onRename,
   onManualSave,
   guidedMeta,
@@ -237,9 +241,20 @@ export function EditorHeader({
                 ? "Literature Review"
                 : docType}
             </span>
-            <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono text-slate-500 bg-slate-50 border border-slate-200">
-              v{version}
-            </span>
+            {onToggleHistory ? (
+              <button
+                type="button"
+                onClick={onToggleHistory}
+                className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono text-slate-500 bg-slate-50 border border-slate-200 hover:bg-slate-100 hover:text-slate-800 transition-colors cursor-pointer"
+                title="View revision history"
+              >
+                v{version}
+              </button>
+            ) : (
+              <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono text-slate-500 bg-slate-50 border border-slate-200">
+                v{version}
+              </span>
+            )}
           </div>
         </div>
 
@@ -434,6 +449,23 @@ export function EditorHeader({
               </div>
             )}
           </div>
+
+          {/* Revision History Drawer Button */}
+          {onToggleHistory && (
+            <button
+              type="button"
+              onClick={onToggleHistory}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 border ${
+                isHistoryOpen
+                  ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-xs"
+              }`}
+              title="View revision history and snapshots"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">History</span>
+            </button>
+          )}
 
           {/* Sources Drawer Button */}
           <button

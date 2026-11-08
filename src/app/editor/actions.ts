@@ -21,6 +21,13 @@ import {
   UpdateDocumentInput,
   CreateDocumentInput,
 } from "@/lib/editor/document-service";
+import {
+  listDocumentRevisions,
+  getDocumentRevision,
+  restoreDocumentRevision,
+  exportDocumentRevision,
+  RestoreRevisionInput,
+} from "@/lib/editor/revision-service";
 import { toPlainTipTapJson } from "@/lib/editor/content-sanitizer";
 import {
   generateInlineAutocomplete,
@@ -323,4 +330,59 @@ export async function exportDocumentAction(
     return { success: false, error: err.message || "Failed to export document." };
   }
 }
+
+export async function listDocumentRevisionsAction(documentId: string) {
+  try {
+    const userId = await requireAuthUserId();
+    const revisions = await listDocumentRevisions(userId, documentId);
+    return { success: true, revisions };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to list document revisions." };
+  }
+}
+
+export async function getDocumentRevisionAction(documentId: string, revisionId: string) {
+  try {
+    const userId = await requireAuthUserId();
+    const revision = await getDocumentRevision(userId, documentId, revisionId);
+    return { success: true, revision };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to fetch document revision." };
+  }
+}
+
+export async function restoreDocumentRevisionAction(
+  documentId: string,
+  input: RestoreRevisionInput
+) {
+  try {
+    const userId = await requireAuthUserId();
+    const result = await restoreDocumentRevision(userId, documentId, input);
+    revalidatePath("/editor");
+    revalidatePath(`/editor/${documentId}`);
+    return { success: true, result };
+  } catch (err: any) {
+    const isConflict = err.message?.includes("CONCURRENT_SAVE_CONFLICT");
+    return {
+      success: false,
+      isConflict: Boolean(isConflict),
+      error: err.message || "Failed to restore document revision.",
+    };
+  }
+}
+
+export async function exportDocumentRevisionAction(
+  documentId: string,
+  revisionId: string,
+  format: ManuscriptExportFormat = "markdown"
+) {
+  try {
+    const userId = await requireAuthUserId();
+    const result = await exportDocumentRevision(userId, documentId, revisionId, format);
+    return { success: true, export: result };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to export revision." };
+  }
+}
+
 

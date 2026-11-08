@@ -1,5 +1,7 @@
 import { prisma } from "../prisma";
 import { CitationType, DocumentType } from "@prisma/client";
+import { createDocumentRevisionSnapshot, isDocumentRevisionSchemaReady } from "./revision-service";
+import { areTipTapNodesEqual } from "./content-sanitizer";
 import { ADMIN_TEST_FIXTURE_IDS } from "../auth/paper-authorization";
 import {
   GuidedDocumentConfig,
@@ -20,6 +22,7 @@ import {
   exportTipTapToPdf,
   reconcileExportTipTapAst,
   REFERENCES_GUIDANCE_TEXT,
+  getNodeText,
 } from "./pdf-exporter";
 
 export interface CreateDocumentInput {
@@ -36,6 +39,7 @@ export interface UpdateDocumentInput {
   docType?: DocumentType;
   expectedVersion?: number;
   guidedMeta?: any;
+  description?: string;
 }
 
 export interface InsertCitationInput {
@@ -79,8 +83,12 @@ export function createDefaultTipTapContent(title: string) {
  * Helper to check if a paper is accessible to a user.
  * Reuses existing multi-tenant privacy and benchmark fixture quarantine rules.
  */
-export async function assertPaperAccess(userId: string, paperId: string): Promise<boolean> {
-  const paper = await prisma.paper.findUnique({
+export async function assertPaperAccess(
+  userId: string,
+  paperId: string,
+  client: any = prisma
+): Promise<boolean> {
+  const paper = await client.paper.findUnique({
     where: { id: paperId },
     select: {
       id: true,
@@ -255,6 +263,24 @@ export async function listResearchDocuments(userId: string) {
 }
 
 /**
+ * Acquires an exclusive row-level lock on the research document within an interactive transaction.
+ * Ensures that saves, restores, citations, and source mutations are serialized per document.
+ */
+export async function acquireDocumentTransactionGuard(
+  tx: any,
+  documentId: string
+): Promise<{ id: string; version: number }> {
+  const rows = await tx.$queryRawUnsafe(
+    `SELECT id, version FROM "research_documents" WHERE id = $1 FOR UPDATE`,
+    documentId
+  );
+  if (!rows || rows.length === 0) {
+    throw new Error(`Research document '${documentId}' not found.`);
+  }
+  return { id: rows[0].id, version: Number(rows[0].version) };
+}
+
+/**
  * Updates a document's content, title, or metadata with optimistic concurrency protection.
  */
 export async function updateResearchDocument(
@@ -262,68 +288,196 @@ export async function updateResearchDocument(
   documentId: string,
   updates: UpdateDocumentInput
 ) {
-  const existing = await prisma.researchDocument.findUnique({
-    where: { id: documentId },
-    select: { id: true, userId: true, version: true, content: true },
-  });
+  return await prisma.$transaction(
+    async (tx) => {
+      // 0. Acquire per-document transaction guard
+      await acquireDocumentTransactionGuard(tx, documentId);
 
-  if (!existing || existing.userId !== userId) {
-    throw new Error(`Research document '${documentId}' not found.`);
-  }
+      // 1. Read current state inside transaction with relations
+      const current = await tx.researchDocument.findUnique({
+        where: { id: documentId },
+        include: {
+          citations: {
+            include: {
+              paper: {
+                include: {
+                  authors: { include: { author: true }, orderBy: { orderIndex: "asc" } },
+                },
+              },
+              chunk: true,
+            },
+          },
+          linkedPapers: {
+            include: {
+              paper: {
+                include: {
+                  authors: { include: { author: true }, orderBy: { orderIndex: "asc" } },
+                },
+              },
+            },
+          },
+        },
+      });
 
-  // Optimistic concurrency control: block concurrent overwrites
-  if (
-    typeof updates.expectedVersion === "number" &&
-    existing.version !== updates.expectedVersion
-  ) {
-    throw new Error(
-      `CONCURRENT_SAVE_CONFLICT: Document version mismatch (expected v${updates.expectedVersion}, but current is v${existing.version}). Please reload latest changes.`
-    );
-  }
+      if (!current || current.userId !== userId) {
+        throw new Error(`Research document '${documentId}' not found.`);
+      }
 
-  const dataToUpdate: any = {
-    version: { increment: 1 },
-  };
+      // 2. Optimistic concurrency control: block concurrent overwrites
+      if (
+        typeof updates.expectedVersion === "number" &&
+        current.version !== updates.expectedVersion
+      ) {
+        throw new Error(
+          `CONCURRENT_SAVE_CONFLICT: Document version mismatch (expected v${updates.expectedVersion}, but current is v${current.version}). Please reload latest changes.`
+        );
+      }
 
-  if (updates.title !== undefined) {
-    dataToUpdate.title = updates.title.trim() || "Untitled Research Document";
-  }
+      const incomingTitle =
+        updates.title !== undefined ? updates.title.trim() || "Untitled Research Document" : undefined;
+      const isTitleChanged = incomingTitle !== undefined && incomingTitle !== current.title;
+      const isDocTypeChanged = updates.docType !== undefined && updates.docType !== current.docType;
+      const isTextContentChanged =
+        updates.textContent !== undefined && updates.textContent !== current.textContent;
 
-  if (updates.content !== undefined || updates.guidedMeta !== undefined) {
-    let finalContent = updates.content !== undefined ? updates.content : existing.content;
-    const existingMeta = (existing.content as any)?.meta;
-    const incomingMeta = updates.guidedMeta !== undefined
-      ? updates.guidedMeta
-      : (finalContent && typeof finalContent === "object" ? (finalContent as any).meta : undefined);
+      let isContentChanged = false;
+      let finalContent = current.content;
+      let newStyleId: string | undefined = undefined;
+      let newStyleSha: string | undefined = undefined;
 
-    const mergedMeta = incomingMeta || existingMeta;
+      if (updates.content !== undefined || updates.guidedMeta !== undefined) {
+        let candidateContent = updates.content !== undefined ? updates.content : current.content;
+        const existingMeta = (current.content as any)?.meta;
+        const incomingMeta =
+          updates.guidedMeta !== undefined
+            ? updates.guidedMeta
+            : candidateContent && typeof candidateContent === "object"
+            ? (candidateContent as any).meta
+            : undefined;
 
-    if (mergedMeta && finalContent && typeof finalContent === "object") {
-      finalContent = {
-        ...(finalContent as any),
-        meta: mergedMeta,
+        const mergedMeta = incomingMeta || existingMeta;
+
+        if (mergedMeta && candidateContent && typeof candidateContent === "object") {
+          candidateContent = {
+            ...(candidateContent as any),
+            meta: mergedMeta,
+          };
+          if (mergedMeta.citationStyle) {
+            newStyleId = mergedMeta.citationStyle;
+          }
+          if (mergedMeta.citationStyleRevision) {
+            newStyleSha = mergedMeta.citationStyleRevision;
+          }
+        }
+        finalContent = candidateContent;
+        if (!areTipTapNodesEqual(candidateContent, current.content)) {
+          isContentChanged = true;
+        }
+      }
+
+      const isStyleChanged =
+        (newStyleId !== undefined && newStyleId !== current.cslStyleId) ||
+        (newStyleSha !== undefined && newStyleSha !== current.cslRevisionSha);
+
+      // No-op detection: return current document without incrementing version or taking duplicate snapshot
+      if (
+        !isTitleChanged &&
+        !isDocTypeChanged &&
+        !isTextContentChanged &&
+        !isContentChanged &&
+        !isStyleChanged
+      ) {
+        return current;
+      }
+
+      // 3. Create pre-change snapshot from current state inside tx if schema is ready
+      const schemaReady = await isDocumentRevisionSchemaReady(tx);
+      if (schemaReady) {
+        // Any unexpected snapshot creation failure intentionally throws to rollback tx
+        await createDocumentRevisionSnapshot(tx, current, {
+          userId,
+          description: updates.description || `Autosave before v${current.version + 1}`,
+        });
+      }
+
+      const dataToUpdate: any = {
+        version: current.version + 1,
+        updatedAt: new Date(),
       };
-      if (mergedMeta.citationStyle) {
-        dataToUpdate.cslStyleId = mergedMeta.citationStyle;
-      }
-      if (mergedMeta.citationStyleRevision) {
-        dataToUpdate.cslRevisionSha = mergedMeta.citationStyleRevision;
-      }
-    }
-    dataToUpdate.content = finalContent;
-  }
 
-  if (updates.textContent !== undefined) {
-    dataToUpdate.textContent = updates.textContent;
-  }
-  if (updates.docType !== undefined) {
-    dataToUpdate.docType = updates.docType;
-  }
+      if (isTitleChanged) {
+        dataToUpdate.title = incomingTitle;
+      }
+      if (isDocTypeChanged) {
+        dataToUpdate.docType = updates.docType;
+      }
+      if (isTextContentChanged) {
+        dataToUpdate.textContent = updates.textContent;
+      }
+      if (isContentChanged || updates.content !== undefined || updates.guidedMeta !== undefined) {
+        dataToUpdate.content = finalContent;
+      }
+      if (newStyleId) {
+        dataToUpdate.cslStyleId = newStyleId;
+      }
+      if (newStyleSha) {
+        // Validate against csl_catalog_revisions if present
+        const catRev = await tx.cslCatalogRevision.findUnique({
+          where: { revisionSha: newStyleSha },
+          select: { revisionSha: true },
+        });
+        if (catRev) {
+          dataToUpdate.cslRevisionSha = newStyleSha;
+        }
+      }
 
-  return await prisma.researchDocument.update({
-    where: { id: documentId },
-    data: dataToUpdate,
-  });
+      // 4. Atomic conditional update: guarantee that losing concurrent race returns 0 rows updated
+      const updateResult = await tx.researchDocument.updateMany({
+        where: {
+          id: documentId,
+          version: current.version,
+        },
+        data: dataToUpdate,
+      });
+
+      if (updateResult.count === 0) {
+        throw new Error(
+          `CONCURRENT_SAVE_CONFLICT: Document was modified concurrently (expected v${current.version}). Please reload latest changes.`
+        );
+      }
+
+      return await tx.researchDocument.findUniqueOrThrow({
+        where: { id: documentId },
+        include: {
+          citations: {
+            include: {
+              paper: {
+                select: {
+                  id: true,
+                  title: true,
+                  doi: true,
+                  journal: true,
+                  publicationDate: true,
+                },
+              },
+            },
+          },
+          linkedPapers: {
+            include: {
+              paper: {
+                select: {
+                  id: true,
+                  title: true,
+                  doi: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    },
+    { maxWait: 15000, timeout: 30000 }
+  );
 }
 
 /**
@@ -358,66 +512,85 @@ export async function deleteResearchDocument(userId: string, documentId: string)
 
 /**
  * Attaches an accessible research paper from My Library to the document's sources tray.
+ * Coordinated under the shared per-document transaction guard.
  */
 export async function attachDocumentPaper(
   userId: string,
   documentId: string,
   paperId: string
 ) {
-  // 1. Verify document ownership
-  const doc = await prisma.researchDocument.findUnique({
-    where: { id: documentId },
-    select: { id: true, userId: true },
-  });
-  if (!doc || doc.userId !== userId) {
-    throw new Error(`Research document '${documentId}' not found.`);
-  }
+  return await prisma.$transaction(
+    async (tx) => {
+      // 0. Acquire per-document transaction guard
+      await acquireDocumentTransactionGuard(tx, documentId);
 
-  // 2. Verify user has authorization to access this paper
-  await assertPaperAccess(userId, paperId);
+      // 1. Verify document ownership
+      const doc = await tx.researchDocument.findUnique({
+        where: { id: documentId },
+        select: { id: true, userId: true },
+      });
+      if (!doc || doc.userId !== userId) {
+        throw new Error(`Research document '${documentId}' not found.`);
+      }
 
-  // 3. Link paper to document
-  return await prisma.documentPaper.upsert({
-    where: {
-      documentId_paperId: {
-        documentId,
-        paperId,
-      },
+      // 2. Verify user has authorization to access this paper
+      await assertPaperAccess(userId, paperId, tx);
+
+      // 3. Link paper to document
+      return await tx.documentPaper.upsert({
+        where: {
+          documentId_paperId: {
+            documentId,
+            paperId,
+          },
+        },
+        update: {},
+        create: {
+          documentId,
+          paperId,
+        },
+      });
     },
-    update: {},
-    create: {
-      documentId,
-      paperId,
-    },
-  });
+    { maxWait: 15000, timeout: 30000 }
+  );
 }
 
 /**
  * Detaches a research paper from the document's sources tray.
+ * Coordinated under the shared per-document transaction guard.
  */
 export async function detachDocumentPaper(
   userId: string,
   documentId: string,
   paperId: string
 ) {
-  const doc = await prisma.researchDocument.findUnique({
-    where: { id: documentId },
-    select: { id: true, userId: true },
-  });
-  if (!doc || doc.userId !== userId) {
-    throw new Error(`Research document '${documentId}' not found.`);
-  }
+  return await prisma.$transaction(
+    async (tx) => {
+      // 0. Acquire per-document transaction guard
+      await acquireDocumentTransactionGuard(tx, documentId);
 
-  return await prisma.documentPaper.deleteMany({
-    where: {
-      documentId,
-      paperId,
+      const doc = await tx.researchDocument.findUnique({
+        where: { id: documentId },
+        select: { id: true, userId: true },
+      });
+      if (!doc || doc.userId !== userId) {
+        throw new Error(`Research document '${documentId}' not found.`);
+      }
+
+      return await tx.documentPaper.deleteMany({
+        where: {
+          documentId,
+          paperId,
+        },
+      });
     },
-  });
+    { maxWait: 15000, timeout: 30000 }
+  );
 }
 
 /**
  * Inserts a verifiable citation record linking to a research paper or exact passage.
+ * Coordinated under the shared per-document transaction guard.
  */
 export async function insertDocumentCitation(
   userId: string,
@@ -428,109 +601,134 @@ export async function insertDocumentCitation(
     throw new Error("A valid paperId is required to create a document citation.");
   }
 
-  // 1. Verify document ownership
-  const doc = await prisma.researchDocument.findUnique({
-    where: { id: documentId },
-    select: { id: true, userId: true },
-  });
-  if (!doc || doc.userId !== userId) {
-    throw new Error(`Research document '${documentId}' not found.`);
-  }
+  return await prisma.$transaction(
+    async (tx) => {
+      // 0. Acquire per-document transaction guard
+      await acquireDocumentTransactionGuard(tx, documentId);
 
-  // 2. Verify user has authorization to access this paper
-  await assertPaperAccess(userId, input.paperId);
+      // 1. Verify document ownership
+      const doc = await tx.researchDocument.findUnique({
+        where: { id: documentId },
+        select: { id: true, userId: true },
+      });
+      if (!doc || doc.userId !== userId) {
+        throw new Error(`Research document '${documentId}' not found.`);
+      }
 
-  // 3. If chunkId provided, verify it belongs strictly to this paper
-  let verifiedChunkId: string | null = null;
-  if (input.chunkId) {
-    const chunk = await prisma.paperChunk.findUnique({
-      where: { id: input.chunkId },
-      select: { paperId: true },
-    });
-    if (!chunk || chunk.paperId !== input.paperId) {
-      throw new Error(
-        `Chunk '${input.chunkId}' does not belong to paper '${input.paperId}'. Provenance mismatch.`
-      );
-    }
-    verifiedChunkId = input.chunkId;
-  }
+      // 2. Verify user has authorization to access this paper
+      await assertPaperAccess(userId, input.paperId, tx);
 
-  // 4. Ensure paper is in linkedPapers tray
-  await prisma.documentPaper.upsert({
-    where: {
-      documentId_paperId: {
-        documentId,
-        paperId: input.paperId,
-      },
-    },
-    update: {},
-    create: {
-      documentId,
-      paperId: input.paperId,
-    },
-  });
+      // 3. If chunkId provided, verify it belongs strictly to this paper
+      let verifiedChunkId: string | null = null;
+      if (input.chunkId) {
+        const chunk = await tx.paperChunk.findUnique({
+          where: { id: input.chunkId },
+          select: { paperId: true },
+        });
+        if (!chunk || chunk.paperId !== input.paperId) {
+          throw new Error(
+            `Chunk '${input.chunkId}' does not belong to paper '${input.paperId}'. Provenance mismatch.`
+          );
+        }
+        verifiedChunkId = input.chunkId;
+      }
 
-  // 5. Enforce passage-verified distinction:
-  // A citation can ONLY be PASSAGE_VERIFIED if an authenticated, valid chunk is linked.
-  const finalCitationType = verifiedChunkId
-    ? (input.citationType || CitationType.PASSAGE_VERIFIED)
-    : CitationType.BIBLIOGRAPHIC;
-
-  // 6. Create citation
-  return await prisma.documentCitation.create({
-    data: {
-      documentId,
-      paperId: input.paperId,
-      chunkId: verifiedChunkId,
-      citationKey: input.citationKey || null,
-      citationText: input.citationText,
-      citationType: finalCitationType,
-      pageNumber: input.pageNumber || null,
-      section: input.section || null,
-      prefix: input.prefix || null,
-      suffix: input.suffix || null,
-    },
-    include: {
-      paper: {
-        select: {
-          id: true,
-          title: true,
-          doi: true,
-          journal: true,
-          publicationDate: true,
+      // 4. Ensure paper is in linkedPapers tray
+      await tx.documentPaper.upsert({
+        where: {
+          documentId_paperId: {
+            documentId,
+            paperId: input.paperId,
+          },
         },
-      },
-      chunk: {
-        select: {
-          id: true,
-          section: true,
-          pageNumber: true,
-          text: true,
+        update: {},
+        create: {
+          documentId,
+          paperId: input.paperId,
         },
-      },
+      });
+
+      // 5. Enforce passage-verified distinction:
+      // A citation can ONLY be PASSAGE_VERIFIED if an authenticated, valid chunk is linked.
+      const finalCitationType = verifiedChunkId
+        ? (input.citationType || CitationType.PASSAGE_VERIFIED)
+        : CitationType.BIBLIOGRAPHIC;
+
+      // 6. Create citation
+      return await tx.documentCitation.create({
+        data: {
+          documentId,
+          paperId: input.paperId,
+          chunkId: verifiedChunkId,
+          citationKey: input.citationKey || null,
+          citationText: input.citationText,
+          citationType: finalCitationType,
+          pageNumber: input.pageNumber || null,
+          section: input.section || null,
+          prefix: input.prefix || null,
+          suffix: input.suffix || null,
+        },
+        include: {
+          paper: {
+            select: {
+              id: true,
+              title: true,
+              doi: true,
+              journal: true,
+              publicationDate: true,
+            },
+          },
+          chunk: {
+            select: {
+              id: true,
+              section: true,
+              pageNumber: true,
+              text: true,
+            },
+          },
+        },
+      });
     },
-  });
+    { maxWait: 15000, timeout: 30000 }
+  );
 }
 
 /**
  * Deletes a document citation.
+ * Coordinated under the shared per-document transaction guard.
  */
 export async function deleteDocumentCitation(
   userId: string,
   documentId: string,
   citationId: string
 ) {
-  const doc = await prisma.researchDocument.findUnique({
-    where: { id: documentId },
-    select: { id: true, userId: true },
-  });
-  if (!doc || doc.userId !== userId) {
-    throw new Error(`Research document '${documentId}' not found.`);
-  }
+  return await prisma.$transaction(
+    async (tx) => {
+      // 0. Acquire per-document transaction guard
+      await acquireDocumentTransactionGuard(tx, documentId);
 
-  return await prisma.documentCitation.delete({
-    where: { id: citationId },
-  });
+      const doc = await tx.researchDocument.findUnique({
+        where: { id: documentId },
+        select: { id: true, userId: true },
+      });
+      if (!doc || doc.userId !== userId) {
+        throw new Error(`Research document '${documentId}' not found.`);
+      }
+
+      const cit = await tx.documentCitation.findUnique({
+        where: { id: citationId },
+        select: { documentId: true },
+      });
+      if (!cit || cit.documentId !== documentId) {
+        throw new Error(`Citation '${citationId}' does not belong to document '${documentId}'.`);
+      }
+
+      return await tx.documentCitation.delete({
+        where: { id: citationId },
+      });
+    },
+    { maxWait: 15000, timeout: 30000 }
+  );
 }
 
 export const addDocumentCitation = insertDocumentCitation;
@@ -725,15 +923,34 @@ export {
 } from "./pdf-exporter";
 
 /**
- * Exports a research document in the requested academic format.
- * Validates document ownership, serializes manuscript content, and incorporates citations.
+ * Calculates word and character count directly from a TipTap AST node.
  */
-export async function exportResearchDocument(
-  userId: string,
-  documentId: string,
+export function calculateCountsFromContent(content: any): { words: number; chars: number } {
+  if (!content) return { words: 0, chars: 0 };
+  const text = getNodeText(content).trim();
+  if (!text) return { words: 0, chars: 0 };
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const chars = text.length;
+  return { words, chars };
+}
+
+/**
+ * Core academic document exporter operating directly on document AST, metadata, and citations.
+ */
+export async function exportDocumentAst(
+  doc: {
+    id: string;
+    title: string;
+    docType: DocumentType;
+    version: number;
+    cslStyleId?: string | null;
+    content: any;
+    textContent?: string | null;
+    citations?: any[];
+    linkedPapers?: any[];
+  },
   format: ManuscriptExportFormat = "markdown"
 ): Promise<ExportManuscriptResult> {
-  const doc = await getResearchDocument(userId, documentId);
   const cleanTitle = (doc.title || "Untitled Research Document").trim();
   const slug =
     cleanTitle
@@ -947,5 +1164,19 @@ export async function exportResearchDocument(
     exportedAt: now,
   };
 }
+
+/**
+ * Exports a research document in the requested academic format.
+ * Validates document ownership, serializes manuscript content, and incorporates citations.
+ */
+export async function exportResearchDocument(
+  userId: string,
+  documentId: string,
+  format: ManuscriptExportFormat = "markdown"
+): Promise<ExportManuscriptResult> {
+  const doc = await getResearchDocument(userId, documentId);
+  return await exportDocumentAst(doc, format);
+}
+
 
 

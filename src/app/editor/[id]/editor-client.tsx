@@ -6,6 +6,7 @@ import { DocumentType, CitationType } from "@prisma/client";
 import { EditorHeader, SaveStatus } from "@/components/editor/editor-header";
 import { EditorCanvas } from "@/components/editor/editor-canvas";
 import { SourcesDrawer } from "@/components/editor/sources-drawer";
+import { RevisionHistoryDrawer } from "@/components/editor/revision-history-drawer";
 import { EvidenceSummaryModal } from "@/components/editor/evidence-summary-modal";
 import { ConflictResolutionModal } from "@/components/editor/conflict-resolution-modal";
 import {
@@ -99,15 +100,24 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
   // Sources Drawer State
   const [isSourcesOpen, setIsSourcesOpen] = useState(false);
 
+  // Revision History Drawer State
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const isRestoringRef = useRef(false);
+
   // Evidence Summary Modal State
   const [summaryModalTarget, setSummaryModalTarget] = useState<{
     paperId: string;
     paperTitle: string;
   } | null>(null);
 
-  // External Text Insertion bridge (to inject citation text or summary into TipTap)
+  // External Text & Content Reset bridges (to inject text or reset TipTap content)
   const [externalInsertText, setExternalInsertText] = useState<{
     text: string;
+    id: number;
+  } | null>(null);
+  const [externalResetContent, setExternalResetContent] = useState<{
+    content: any;
     id: number;
   } | null>(null);
 
@@ -191,6 +201,11 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
   // Save Execution Core with in-flight snapshot comparison, serialized chaining and boolean return
   const executeSave = useCallback(
     async (forceOverwrite: boolean = false): Promise<boolean> => {
+      // Disallow saves while a restore request is in progress
+      if (isRestoringRef.current) {
+        return false;
+      }
+
       // Clear any pending debounce timer
       if (autosaveTimerRef.current) {
         clearTimeout(autosaveTimerRef.current);
@@ -282,6 +297,11 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
   // Handle TipTap Canvas Content Changes
   const handleContentChange = useCallback(
     (contentJson: any, textContent: string) => {
+      // Ignore content change callbacks while a restore operation is settling
+      if (isRestoringRef.current) {
+        return;
+      }
+
       const words = textContent.trim() ? textContent.trim().split(/\s+/).filter(Boolean).length : 0;
       const chars = textContent.length;
 
@@ -619,6 +639,12 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
     setSaveErrorMessage(null);
     pendingUpdatesRef.current = null;
     await handleRefreshDocument();
+    if (latestDraftRef.current?.content) {
+      setExternalResetContent({
+        content: latestDraftRef.current.content,
+        id: Date.now(),
+      });
+    }
     router.refresh();
   };
 
@@ -634,6 +660,7 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
         e.preventDefault();
+        if (isRestoringRef.current) return;
         executeSave(false);
       }
     };
@@ -735,6 +762,8 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
         sourcesCount={researchDocument.linkedPapers?.length || 0}
         isSourcesOpen={isSourcesOpen}
         onToggleSources={() => setIsSourcesOpen(!isSourcesOpen)}
+        isHistoryOpen={isHistoryOpen}
+        onToggleHistory={() => setIsHistoryOpen(!isHistoryOpen)}
         onRename={handleRename}
         onManualSave={() => executeSave(false)}
         guidedMeta={(researchDocument.content as any)?.meta || guidedMetaRef.current}
@@ -805,6 +834,8 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
           onContentChange={handleContentChange}
           onCountsChange={handleCountsChange}
           linkedPaperIds={linkedPaperIds}
+          isRestoring={isRestoring}
+          externalResetContent={externalResetContent}
           externalInsertText={externalInsertText}
           externalInsertCitation={externalInsertCitation}
           externalSetBibliography={externalSetBibliography}
@@ -864,6 +895,65 @@ export function EditorClient({ initialDocument }: EditorClientProps) {
         onReloadLatest={async () => {
           setIsConflictModalOpen(false);
           await handleReloadLatest();
+        }}
+      />
+
+      {/* Revision History & Guarded Restore Drawer */}
+      <RevisionHistoryDrawer
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        documentId={researchDocument.id}
+        currentVersion={version}
+        currentWordCount={wordCount}
+        hasUnsavedChanges={saveStatus === "unsaved" || pendingUpdatesRef.current !== null}
+        isSaving={saveStatus === "saving" || isSavingRef.current}
+        onRestoreStart={() => {
+          setIsRestoring(true);
+          isRestoringRef.current = true;
+        }}
+        onRestoreEnd={() => {
+          setIsRestoring(false);
+          isRestoringRef.current = false;
+        }}
+        onRestoreSuccess={(updatedDoc) => {
+          // Clear any pending autosave timers
+          if (autosaveTimerRef.current) {
+            clearTimeout(autosaveTimerRef.current);
+            autosaveTimerRef.current = null;
+          }
+          if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+          }
+
+          setResearchDocument(updatedDoc);
+          setVersion(updatedDoc.version);
+          currentVersionRef.current = updatedDoc.version;
+          setUpdatedAt(new Date(updatedDoc.updatedAt).toISOString());
+          const counts = calculateCountsFromContent(updatedDoc.content);
+          setWordCount(counts.words);
+          setCharCount(counts.chars);
+          if (updatedDoc.cslStyleId) {
+            setCitationStyle(updatedDoc.cslStyleId);
+          }
+          latestDraftRef.current = {
+            content: updatedDoc.content,
+            textContent: extractTextFromContent(updatedDoc.content),
+            wordCount: counts.words,
+            charCount: counts.chars,
+          };
+          pendingUpdatesRef.current = null;
+          setSaveStatus("saved");
+          setConflictError(null);
+          setSaveErrorMessage(null);
+
+          // Update visible TipTap editor canvas
+          setExternalResetContent({
+            content: updatedDoc.content,
+            id: Date.now(),
+          });
+
+          router.refresh();
         }}
       />
     </div>
