@@ -994,6 +994,7 @@ npm run db:validate
 ## 8. Quick Verification Checklist for Future Models
 Before submitting changes to this codebase, verify:
 - [ ] `npm run type-check` passes with zero errors.
+- [ ] `npm run build` from a clean checkout (`git clone` into a temp directory outside the project with no `.env` or untracked files copied, followed by `npm ci && npm run build`) passes with zero errors.
 - [ ] `npx prisma validate` passes with zero schema errors.
 - [ ] All new routes comply with Next.js 14 App Router patterns.
 - [ ] No hardcoded passwords, API keys, or database secrets are committed.
