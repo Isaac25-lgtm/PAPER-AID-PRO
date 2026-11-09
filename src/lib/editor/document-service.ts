@@ -1036,21 +1036,28 @@ export async function exportDocumentAst(
       prov.uploadedByUserId ||
       prov.attachedByUserId;
     const isPrivate = prov.isPrivate === true || Boolean(ownerId);
-    if (effectiveUserId && isPrivate && ownerId && ownerId !== effectiveUserId) {
+    if (isPrivate && (!effectiveUserId || !ownerId || ownerId !== effectiveUserId)) {
       return false;
     }
     return true;
   };
 
+  const accessibleLinkedPapers = (doc.linkedPapers || []).filter((lp: any) =>
+    lp?.paper?.id && isAccessibleForExport(lp.paper)
+  );
+  const accessibleCitations = (doc.citations || []).filter((c: any) =>
+    c?.paperId ? Boolean(c.paper?.id && isAccessibleForExport(c.paper)) : Boolean(!c?.paper || isAccessibleForExport(c.paper))
+  );
+
   const paperMap = new Map<string, any>();
-  for (const lp of doc.linkedPapers || []) {
-    if (lp.paper?.id && isAccessibleForExport(lp.paper)) paperMap.set(lp.paper.id, lp.paper);
+  for (const lp of accessibleLinkedPapers) {
+    if (lp.paper?.id) paperMap.set(lp.paper.id, lp.paper);
   }
-  for (const c of doc.citations || []) {
-    if (c.paper?.id && isAccessibleForExport(c.paper) && !paperMap.has(c.paper.id)) paperMap.set(c.paper.id, c.paper);
+  for (const c of accessibleCitations) {
+    if (c.paper?.id && !paperMap.has(c.paper.id)) paperMap.set(c.paper.id, c.paper);
   }
   const citedPapers = Array.from(paperMap.values());
-  const citations = doc.citations || [];
+  const citations = accessibleCitations;
 
   let unsupportedNodes: string[] = [];
   let isBinary = false;
@@ -1117,8 +1124,8 @@ export async function exportDocumentAst(
 
     const docxResult = await exportTipTapToDocx(exportContent, {
       title: cleanTitle,
-      citations: doc.citations,
-      linkedPapers: doc.linkedPapers,
+      citations,
+      linkedPapers: accessibleLinkedPapers,
       bibliographyEntries,
       cslStyleId: doc.cslStyleId || undefined,
       bibliographyTitle,
@@ -1133,8 +1140,8 @@ export async function exportDocumentAst(
 
     const pdfResult = await exportTipTapToPdf(exportContent, {
       title: cleanTitle,
-      citations: doc.citations,
-      linkedPapers: doc.linkedPapers,
+      citations,
+      linkedPapers: accessibleLinkedPapers,
       bibliographyEntries,
       cslStyleId: doc.cslStyleId || undefined,
       bibliographyTitle,
@@ -1203,8 +1210,8 @@ export async function exportDocumentAst(
         cslStyleId: doc.cslStyleId,
         content: doc.content,
         textContent: doc.textContent,
-        citations: doc.citations,
-        linkedPapers: doc.linkedPapers,
+        citations,
+        linkedPapers: accessibleLinkedPapers,
         exportedAt: now,
       },
       null,

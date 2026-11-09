@@ -117,9 +117,17 @@ export function sanitizeStyleId(rawId: string): string {
 }
 
 /**
- * Resolves and loads the CSL XML for any requested style (bundled, independent, or dependent).
- * Performs parent resolution automatically if the style is dependent on an independent parent.
+ * Validates optional revision SHA/tag to prevent path traversal or SSRF.
  */
+export function sanitizeRevisionSha(rawRev?: string): string | undefined {
+  if (!rawRev) return undefined;
+  const clean = rawRev.trim().replace(/[^a-zA-Z0-9._-]/g, "");
+  if (!clean || clean.includes("..")) {
+    throw new Error("Invalid revision identifier.");
+  }
+  return clean;
+}
+
 /**
  * Resolves and loads the CSL XML for any requested style (bundled, independent, or dependent).
  * Performs parent resolution automatically if the style is dependent on an independent parent.
@@ -127,7 +135,7 @@ export function sanitizeStyleId(rawId: string): string {
  */
 export async function getStyleXml(
   styleId: string,
-  revisionSha?: string
+  rawRevisionSha?: string
 ): Promise<{
   xml: string;
   id: string;
@@ -138,6 +146,7 @@ export async function getStyleXml(
   revisionSha?: string;
 }> {
   const cleanId = sanitizeStyleId(styleId);
+  const revisionSha = sanitizeRevisionSha(rawRevisionSha);
   const cacheKey = revisionSha ? `${revisionSha}:${cleanId}` : cleanId;
 
   // 1. Check in-memory cache

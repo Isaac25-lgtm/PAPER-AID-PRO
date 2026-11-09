@@ -19,7 +19,12 @@ export async function GET(
   { params }: { params: { id: string; revisionId: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    let session = null;
+    try {
+      session = await getServerSession(authOptions);
+    } catch {
+      session = null;
+    }
     if (!session?.user?.id) {
       return new NextResponse("Unauthorized", { status: 401 });
     }

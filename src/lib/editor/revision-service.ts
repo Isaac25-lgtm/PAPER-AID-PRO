@@ -1,5 +1,6 @@
 import { prisma } from "../prisma";
 import { DocumentType, CitationType } from "@prisma/client";
+import { ADMIN_TEST_FIXTURE_IDS } from "../auth/paper-authorization";
 import {
   exportDocumentAst,
   ManuscriptExportFormat,
@@ -411,7 +412,7 @@ export async function listDocumentRevisions(
 
 /**
  * Retrieves a full revision record for read-only preview.
- * Strictly verifies document ownership.
+ * Strictly verifies document ownership and scrubs any inaccessible private papers.
  */
 export async function getDocumentRevision(
   userId: string,
@@ -438,7 +439,76 @@ export async function getDocumentRevision(
     throw new Error(`Document revision '${revisionId}' not found.`);
   }
 
-  return revision;
+  const isPaperRecordAccessible = (p: any) => {
+    if (!p) return true;
+    const prov = (p.sourceProvenance as any) || {};
+    const raw = (p.rawMetadata as any) || {};
+    if (
+      (p.id && ADMIN_TEST_FIXTURE_IDS.has(p.id)) ||
+      prov.isBenchmarkFixture === true ||
+      raw.adminOnly === true
+    ) {
+      return false;
+    }
+    const ownerId =
+      prov.ownerUserId ||
+      prov.userId ||
+      prov.ownerId ||
+      prov.uploadedByUserId ||
+      prov.attachedByUserId;
+    const isPrivate = prov.isPrivate === true || Boolean(ownerId);
+    if (isPrivate && (!userId || !ownerId || ownerId !== userId)) {
+      return false;
+    }
+    return true;
+  };
+
+  const rawCitations = Array.isArray(revision.citations) ? (revision.citations as any[]) : [];
+  const rawLinkedPapers = Array.isArray(revision.linkedPapers) ? (revision.linkedPapers as any[]) : [];
+
+  const referencedPaperIds = Array.from(
+    new Set(
+      [
+        ...rawCitations.map((c: any) => c?.paperId || c?.paper?.id),
+        ...rawLinkedPapers.map((lp: any) => lp?.paperId || lp?.paper?.id),
+      ].filter((id): id is string => typeof id === "string" && id.length > 0)
+    )
+  );
+
+  const inaccessibleDbPaperIds = new Set<string>();
+  if (referencedPaperIds.length > 0) {
+    const dbPapers = await prisma.paper.findMany({
+      where: { id: { in: referencedPaperIds } },
+      select: { id: true, sourceProvenance: true, rawMetadata: true },
+    });
+    for (const dbP of dbPapers) {
+      if (!isPaperRecordAccessible(dbP)) {
+        inaccessibleDbPaperIds.add(dbP.id);
+      }
+    }
+  }
+
+  const sanitizedCitations = rawCitations.filter((c: any) => {
+    const pid = c?.paperId || c?.paper?.id;
+    if (pid && ADMIN_TEST_FIXTURE_IDS.has(pid)) return false;
+    if (pid && inaccessibleDbPaperIds.has(pid)) return false;
+    if (c?.paper && !isPaperRecordAccessible(c.paper)) return false;
+    return true;
+  });
+
+  const sanitizedLinkedPapers = rawLinkedPapers.filter((lp: any) => {
+    const pid = lp?.paperId || lp?.paper?.id;
+    if (pid && ADMIN_TEST_FIXTURE_IDS.has(pid)) return false;
+    if (pid && inaccessibleDbPaperIds.has(pid)) return false;
+    if (lp?.paper && !isPaperRecordAccessible(lp.paper)) return false;
+    return true;
+  });
+
+  return {
+    ...revision,
+    citations: sanitizedCitations,
+    linkedPapers: sanitizedLinkedPapers,
+  };
 }
 
 /**
@@ -721,6 +791,7 @@ export async function exportDocumentRevision(
 
   const virtualDoc = {
     id: revision.documentId,
+    userId,
     title: revision.title,
     docType: revision.docType,
     version: revision.version,
@@ -732,7 +803,7 @@ export async function exportDocumentRevision(
     linkedPapers: rawLinkedPapers,
   };
 
-  const exportResult = await exportDocumentAst(virtualDoc, format);
+  const exportResult = await exportDocumentAst(virtualDoc, format, userId);
   // Qualify filename with revision version for clear archival identity
   const ext = exportResult.filename.split(".").pop();
   return {

@@ -11,34 +11,30 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { UserRole } from "@prisma/client";
+import { verifyAdminSession } from "@/lib/auth/admin-guard";
 import { CslSyncOrchestrator } from "@/lib/citations/csl/updater/sync-orchestrator";
 import { CslCatalogManager } from "@/lib/citations/csl/updater/catalog-storage";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Checks if request is authorized via CRON_SECRET or Admin session.
+ * Checks if request is authorized via CRON_SECRET or Admin session (verified against PostgreSQL).
  */
 async function authorizeSyncRequest(request: NextRequest): Promise<{ authorized: boolean; reason?: string }> {
   // 1. Check CRON_SECRET header
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
 
-  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+  if (cronSecret && cronSecret.trim().length > 0 && authHeader === `Bearer ${cronSecret.trim()}`) {
     return { authorized: true };
   }
 
-  // 2. Check Admin NextAuth session
+  // 2. Check Admin NextAuth session with authoritative PostgreSQL role verification
   try {
-    const session = await getServerSession(authOptions);
-    if (session?.user && (session.user as any).role === UserRole.ADMIN) {
-      return { authorized: true };
-    }
+    await verifyAdminSession();
+    return { authorized: true };
   } catch (err: any) {
-    // Session lookup failed
+    // Session lookup or DB admin role verification failed
   }
 
   return { authorized: false, reason: "Authentication required. Valid CRON_SECRET or Admin role required." };

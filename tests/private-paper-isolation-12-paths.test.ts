@@ -36,7 +36,13 @@ import { addPaperToCollection } from "../src/lib/library/collections-service";
 import { getUserLibraryItems, uploadUserPrivateDocument } from "../src/lib/library/user-library-service";
 import { mapReferenceToCslJson } from "../src/lib/citations/csl/csl-mapper";
 import { formatBibliographicCitation } from "../src/lib/citations/citation-formatter";
+import { getDocumentRevision, exportDocumentRevision } from "../src/lib/editor/revision-service";
 import { GET as pdfRouteGet } from "../src/app/api/papers/[id]/pdf/route";
+import { GET as scholarToolsListGet } from "../src/app/api/scholar/tools/route";
+import { POST as scholarToolExecutePost } from "../src/app/api/scholar/tools/[toolName]/route";
+import { GET as cslSyncGet, POST as cslSyncPost } from "../src/app/api/citations/sync/route";
+import { GET as editorPdfExportGet } from "../src/app/api/editor/[id]/pdf/route";
+import { GET as editorRevisionExportGet } from "../src/app/api/editor/[id]/revisions/[revisionId]/export/route";
 import { NextRequest } from "next/server";
 
 async function runIsolationSuite() {
@@ -856,6 +862,162 @@ async function runIsolationSuite() {
     assert(
       setPrismaAnon.has(publicPaper.id) && !setPrismaAnon.has(privatePaperA.id) && !setPrismaAnon.has(privatePaperB.id),
       "Parity Anonymous: Anonymous visitor sees ONLY public paper"
+    );
+
+    // ========================================================================
+    // SECTION 5: SCHOLAR TOOLS, CSL SYNC & EDITOR EXPORT ROUTE ISOLATION
+    // ========================================================================
+    console.log("\n--- SECTION 5: Scholar Tools, CSL Sync & Editor Export Route Isolation ---");
+
+    // 5a: /api/scholar/tools & /api/scholar/tools/[toolName] reject unauthenticated calls (401)
+    const scholarListRes = await scholarToolsListGet();
+    assert(
+      scholarListRes.status === 401,
+      `Route 5a.1 (/api/scholar/tools): Unauthenticated GET returns 401 (got ${scholarListRes.status})`
+    );
+
+    const scholarExecReq = new NextRequest("http://localhost:3000/api/scholar/tools/search_papers", {
+      method: "POST",
+      body: JSON.stringify({ query: DISTINCTIVE_SECRET }),
+      headers: { "content-type": "application/json" },
+    });
+    const scholarExecRes = await scholarToolExecutePost(scholarExecReq, {
+      params: { toolName: "search_papers" },
+    });
+    assert(
+      scholarExecRes.status === 401,
+      `Route 5a.2 (/api/scholar/tools/[toolName]): Unauthenticated POST returns 401 (got ${scholarExecRes.status})`
+    );
+
+    // 5b: /api/citations/sync rejects unauthenticated calls (401)
+    const syncGetReq = new NextRequest("http://localhost:3000/api/citations/sync", { method: "GET" });
+    const syncGetRes = await cslSyncGet(syncGetReq);
+    assert(
+      syncGetRes.status === 401,
+      `Route 5b.1 (/api/citations/sync GET): Unauthenticated GET returns 401 (got ${syncGetRes.status})`
+    );
+    const syncPostReq = new NextRequest("http://localhost:3000/api/citations/sync", { method: "POST" });
+    const syncPostRes = await cslSyncPost(syncPostReq);
+    assert(
+      syncPostRes.status === 401,
+      `Route 5b.2 (/api/citations/sync POST): Unauthenticated POST returns 401 (got ${syncPostRes.status})`
+    );
+
+    // 5c: /api/editor/[id]/pdf & /api/editor/[id]/revisions/[revisionId]/export reject unauthenticated calls (401)
+    const editorPdfReq = new NextRequest(`http://localhost:3000/api/editor/${userBDoc.id}/pdf`, {
+      method: "GET",
+    });
+    const editorPdfRes = await editorPdfExportGet(editorPdfReq, {
+      params: { id: userBDoc.id },
+    });
+    assert(
+      editorPdfRes.status === 401,
+      `Route 5c.1 (/api/editor/[id]/pdf): Unauthenticated GET returns 401 (got ${editorPdfRes.status})`
+    );
+
+    // Create a revision on userADoc containing a tampered citation/linkedPaper referencing User B's private paper
+    const tamperedRevision = await prisma.documentRevision.create({
+      data: {
+        documentId: userADoc.id,
+        version: 1,
+        title: "User A Clinical Report v1",
+        docType: "DRAFT",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "Clinical report body text." }],
+            },
+          ],
+        },
+        textContent: "Clinical report body text.",
+        wordCount: 4,
+        charCount: 26,
+        cslStyleId: "apa",
+        citations: [
+          {
+            id: "tampered-cite-1",
+            paperId: privatePaperB.id,
+            citationText: `(${DISTINCTIVE_SECRET}, 2026)`,
+            paper: {
+              id: privatePaperB.id,
+              title: privatePaperB.title,
+              doi: sharedDoi,
+            },
+            chunk: {
+              id: "tampered-chunk-b",
+              text: DISTINCTIVE_SECRET,
+            },
+          },
+        ],
+        linkedPapers: [
+          {
+            id: "tampered-lp-1",
+            paperId: privatePaperB.id,
+            paper: {
+              id: privatePaperB.id,
+              title: privatePaperB.title,
+              doi: sharedDoi,
+            },
+          },
+        ],
+      },
+    });
+
+    const revExportReq = new NextRequest(
+      `http://localhost:3000/api/editor/${userADoc.id}/revisions/${tamperedRevision.id}/export?format=markdown`,
+      { method: "GET" }
+    );
+    const revExportRes = await editorRevisionExportGet(revExportReq, {
+      params: { id: userADoc.id, revisionId: tamperedRevision.id },
+    });
+    assert(
+      revExportRes.status === 401,
+      `Route 5c.2 (/api/editor/[id]/revisions/[revisionId]/export): Unauthenticated GET returns 401 (got ${revExportRes.status})`
+    );
+
+    // 5d: Cross-user document & revision export rejection + private paper scrubbing on export
+    let crossUserPdfBlocked = false;
+    try {
+      await exportResearchDocument(userA.id, userBDoc.id, "pdf");
+    } catch {
+      crossUserPdfBlocked = true;
+    }
+    assert(
+      crossUserPdfBlocked,
+      "Route 5d.1 (/api/editor/[id]/pdf service): User A cannot export User B's document as PDF"
+    );
+
+    const userAPdfExport = await exportResearchDocument(userA.id, userADoc.id, "pdf");
+    const userAJsonExport = await exportResearchDocument(userA.id, userADoc.id, "json");
+    assert(
+      userAPdfExport.citationCount === 0 &&
+        userAPdfExport.sourceCount === 0 &&
+        !userAJsonExport.content.includes(DISTINCTIVE_SECRET) &&
+        !userAJsonExport.content.includes(privatePaperB.id),
+      "Route 5d.2 (/api/editor/[id]/pdf & json): Live document export strips forged private paper citations from PDF and JSON"
+    );
+
+    const sanitizedRevPreview = await getDocumentRevision(userA.id, userADoc.id, tamperedRevision.id);
+    assert(
+      Array.isArray(sanitizedRevPreview.citations) &&
+        sanitizedRevPreview.citations.length === 0 &&
+        Array.isArray(sanitizedRevPreview.linkedPapers) &&
+        sanitizedRevPreview.linkedPapers.length === 0,
+      "Route 5d.3 (getDocumentRevision): Revision preview strips tampered references to User B's private paper via DB visibility check"
+    );
+
+    const revExportMd = await exportDocumentRevision(userA.id, userADoc.id, tamperedRevision.id, "markdown");
+    const revExportJson = await exportDocumentRevision(userA.id, userADoc.id, tamperedRevision.id, "json");
+    const revExportPdf = await exportDocumentRevision(userA.id, userADoc.id, tamperedRevision.id, "pdf");
+    assert(
+      !revExportMd.content.includes(DISTINCTIVE_SECRET) &&
+        !revExportJson.content.includes(DISTINCTIVE_SECRET) &&
+        !revExportJson.content.includes(privatePaperB.id) &&
+        revExportPdf.citationCount === 0 &&
+        revExportPdf.sourceCount === 0,
+      "Route 5d.4 (/api/editor/[id]/revisions/[revisionId]/export service): Revision exports (MD, JSON, PDF) never leak User B's private paper or chunk"
     );
 
   } finally {
