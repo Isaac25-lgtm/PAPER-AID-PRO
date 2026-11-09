@@ -16,8 +16,14 @@
  */
 
 import "./test-setup";
-import { PrismaClient } from "../prisma/generated-client";
+import { createRequire } from "module";
 import { TableEvidenceOrchestrator } from "../src/lib/tables/table-orchestrator";
+
+const localRequire = createRequire(import.meta.url);
+function loadTableProposalPrismaClient(): any {
+  const mod = localRequire("../prisma/generated-client");
+  return mod.PrismaClient;
+}
 import { PrismaTableRepository } from "../src/lib/tables/prisma-table-repository";
 import { verifyCellEvidence, TableGeometryLayout, NativeTextItem } from "../src/lib/tables/cell-verifier";
 import { isScientificNumericalMeasurement } from "../src/lib/tables/types";
@@ -144,6 +150,7 @@ async function runBenchmarkValidation() {
     process.exit(1);
   }
 
+  const PrismaClient = loadTableProposalPrismaClient();
   const prisma = new PrismaClient({ datasources: { db: { url: LOCAL_DB_URL } } });
   const repo = new PrismaTableRepository(prisma as any);
   const orchestrator = new TableEvidenceOrchestrator(repo);
@@ -224,7 +231,7 @@ async function runBenchmarkValidation() {
 
   // Verify explicit hierarchical header paths
   const carEasyCell = ppCells.find(
-    (c) =>
+    (c: any) =>
       c.modelOrMethod === "PointPillars" &&
       Array.isArray(c.headerPath) &&
       (c.headerPath as string[]).join(" > ") === "Car > Easy"
@@ -236,7 +243,7 @@ async function runBenchmarkValidation() {
   );
 
   const carModCell = ppCells.find(
-    (c) =>
+    (c: any) =>
       c.modelOrMethod === "PointPillars" &&
       Array.isArray(c.headerPath) &&
       (c.headerPath as string[]).join(" > ") === "Car > Mod."
@@ -248,7 +255,7 @@ async function runBenchmarkValidation() {
   );
 
   const carHardCell = ppCells.find(
-    (c) =>
+    (c: any) =>
       c.modelOrMethod === "PointPillars" &&
       Array.isArray(c.headerPath) &&
       (c.headerPath as string[]).join(" > ") === "Car > Hard"
@@ -260,10 +267,10 @@ async function runBenchmarkValidation() {
   );
 
   const speedCell = ppCells.find(
-    (c) =>
+    (c: any) =>
       c.modelOrMethod === "PointPillars" &&
       Array.isArray(c.headerPath) &&
-      (c.headerPath as string[]).some((h) => h.includes("Speed") || h.includes("(Hz)"))
+      (c.headerPath as string[]).some((h: string) => h.includes("Speed") || h.includes("(Hz)"))
   );
   assert(
     !!speedCell && speedCell.normalizedNumericValue === 62,
@@ -271,8 +278,8 @@ async function runBenchmarkValidation() {
     `PointPillars Speed cell path includes Speed/(Hz) with exact value 62 (Found ${speedCell?.normalizedNumericValue})`
   );
 
-  const ppVerified = ppCells.filter((c) => c.verificationStatus === "VERIFIED");
-  const ppNumericVerified = ppVerified.filter((c) =>
+  const ppVerified = ppCells.filter((c: any) => c.verificationStatus === "VERIFIED");
+  const ppNumericVerified = ppVerified.filter((c: any) =>
     isScientificNumericalMeasurement({
       rawPrintedValue: c.rawPrintedValue,
       normalizedNumericValue: c.normalizedNumericValue,
@@ -295,7 +302,7 @@ async function runBenchmarkValidation() {
     `PointPillars verified exactly 75/75 reference numerical measurements (100% recall)`
   );
 
-  const ppModalityCells = ppVerified.filter((c) =>
+  const ppModalityCells = ppVerified.filter((c: any) =>
     ["Lidar", "Lidar & Img.", "Lidar & Map"].includes(c.rawPrintedValue)
   );
   assert(
@@ -304,7 +311,7 @@ async function runBenchmarkValidation() {
     `PointPillars verified exactly 10 categorical modality cells (Found ${ppModalityCells.length})`
   );
 
-  const ppNaCells = ppVerified.filter((c) => c.rawPrintedValue === "N/A" || c.rawPrintedValue === "-");
+  const ppNaCells = ppVerified.filter((c: any) => c.rawPrintedValue === "N/A" || c.rawPrintedValue === "-");
   assert(
     ppNaCells.length === 35,
     "PP_NA_CELLS_35",

@@ -2,16 +2,20 @@
   "name": "ai-research-hub",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "node scripts/start-dev-isolated.cjs",
     "dev:unwrapped": "next dev",
-    "postinstall": "prisma generate && prisma generate --schema prisma/schema.table-proposal.prisma",
+    "postinstall": "prisma generate",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "test": "npx tsx tests/test-runner.ts",
-    "db:generate": "prisma generate && prisma generate --schema prisma/schema.table-proposal.prisma",
+    "db:generate": "prisma generate",
+    "db:generate:table-proposal": "prisma generate --schema prisma/schema.table-proposal.prisma",
     "db:migrate": "node scripts/safe-migrate.cjs dev",
     "db:deploy": "node scripts/safe-migrate.cjs deploy",
     "db:status": "node scripts/safe-migrate.cjs status",
