@@ -16,6 +16,7 @@ import {
 import { acquireAndIngestLawfulFullText } from "@/lib/discovery/full-text-service";
 import { addPaperToCollection } from "./collections-service";
 import { revalidatePath } from "next/cache";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 
 export type IdentifierType = "DOI" | "PMID" | "ARXIV" | "UNKNOWN";
 
@@ -151,14 +152,19 @@ export async function lookupPaperByIdentifier(
     };
   }
 
-  // 1. Check local database
+  // 1. Check local database (strictly public scholarly catalog papers only; private user documents never occupy DOI/PMID/arXiv columns)
   const existingPaper = await prisma.paper.findFirst({
     where: {
-      OR: [
-        classified.type === "DOI" ? { doi: classified.normalizedValue } : {},
-        classified.type === "PMID" ? { pmid: classified.normalizedValue } : {},
-        classified.type === "ARXIV" ? { arxivId: classified.normalizedValue } : {},
-      ].filter((obj) => Object.keys(obj).length > 0),
+      AND: [
+        paperVisibilityFilter(null),
+        {
+          OR: [
+            classified.type === "DOI" ? { doi: classified.normalizedValue } : {},
+            classified.type === "PMID" ? { pmid: classified.normalizedValue } : {},
+            classified.type === "ARXIV" ? { arxivId: classified.normalizedValue } : {},
+          ].filter((obj) => Object.keys(obj).length > 0),
+        },
+      ],
     },
     include: {
       authors: { include: { author: true }, orderBy: { orderIndex: "asc" } },
@@ -780,10 +786,13 @@ export async function discoverAndProcessPaperOpenAccess(
     };
   }
 
-  if (!paper.doi) {
-    if (paper.arxivId) {
-      const prov = (paper.sourceProvenance as any) || {};
-      const arxivUrl = `https://arxiv.org/pdf/${paper.arxivId}.pdf`;
+  const prov = (paper.sourceProvenance as any) || {};
+  const effectiveDoi = paper.doi || prov.canonicalDoi || null;
+  const effectiveArxivId = paper.arxivId || prov.canonicalArxivId || null;
+
+  if (!effectiveDoi) {
+    if (effectiveArxivId) {
+      const arxivUrl = `https://arxiv.org/pdf/${effectiveArxivId}.pdf`;
       const acq = await acquireAndIngestLawfulFullText(paper.id, arxivUrl, {
         license: prov.license || prov.canonicalLicense || null,
         version: "submittedVersion",
@@ -823,7 +832,7 @@ export async function discoverAndProcessPaperOpenAccess(
   }
 
   // Execute open-access discovery
-  const discovery = await discoverOpenAccessForDoi(paper.doi, { forceRefresh: true });
+  const discovery = await discoverOpenAccessForDoi(effectiveDoi, { forceRefresh: true });
 
   if (!discovery.isFound || !discovery.bestLocation) {
     return {

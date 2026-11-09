@@ -367,6 +367,7 @@ async function runAcceptanceTests() {
       queryVector: mockQueryVector,
       chunksPerPaper: 5,
       maxTotalChunks: 20,
+      userId: TEST_OWNER_A,
     }
   );
 

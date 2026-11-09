@@ -138,6 +138,7 @@ export interface SerializedLinkedPaperSnapshot {
     arxivId?: string | null;
     journal?: string | null;
     publicationDate?: string | null;
+    sourceProvenance?: any;
     authors?: Array<{
       orderIndex?: number;
       name: string;
@@ -233,9 +234,9 @@ export function serializeCitationsForSnapshot(citations: any[] = []): Serialized
       ? {
           id: c.paper.id,
           title: c.paper.title,
-          doi: c.paper.doi || null,
-          arxivId: c.paper.arxivId || null,
-          journal: c.paper.journal || null,
+          doi: c.paper.doi || (c.paper.sourceProvenance as any)?.canonicalDoi || null,
+          arxivId: c.paper.arxivId || (c.paper.sourceProvenance as any)?.canonicalArxivId || null,
+          journal: c.paper.journal || (c.paper.sourceProvenance as any)?.canonicalJournal || null,
           publicationDate: c.paper.publicationDate
             ? new Date(c.paper.publicationDate).toISOString()
             : null,
@@ -279,12 +280,13 @@ export function serializeLinkedPapersForSnapshot(linkedPapers: any[] = []): Seri
       ? {
           id: lp.paper.id,
           title: lp.paper.title,
-          doi: lp.paper.doi || null,
-          arxivId: lp.paper.arxivId || null,
-          journal: lp.paper.journal || null,
+          doi: lp.paper.doi || (lp.paper.sourceProvenance as any)?.canonicalDoi || null,
+          arxivId: lp.paper.arxivId || (lp.paper.sourceProvenance as any)?.canonicalArxivId || null,
+          journal: lp.paper.journal || (lp.paper.sourceProvenance as any)?.canonicalJournal || null,
           publicationDate: lp.paper.publicationDate
             ? new Date(lp.paper.publicationDate).toISOString()
             : null,
+          sourceProvenance: lp.paper.sourceProvenance || null,
           authors: Array.isArray(lp.paper.authors)
             ? lp.paper.authors.map((pa: any) => ({
                 orderIndex: pa.orderIndex ?? 0,

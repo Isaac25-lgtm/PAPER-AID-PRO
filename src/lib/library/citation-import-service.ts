@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { normalizeDoi } from "@/lib/identifiers";
 import { classifyPaper } from "@/lib/auth/paper-authorization";
+import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
 import { addPaperToCollection } from "./collections-service";
 import { revalidatePath } from "next/cache";
 
@@ -231,20 +232,20 @@ export async function previewReferenceImport(
 
   const existingPapers = doisToCheck.length > 0
     ? await prisma.paper.findMany({
-        where: { doi: { in: doisToCheck } },
+        where: {
+          AND: [
+            paperVisibilityFilter(null),
+            { doi: { in: doisToCheck } },
+          ],
+        },
         select: { id: true, doi: true, title: true, sourceProvenance: true },
       })
     : [];
 
   const existingDoiMap = new Map<string, string>();
   for (const p of existingPapers) {
-    const cls = classifyPaper(p);
-    if (cls === "PRIVATE_USER_DOCUMENT") {
-      const prov = p.sourceProvenance as any;
-      const ownerId = prov?.uploadedByUserId || prov?.ownerId || (p as any).uploadedByUserId;
-      if (ownerId !== userId) {
-        continue; // Never match another researcher's private document
-      }
+    if (classifyPaper(p) === "PRIVATE_USER_DOCUMENT") {
+      continue;
     }
     if (p.doi) existingDoiMap.set(p.doi.toLowerCase(), p.id);
   }

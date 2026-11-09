@@ -26,12 +26,16 @@ import {
   createResearchDocument,
   getResearchDocument,
   exportResearchDocument,
+  insertDocumentCitation,
 } from "../src/lib/editor/document-service";
 import { authorizePaperAccess, ADMIN_TEST_FIXTURE_IDS } from "../src/lib/auth/paper-authorization";
 import { paperVisibilityFilter, paperVisibilitySql } from "../src/lib/auth/paper-visibility";
 import { matchPapersAgainstLocalLibrary } from "../src/lib/discovery/library-matcher";
+import { executePaperMetadataImport } from "../src/lib/discovery/import-service";
 import { addPaperToCollection } from "../src/lib/library/collections-service";
-import { getUserLibraryItems } from "../src/lib/library/user-library-service";
+import { getUserLibraryItems, uploadUserPrivateDocument } from "../src/lib/library/user-library-service";
+import { mapReferenceToCslJson } from "../src/lib/citations/csl/csl-mapper";
+import { formatBibliographicCitation } from "../src/lib/citations/citation-formatter";
 import { GET as pdfRouteGet } from "../src/app/api/papers/[id]/pdf/route";
 import { NextRequest } from "next/server";
 
@@ -177,6 +181,8 @@ async function runIsolationSuite() {
       },
     },
   });
+
+  const createdExtraPaperIds: string[] = [];
 
   try {
     // ========================================================================
@@ -489,6 +495,130 @@ async function runIsolationSuite() {
       "Path 3a.2: matchPapersAgainstLocalLibrary allows User B to match their own private paper (inLibrary: true)"
     );
 
+    // Path 3b: Import Idempotency, Non-Unique Private DOI (canonicalDoi), & Byte-for-Byte Unchanged Guarantee
+    const sharedDoi = `10.1038/s41586-026-${timestamp}`;
+    const validPdfBuffer = Buffer.from("%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF", "utf-8");
+    const uploadedPrivateB = await uploadUserPrivateDocument({
+      userId: userB.id,
+      fileBuffer: validPdfBuffer,
+      filename: `user-b-private-${timestamp}.pdf`,
+      metadata: {
+        title: `Preprint Draft of Genomic Trial ${timestamp}`,
+        authors: `Dr. User B ${timestamp}`,
+        doi: sharedDoi,
+        journal: "Journal of Genomic Medicine",
+        year: 2026,
+        documentType: "RESEARCH_ARTICLE",
+      },
+      autoProcess: false,
+    });
+    createdExtraPaperIds.push(uploadedPrivateB.paperId);
+
+    const beforeImportRecord = await prisma.paper.findUniqueOrThrow({
+      where: { id: uploadedPrivateB.paperId },
+    });
+    const beforeImportJson = JSON.stringify(beforeImportRecord);
+
+    assert(
+      beforeImportRecord.doi === null &&
+        (beforeImportRecord.sourceProvenance as any)?.canonicalDoi === sharedDoi,
+      "Path 3b.1 (2a): Private paper upload sets Paper.doi = null and stores DOI strictly in sourceProvenance.canonicalDoi"
+    );
+
+    // Wait 15ms so any accidental update would advance updatedAt
+    await new Promise((r) => setTimeout(r, 15));
+
+    // User A imports the exact same DOI and title via executePaperMetadataImport
+    const importByUserA = await executePaperMetadataImport(
+      {
+        id: `doi:${sharedDoi}`,
+        title: `Preprint Draft of Genomic Trial ${timestamp}`,
+        abstract: "Published abstract from Crossref.",
+        authors: [{ name: `Dr. User B ${timestamp}` }],
+        publicationDate: "2026-05-01",
+        year: 2026,
+        journal: "Journal of Genomic Medicine",
+        doi: sharedDoi,
+        sourceProviders: ["CROSSREF"],
+        isOpenAccess: false,
+        fullTextAvailability: "METADATA_ONLY",
+      },
+      userA.id,
+      { attemptFullTextFetch: false }
+    );
+    if (importByUserA.paperId) {
+      createdExtraPaperIds.push(importByUserA.paperId);
+    }
+
+    const afterImportRecord = await prisma.paper.findUniqueOrThrow({
+      where: { id: uploadedPrivateB.paperId },
+    });
+    const afterImportJson = JSON.stringify(afterImportRecord);
+
+    assert(
+      importByUserA.success === true &&
+        importByUserA.isExisting === false &&
+        Boolean(importByUserA.paperId) &&
+        importByUserA.paperId !== uploadedPrivateB.paperId,
+      "Path 3b.2 (2d): User A's import by DOI creates a separate public paper and never returns User B's private paper"
+    );
+
+    assert(
+      beforeImportJson === afterImportJson &&
+        beforeImportRecord.updatedAt.toISOString() === afterImportRecord.updatedAt.toISOString(),
+      "Path 3b.3 (2d): User B's private paper record (including updatedAt and sourceProvenance) is byte-for-byte unchanged after User A imports the same DOI"
+    );
+
+    // Path 3b (2c): Owner's citations, CSL rendering, and exports for private papers read canonicalDoi
+    const cslItemPrivateB = mapReferenceToCslJson({
+      id: afterImportRecord.id,
+      title: afterImportRecord.title,
+      authors: [`Dr. User B ${timestamp}`],
+      publicationDate: afterImportRecord.publicationDate,
+      journal: afterImportRecord.journal,
+      doi: afterImportRecord.doi, // null on column
+      sourceProvenance: afterImportRecord.sourceProvenance,
+    });
+    assert(
+      cslItemPrivateB.DOI === sharedDoi,
+      `Path 3b.4 (2c): mapReferenceToCslJson resolves canonicalDoi (${cslItemPrivateB.DOI}) when paper.doi is null`
+    );
+
+    const formattedApaPrivateB = formatBibliographicCitation(
+      {
+        title: afterImportRecord.title,
+        authors: [`Dr. User B ${timestamp}`],
+        year: 2026,
+        journal: afterImportRecord.journal,
+        doi: afterImportRecord.doi, // null on column
+        documentType: "RESEARCH_ARTICLE",
+        sourceProvenance: afterImportRecord.sourceProvenance,
+      },
+      "apa"
+    );
+    assert(
+      formattedApaPrivateB.text.includes(sharedDoi) && formattedApaPrivateB.hasExternalIdentifier === true,
+      "Path 3b.5 (2c): formatBibliographicCitation includes canonicalDoi for owner's private paper"
+    );
+
+    const userBDoc = await createResearchDocument(userB.id, {
+      title: `User B Manuscript Citing Own Private Paper ${timestamp}`,
+    });
+    await insertDocumentCitation(userB.id, userBDoc.id, {
+      paperId: afterImportRecord.id,
+      citationText: `(User B, 2026)`,
+    });
+    const userBExportMd = await exportResearchDocument(userB.id, userBDoc.id, "markdown");
+    const userBExportBib = await exportResearchDocument(userB.id, userBDoc.id, "bibtex");
+    const userBExportRis = await exportResearchDocument(userB.id, userBDoc.id, "ris");
+
+    assert(
+      userBExportMd.content.includes(sharedDoi) &&
+        userBExportBib.content.includes(sharedDoi) &&
+        userBExportRis.content.includes(sharedDoi),
+      "Path 3b.6 (2c): Owner's manuscript exports (Markdown, BibTeX, RIS) preserve canonicalDoi for cited private paper"
+    );
+
     // Path 3c: Collections & Bookmarks Isolation
     let collectionAddFailed = false;
     try {
@@ -735,6 +865,7 @@ async function runIsolationSuite() {
       privatePaperB.id,
       privatePaperA.id,
       incompleteProvenancePaper.id,
+      ...createdExtraPaperIds,
     ];
 
     await prisma.documentCitation.deleteMany({

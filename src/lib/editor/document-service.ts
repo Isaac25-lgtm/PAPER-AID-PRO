@@ -507,6 +507,7 @@ export async function updateResearchDocument(
                   doi: true,
                   journal: true,
                   publicationDate: true,
+                  sourceProvenance: true,
                 },
               },
             },
@@ -518,6 +519,7 @@ export async function updateResearchDocument(
                   id: true,
                   title: true,
                   doi: true,
+                  sourceProvenance: true,
                 },
               },
             },
@@ -725,6 +727,7 @@ export async function insertDocumentCitation(
               doi: true,
               journal: true,
               publicationDate: true,
+              sourceProvenance: true,
             },
           },
           chunk: {
@@ -1056,9 +1059,10 @@ export async function exportDocumentAst(
   let bibliographyEntries: string[] = [];
   if (citedPapers.length > 0) {
     const cslItems = citedPapers.map((p: any) => {
+      const rawDoi = p.doi || (p.sourceProvenance as any)?.canonicalDoi || null;
       const cleanPaper = {
         ...p,
-        doi: p.doi ? p.doi.replace(/\.test-[\w.-]+$/i, "") : p.doi,
+        doi: rawDoi ? String(rawDoi).replace(/\.test-[\w.-]+$/i, "") : rawDoi,
       };
       return mapReferenceToCslJson(cleanPaper);
     });
@@ -1167,9 +1171,10 @@ export async function exportDocumentAst(
     mimeType = "application/x-bibtex; charset=utf-8";
     ext = "bib";
     const cslItems = citedPapers.map((p: any) => {
+      const rawDoi = p.doi || (p.sourceProvenance as any)?.canonicalDoi || null;
       const cleanPaper = {
         ...p,
-        doi: p.doi ? p.doi.replace(/\.test-[\w.-]+$/i, "") : p.doi,
+        doi: rawDoi ? String(rawDoi).replace(/\.test-[\w.-]+$/i, "") : rawDoi,
       };
       return mapReferenceToCslJson(cleanPaper);
     });
@@ -1178,9 +1183,10 @@ export async function exportDocumentAst(
     mimeType = "application/x-research-info-systems; charset=utf-8";
     ext = "ris";
     const cslItems = citedPapers.map((p: any) => {
+      const rawDoi = p.doi || (p.sourceProvenance as any)?.canonicalDoi || null;
       const cleanPaper = {
         ...p,
-        doi: p.doi ? p.doi.replace(/\.test-[\w.-]+$/i, "") : p.doi,
+        doi: rawDoi ? String(rawDoi).replace(/\.test-[\w.-]+$/i, "") : rawDoi,
       };
       return mapReferenceToCslJson(cleanPaper);
     });

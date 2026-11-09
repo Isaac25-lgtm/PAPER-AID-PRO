@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { PaperProcessingStatus } from "@prisma/client";
 import { formatMetadataText } from "@/lib/utils";
 import { paperVisibilityFilter } from "@/lib/auth/paper-visibility";
+import { normalizeDoi } from "@/lib/identifiers";
 
 export const MAX_USER_PDF_SIZE_BYTES = 35 * 1024 * 1024; // 35 MB
 
@@ -39,6 +40,9 @@ export interface UserDocumentMetadata {
   researchCategory?: string;
   documentType?: UserDocumentType | string;
   description?: string;
+  doi?: string;
+  journal?: string;
+  year?: number | string;
 }
 
 export interface UserLibraryItem {
@@ -128,12 +132,24 @@ export async function uploadUserPrivateDocument(params: {
     metadata?.description?.trim() ||
     `Personal document (${metadata?.documentType || "general document"}) uploaded to My Library.`;
   const documentType = (metadata?.documentType as UserDocumentType) || "OTHER_DOCUMENT";
+  const canonicalDoi = normalizeDoi(metadata?.doi) || null;
+  const journal = metadata?.journal?.trim() || null;
+  const publicationDate = metadata?.year ? new Date(`${metadata.year}-01-01`) : null;
 
-  // 2. Create Paper record first to obtain canonical cuid ID
+  // 2. Create Paper record first to obtain canonical cuid ID.
+  // Private user documents NEVER occupy unique identifier columns (doi, arxivId, pmid, pmcid, semanticScholarId);
+  // any DOI is stored strictly in sourceProvenance.canonicalDoi.
   const paper = await prisma.paper.create({
     data: {
       title,
       abstract,
+      journal,
+      publicationDate: publicationDate && !isNaN(publicationDate.getTime()) ? publicationDate : null,
+      doi: null,
+      arxivId: null,
+      pmid: null,
+      pmcid: null,
+      semanticScholarId: null,
       status: "UPLOADED",
       isOpenAccess: false,
       sourceProvenance: {
@@ -147,6 +163,8 @@ export async function uploadUserPrivateDocument(params: {
         institution: metadata?.institution?.trim() || null,
         researchCategory: metadata?.researchCategory?.trim() || null,
         description: metadata?.description?.trim() || null,
+        canonicalDoi,
+        canonicalJournal: journal,
         uploadedAt: new Date().toISOString(),
       },
     },
@@ -327,6 +345,8 @@ export async function attachPdfToExistingPaper(params: {
       attachedByUserId: userId,
       ownerId: userId,
       isPrivate: true,
+      canonicalDoi: paper.doi || existingProv.canonicalDoi || null,
+      canonicalArxivId: paper.arxivId || existingProv.canonicalArxivId || null,
       attachedFilename: filename,
       attachedAt: new Date().toISOString(),
       hasUserSuppliedPdf: true,
@@ -335,6 +355,11 @@ export async function attachPdfToExistingPaper(params: {
     await prisma.paper.update({
       where: { id: paperId },
       data: {
+        doi: null,
+        arxivId: null,
+        pmid: null,
+        pmcid: null,
+        semanticScholarId: null,
         storagePath: targetStoragePath,
         status: "UPLOADED",
         sourceProvenance: updatedProv,
@@ -385,13 +410,21 @@ export async function attachPdfToExistingPaper(params: {
       );
       targetStoragePath = uploadResult.storagePath;
 
+      const cloneProv = (existingUserClone.sourceProvenance as Record<string, any>) || {};
       await prisma.paper.update({
         where: { id: targetPaperId },
         data: {
+          doi: null,
+          arxivId: null,
+          pmid: null,
+          pmcid: null,
+          semanticScholarId: null,
           storagePath: targetStoragePath,
           status: "UPLOADED",
           sourceProvenance: {
-            ...((existingUserClone.sourceProvenance as Record<string, any>) || {}),
+            ...cloneProv,
+            canonicalDoi: existingUserClone.doi || cloneProv.canonicalDoi || paper.doi || existingProv.canonicalDoi || null,
+            canonicalArxivId: existingUserClone.arxivId || cloneProv.canonicalArxivId || paper.arxivId || existingProv.canonicalArxivId || null,
             attachedFilename: filename,
             attachedAt: new Date().toISOString(),
             hasUserSuppliedPdf: true,
@@ -437,9 +470,9 @@ export async function attachPdfToExistingPaper(params: {
             attachedByUserId: userId,
             documentType: existingProv.documentType || "RESEARCH_ARTICLE",
             attachedToPublicPaperId: paper.id,
-            canonicalDoi: paper.doi || null,
-            canonicalArxivId: paper.arxivId || null,
-            canonicalJournal: paper.journal || null,
+            canonicalDoi: paper.doi || existingProv.canonicalDoi || null,
+            canonicalArxivId: paper.arxivId || existingProv.canonicalArxivId || null,
+            canonicalJournal: paper.journal || existingProv.canonicalJournal || null,
             attachedFilename: filename,
             attachedAt: new Date().toISOString(),
             hasUserSuppliedPdf: true,

@@ -113,69 +113,46 @@ export async function executePaperMetadataImport(
     cleanBibliographicField(rawProviderMeta.publisher) ??
     cleanBibliographicField(rawCr.publisher);
 
-  // 1. Idempotency Check: Does this paper already exist in the database?
-  let rawExisting = await prisma.paper.findFirst({
-    where: {
-      OR: [
-        ...(cleanDoi ? [{ doi: cleanDoi }] : []),
-        ...(cleanPmid ? [{ pmid: cleanPmid }] : []),
-        ...(cleanPmcid ? [{ pmcid: cleanPmcid }] : []),
-        ...(cleanArxiv ? [{ arxivId: cleanArxiv }] : []),
-        ...(cleanS2Id ? [{ semanticScholarId: cleanS2Id }] : []),
-      ],
-    },
-    include: {
-      authors: { include: { author: true } },
-    },
-  });
+  // 1. Idempotency Check: Does this public paper already exist in the database?
+  // Private user papers (clones and uploads) never occupy unique identifier columns (doi, pmid, pmcid, arxivId, semanticScholarId).
+  // We strictly match only public catalog papers and NEVER mutate another user's private paper record.
+  const idConditions = [
+    ...(cleanDoi ? [{ doi: cleanDoi }] : []),
+    ...(cleanPmid ? [{ pmid: cleanPmid }] : []),
+    ...(cleanPmcid ? [{ pmcid: cleanPmcid }] : []),
+    ...(cleanArxiv ? [{ arxivId: cleanArxiv }] : []),
+    ...(cleanS2Id ? [{ semanticScholarId: cleanS2Id }] : []),
+  ];
 
-  // Strict multi-tenant isolation: If rawExisting is a private document owned by ANOTHER user,
-  // User A must NEVER receive User B's record or ID.
-  let existing: typeof rawExisting = null;
-  if (rawExisting) {
-    const cls = classifyPaper(rawExisting);
-    if (cls === "PRIVATE_USER_DOCUMENT") {
-      const prov = rawExisting.sourceProvenance as any;
-      const ownerId = prov?.uploadedByUserId || prov?.ownerId || (rawExisting as any).uploadedByUserId;
-      if (ownerId === userId) {
-        existing = rawExisting;
-      } else {
-        // User B's private paper occupied the unique identifier.
-        // Migrate User B's private paper to store canonical identifiers in sourceProvenance to release the slot.
-        try {
-          await prisma.paper.update({
-            where: { id: rawExisting.id },
-            data: {
-              doi: null,
-              arxivId: null,
-              pmid: null,
-              pmcid: null,
-              semanticScholarId: null,
-              sourceProvenance: {
-                ...(prov || {}),
-                canonicalDoi: rawExisting.doi || prov?.canonicalDoi || null,
-                canonicalArxivId: rawExisting.arxivId || prov?.canonicalArxivId || null,
-                canonicalPmid: rawExisting.pmid || prov?.canonicalPmid || null,
+  const rawExisting =
+    idConditions.length > 0
+      ? await prisma.paper.findFirst({
+          where: {
+            AND: [
+              paperVisibilityFilter(null),
+              {
+                OR: idConditions,
               },
-            },
-          });
-        } catch (migErr) {
-          console.warn("[ImportService] Failed to migrate private paper unique identifier:", migErr);
-        }
-        existing = null;
-      }
-    } else {
-      existing = rawExisting;
-    }
-  }
+            ],
+          },
+          include: {
+            authors: { include: { author: true } },
+          },
+        })
+      : null;
 
-  // Fallback title check if identifiers do not conflict
+  let existing: typeof rawExisting =
+    rawExisting && classifyPaper(rawExisting) !== "PRIVATE_USER_DOCUMENT"
+      ? rawExisting
+      : null;
+
+  // Fallback title check if identifiers do not conflict (strictly against public papers only)
   if (!existing && externalPaper.title) {
     const normSearchTitle = conservativeNormalizeTitle(externalPaper.title);
     if (normSearchTitle.length >= 20) {
       const candidates = await prisma.paper.findMany({
         where: {
-          ...paperVisibilityFilter(userId),
+          ...paperVisibilityFilter(null),
         },
         select: {
           id: true,
@@ -187,9 +164,13 @@ export async function executePaperMetadataImport(
           pmcid: true,
           arxivId: true,
           semanticScholarId: true,
+          sourceProvenance: true,
         },
       });
       for (const cand of candidates) {
+        if (classifyPaper(cand) === "PRIVATE_USER_DOCUMENT") {
+          continue;
+        }
         const hasIdentifierConflict =
           (cleanDoi && cand.doi && normalizeDoi(cand.doi) !== cleanDoi) ||
           (cleanPmid && cand.pmid && normalizePmid(cand.pmid) !== cleanPmid) ||

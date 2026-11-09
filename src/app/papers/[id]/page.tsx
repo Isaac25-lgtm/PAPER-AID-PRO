@@ -178,7 +178,7 @@ export default async function PaperDetailPage({
     (prov?.externalUrl && typeof prov.externalUrl === "string" && prov.externalUrl.startsWith("http")
       ? prov.externalUrl
       : null) ||
-    (paper.doi ? `https://doi.org/${paper.doi}` : null);
+    (paper.doi || prov?.canonicalDoi ? `https://doi.org/${paper.doi || prov?.canonicalDoi}` : null);
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-10 space-y-8">
@@ -250,18 +250,18 @@ export default async function PaperDetailPage({
           {/* Journal & DOI metadata */}
           <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 pt-1">
             <span className="font-semibold text-slate-800 italic">
-              {formatMetadataText(paper.journal) || "Research Manuscript"}
+              {formatMetadataText(paper.journal || prov?.canonicalJournal) || "Research Manuscript"}
             </span>
-            {paper.doi && (
+            {(paper.doi || prov?.canonicalDoi) && (
               <>
                 <span className="text-slate-300">•</span>
-                <span className="font-mono text-slate-500">DOI: {paper.doi}</span>
+                <span className="font-mono text-slate-500">DOI: {paper.doi || prov?.canonicalDoi}</span>
               </>
             )}
-            {paper.arxivId && (
+            {(paper.arxivId || prov?.canonicalArxivId) && (
               <>
                 <span className="text-slate-300">•</span>
-                <span className="font-mono text-slate-500">arXiv: {paper.arxivId}</span>
+                <span className="font-mono text-slate-500">arXiv: {paper.arxivId || prov?.canonicalArxivId}</span>
               </>
             )}
             {paper.pmid && (
@@ -408,8 +408,8 @@ export default async function PaperDetailPage({
           <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-amber-200/60">
             <OpenAccessDiscoveryButton
               paperId={paper.id}
-              hasDoi={Boolean(paper.doi)}
-              doi={paper.doi}
+              hasDoi={Boolean(paper.doi || prov?.canonicalDoi)}
+              doi={paper.doi || prov?.canonicalDoi || null}
               currentStatus={paper.status}
               externalPdfUrl={paper.pdfUrl}
             />

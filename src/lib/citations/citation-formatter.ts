@@ -28,6 +28,7 @@ export interface BibliographicCitationInput {
   documentType?: string | null;
   institution?: string | null;
   isUnpublished?: boolean;
+  sourceProvenance?: any;
 }
 
 export interface FormattedCitationResult {
@@ -143,14 +144,18 @@ export function formatBibliographicCitation(
     title,
     authors,
     year,
-    journal,
-    volume,
-    issue,
-    pages,
-    doi,
+    doi: rawInputDoi,
     documentType,
     institution,
+    sourceProvenance,
   } = input;
+
+  const prov = (sourceProvenance as any) || {};
+  const doi = rawInputDoi || prov.canonicalDoi || prov.originalIdentifiers?.doi || null;
+  const journal = input.journal || prov.canonicalJournal || null;
+  const volume = input.volume || prov.volume || null;
+  const issue = input.issue || prov.issue || null;
+  const pages = input.pages || prov.pages || prov.pageRange || null;
 
   const isUnpublished =
     input.isUnpublished === true ||

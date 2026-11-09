@@ -1,6 +1,7 @@
 "use server";
 
 import { verifyAdminSession } from "@/lib/auth/admin-guard";
+import { classifyPaper } from "@/lib/auth/paper-authorization";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { uploadPaperPdf, deletePaperPdf } from "@/lib/storage";
@@ -339,8 +340,18 @@ export async function updatePaper(
     const citationCount = citationCountStr ? parseInt(citationCountStr, 10) || 0 : 0;
     const publicationDate = pubDateStr ? new Date(pubDateStr) : new Date();
 
-    // Check for unique DOI collisions (excluding this paper)
-    if (doi) {
+    const currentTarget = await prisma.paper.findUnique({
+      where: { id: paperId },
+      select: { id: true, doi: true, arxivId: true, sourceProvenance: true },
+    });
+    if (!currentTarget) {
+      return { success: false, error: "Paper not found." };
+    }
+    const isPrivateDoc = classifyPaper(currentTarget) === "PRIVATE_USER_DOCUMENT";
+    const currentProv = (currentTarget.sourceProvenance as Record<string, any>) || {};
+
+    // Check for unique DOI collisions (excluding this paper) only for public papers
+    if (!isPrivateDoc && doi) {
       const existing = await prisma.paper.findFirst({
         where: {
           doi,
@@ -352,8 +363,8 @@ export async function updatePaper(
       }
     }
 
-    // Check for unique arXiv ID collisions (excluding this paper)
-    if (arxivId) {
+    // Check for unique arXiv ID collisions (excluding this paper) only for public papers
+    if (!isPrivateDoc && arxivId) {
       const existingArxiv = await prisma.paper.findFirst({
         where: {
           arxivId,
@@ -373,8 +384,18 @@ export async function updatePaper(
           title,
           abstract,
           journal,
-          doi,
-          arxivId,
+          doi: isPrivateDoc ? null : doi,
+          arxivId: isPrivateDoc ? null : arxivId,
+          ...(isPrivateDoc
+            ? {
+                sourceProvenance: {
+                  ...currentProv,
+                  canonicalDoi: doi ?? currentProv.canonicalDoi ?? null,
+                  canonicalArxivId: arxivId ?? currentProv.canonicalArxivId ?? null,
+                  canonicalJournal: journal ?? currentProv.canonicalJournal ?? null,
+                },
+              }
+            : {}),
           publicationDate,
           pdfUrl,
           citationCount,
