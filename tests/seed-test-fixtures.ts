@@ -231,35 +231,25 @@ export async function seedDevFixtures(prismaClient?: PrismaClient) {
       }
     }
 
-    // Upsert PaperChunks
-    for (const c of p.chunks || []) {
-      await prisma.paperChunk.upsert({
-        where: { id: c.id },
-        update: {
-          chunkIndex: c.chunkIndex,
-          section: c.section,
-          pageNumber: c.pageNumber,
-          text: c.text,
-          metadata: c.metadata,
-          tokenCount: c.tokenCount,
-          embeddingModel: c.embeddingModel,
-          embeddingDimensions: c.embeddingDimensions,
-          embeddingInputHash: c.embeddingInputHash,
-        },
-        create: {
-          id: c.id,
-          paperId: p.id,
-          chunkIndex: c.chunkIndex,
-          section: c.section,
-          pageNumber: c.pageNumber,
-          text: c.text,
-          metadata: c.metadata,
-          tokenCount: c.tokenCount,
-          embeddingModel: c.embeddingModel,
-          embeddingDimensions: c.embeddingDimensions,
-          embeddingInputHash: c.embeddingInputHash,
-        },
-      });
+    // Seed PaperChunks idempotently
+    if (p.chunks && p.chunks.length > 0) {
+      await prisma.paperChunk.deleteMany({ where: { paperId: p.id } });
+      for (const c of p.chunks) {
+        await prisma.paperChunk.create({
+          data: {
+            id: c.id,
+            paperId: p.id,
+            chunkIndex: c.chunkIndex,
+            section: c.section,
+            pageNumber: c.pageNumber,
+            text: c.text,
+            metadata: c.metadata,
+            tokenCount: c.tokenCount,
+            embeddingModel: c.embeddingModel,
+            embeddingDimensions: c.embeddingDimensions,
+            embeddingInputHash: c.embeddingInputHash,
+          },
+        });
 
       // Generate deterministic token-aware pgvector embeddings for search acceptance fixtures
       if (
@@ -280,6 +270,7 @@ export async function seedDevFixtures(prismaClient?: PrismaClient) {
         );
       }
     }
+  }
 
     // Upsert ProcessingJobs
     for (const pj of p.processingJobs || []) {
