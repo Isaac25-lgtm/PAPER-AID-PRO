@@ -25,6 +25,7 @@ import { GET as pdfRouteHandler } from "@/app/api/papers/[id]/pdf/route";
 import { prisma } from "@/lib/prisma";
 import { ADMIN_TEST_FIXTURE_IDS } from "@/lib/auth/paper-authorization";
 import { downloadPaperPdf, setStorageClientOverride } from "@/lib/storage";
+import { disableMockStorage, enableMockStorage } from "@/lib/test-guard";
 
 function assert(condition: boolean, testId: string, message: string) {
   if (!condition) {
@@ -131,9 +132,9 @@ async function runStoragePrivacyReadinessTests() {
   );
 
   // 2C: Fail-closed verification without SUPABASE_SECRET_KEY
-  // When secret key is absent, downloadPaperPdf must throw server configuration error
+  // When secret key is absent and mock storage is disabled, downloadPaperPdf must throw server configuration error
   let failClosedThrew = false;
-  setStorageClientOverride(null);
+  disableMockStorage();
   try {
     await downloadPaperPdf(`${FIXTURE_ID}/original.pdf`);
   } catch (err: any) {
@@ -143,6 +144,8 @@ async function runStoragePrivacyReadinessTests() {
       "SEC_4C_06_FAIL_CLOSED_WITHOUT_KEY",
       `Storage operation fails closed with explicit error: "${err.message}"`
     );
+  } finally {
+    enableMockStorage();
   }
   assert(failClosedThrew, "SEC_4C_06B_FAIL_CLOSED_THREW", "downloadPaperPdf threw as expected when key is absent");
 

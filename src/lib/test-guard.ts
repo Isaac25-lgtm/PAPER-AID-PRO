@@ -122,6 +122,12 @@ export function enableMockStorage(): void {
   mockStorageInstalled = true;
 }
 
+export function disableMockStorage(): void {
+  setStorageClientOverride(null);
+  delete process.env.USE_MOCK_STORAGE;
+  mockStorageInstalled = false;
+}
+
 export function resetMockStorage(): void {
   mockStorageBuckets.clear();
 }
