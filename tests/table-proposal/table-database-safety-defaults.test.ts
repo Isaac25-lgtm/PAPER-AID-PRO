@@ -9,8 +9,8 @@
  * 4. Only explicit promotion after 100% evidence verification can transition a record to 'VERIFIED'.
  */
 
-import { VerificationStatus, TableCellEvidence } from "../src/lib/tables/types";
-import { verifyCellEvidence, TableGeometryLayout, NativeTextItem } from "../src/lib/tables/cell-verifier";
+import { VerificationStatus, TableCellEvidence } from "../../src/lib/tables/types";
+import { verifyCellEvidence, TableGeometryLayout, NativeTextItem } from "../../src/lib/tables/cell-verifier";
 
 interface MockPrismaTableCell {
   id: string;

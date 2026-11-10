@@ -19,6 +19,7 @@ enableMockStorage();
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { NextRequest } from "next/server";
 import { prisma } from "../src/lib/prisma";
 import { PrismaCslCatalogAdapter, CslCatalogManager } from "../src/lib/citations/csl/updater/catalog-storage";
 import { ManuscriptStylePolicy } from "../src/lib/citations/csl/updater/manuscript-policy";
@@ -404,7 +405,7 @@ describe("Phase 8B: Real PostgreSQL CSL Persistence Acceptance Suite", () => {
     assert.equal(isKnownIndexedStyleId("arbitrary-unindexed-style-9999"), false);
 
     // 3. Route handler returns 404 for both path traversal and arbitrary unindexed style IDs without fetching or caching
-    const reqDummy = new Request("http://localhost:3000/api/citations/styles/test");
+    const reqDummy = new NextRequest("http://localhost:3000/api/citations/styles/test");
     const traversalRes = await getCitationStyleRoute(reqDummy, { params: { id: "../etc/passwd" } });
     assert.equal(traversalRes.status, 404);
 

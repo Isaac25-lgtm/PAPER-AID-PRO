@@ -378,7 +378,7 @@ async function runEvidenceGroundingProvenanceSuite() {
   // User B tries to retrieve evidence from User A's private paper
   let unauthorizedThrown = false;
   try {
-    await retrievePaperEvidence(paperD.id, "What temperature was used?", {
+    await retrievePaperEvidence(paperD.id, "How were samples vitrified in liquid ethane?", {
       user: userB,
     });
   } catch (err: any) {
@@ -388,7 +388,7 @@ async function runEvidenceGroundingProvenanceSuite() {
   assert.strictEqual(unauthorizedThrown, true, "User B must be denied access to User A's private document");
 
   // User A (owner) is permitted
-  const ownerEvidence = await retrievePaperEvidence(paperD.id, "What temperature was used?", {
+  const ownerEvidence = await retrievePaperEvidence(paperD.id, "How were samples vitrified in liquid ethane?", {
     user: userA,
   });
   assert.strictEqual(ownerEvidence.evidenceChunks.length, 1, "Owner must be permitted to query own document");

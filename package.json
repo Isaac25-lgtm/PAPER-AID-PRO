@@ -14,6 +14,8 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "test": "npx tsx tests/test-runner.ts",
+    "test:integration": "npx tsx tests/test-runner.ts --integration",
+    "test:proposal": "npx tsx tests/test-runner.ts --proposal",
     "db:generate": "prisma generate",
     "db:generate:table-proposal": "prisma generate --schema prisma/schema.table-proposal.prisma",
     "db:migrate": "node scripts/safe-migrate.cjs dev",
@@ -23,6 +25,7 @@
     "db:studio": "node scripts/safe-migrate.cjs studio",
     "db:run": "node scripts/run-isolated-db.cjs",
     "db:validate": "prisma validate",
+    "db:test:init": "npx tsx scripts/init-test-database.ts",
     "db:seed": "node scripts/run-isolated-db.cjs prisma/seed.js"
   },
   "prisma": {

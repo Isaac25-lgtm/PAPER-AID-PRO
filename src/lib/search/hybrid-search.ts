@@ -202,7 +202,7 @@ export async function searchPapersHybrid(
       where: {
         AND: [
           { id: { in: semanticOnlyIds } },
-          paperVisibilityFilter(options.userId, { role: options.role }),
+          paperVisibilityFilter(options.userId, { role: options.role, allowAdmin: !excludeFixtures }),
         ],
       },
       include: {
@@ -295,7 +295,7 @@ async function fetchLexicalCandidates(
 ): Promise<any[]> {
   const where: any = {
     AND: [
-      paperVisibilityFilter(userId, { role }),
+      paperVisibilityFilter(userId, { role, allowAdmin: !excludeFixtures }),
       {
         OR: [
           { title: { contains: query, mode: "insensitive" } },
@@ -318,7 +318,7 @@ async function fetchLexicalCandidates(
 
   if (excludeFixtures) {
     if (!userId) {
-      Object.assign(where, getPublicPaperWhereInput());
+      where.AND.push(getPublicPaperWhereInput());
     } else {
       where.id = { notIn: Array.from(ADMIN_TEST_FIXTURE_IDS) };
     }
@@ -398,7 +398,7 @@ async function fetchSemanticCandidates(
       WHERE c.embedding IS NOT NULL
         AND (c."embeddingModel" IS NULL OR c."embeddingModel" != 'mock-sha256')
         AND cat.slug = ${categorySlug}
-        AND ${paperVisibilitySql(userId, "p", { role })}
+        AND ${paperVisibilitySql(userId, "p", { role, allowAdmin: !excludeFixtures })}
       ORDER BY c.embedding <=> ${vectorString}::vector ASC
       LIMIT 50;
     `;
@@ -416,7 +416,7 @@ async function fetchSemanticCandidates(
       JOIN "papers" p ON c."paperId" = p.id
       WHERE c.embedding IS NOT NULL
         AND (c."embeddingModel" IS NULL OR c."embeddingModel" != 'mock-sha256')
-        AND ${paperVisibilitySql(userId, "p", { role })}
+        AND ${paperVisibilitySql(userId, "p", { role, allowAdmin: !excludeFixtures })}
       ORDER BY c.embedding <=> ${vectorString}::vector ASC
       LIMIT 50;
     `;

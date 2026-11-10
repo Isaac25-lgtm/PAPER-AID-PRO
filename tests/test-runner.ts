@@ -5,9 +5,11 @@
  * Preloads tests/test-setup.ts for server-only mocking, isolated database, and mock storage.
  */
 
+import "./test-setup";
 import * as fs from "fs";
 import * as path from "path";
 import { spawn } from "child_process";
+import { seedDevFixtures } from "./seed-test-fixtures";
 
 interface TestFileResult {
   file: string;
@@ -17,6 +19,16 @@ interface TestFileResult {
   stdout: string;
   stderr: string;
 }
+
+export const INTEGRATION_TEST_SUITES = new Set([
+  "citation-generator-workflow.test.ts",
+  "citation-validator.test.ts",
+  "cited-evidence.test.ts",
+  "deep-research-integrity-audit.test.ts",
+  "phase10-agent.test.ts",
+  "phase11.1-launch-gate.test.ts",
+  "open-access-doi-importer.test.ts",
+]);
 
 async function runSingleTest(filePath: string): Promise<TestFileResult> {
   const start = Date.now();
@@ -82,32 +94,70 @@ async function runSingleTest(filePath: string): Promise<TestFileResult> {
 }
 
 async function main() {
-  const testsDir = path.resolve(process.cwd(), "tests");
-  const args = process.argv.slice(2);
-  const filterArg = args[0] || "";
+  const rawArgs = process.argv.slice(2);
+  const isIntegration = rawArgs.includes("--integration");
+  const isProposal = rawArgs.includes("--proposal");
+  const filterArg = rawArgs.find((a) => !a.startsWith("--")) || "";
 
-  const allFiles = fs.readdirSync(testsDir)
-    .filter((f) => f.endsWith(".test.ts") || f.endsWith(".test.tsx"))
-    .filter((f) => !filterArg || f.includes(filterArg))
-    .sort();
+  // 1. Idempotently ensure dev fixtures are seeded in isolated test database
+  try {
+    await seedDevFixtures();
+    console.log("✔ Isolated dev fixtures ready.\n");
+  } catch (err: any) {
+    console.error("Warning: Fixture seeding failed:", err.message);
+  }
+
+  let testFiles: Array<{ name: string; fullPath: string }> = [];
+
+  if (isProposal) {
+    const proposalDir = path.resolve(process.cwd(), "tests", "table-proposal");
+    if (fs.existsSync(proposalDir)) {
+      testFiles = fs
+        .readdirSync(proposalDir)
+        .filter((f) => f.endsWith(".test.ts") || f.endsWith(".test.tsx"))
+        .filter((f) => !filterArg || f.includes(filterArg))
+        .map((f) => ({ name: f, fullPath: path.join(proposalDir, f) }));
+    }
+  } else {
+    const testsDir = path.resolve(process.cwd(), "tests");
+    testFiles = fs
+      .readdirSync(testsDir)
+      .filter((f) => f.endsWith(".test.ts") || f.endsWith(".test.tsx"))
+      .filter((f) => {
+        if (isIntegration) {
+          return INTEGRATION_TEST_SUITES.has(f);
+        } else {
+          return !INTEGRATION_TEST_SUITES.has(f);
+        }
+      })
+      .filter((f) => !filterArg || f.includes(filterArg))
+      .map((f) => ({ name: f, fullPath: path.join(testsDir, f) }));
+  }
+
+  testFiles.sort((a, b) => a.name.localeCompare(b.name));
+
+  const suiteMode = isIntegration
+    ? "INTEGRATION (LIVE APIS & KEYS)"
+    : isProposal
+    ? "TABLE PROPOSAL (PRISMA SCHEMA EXTENSION)"
+    : "UNIT & REGRESSION (ISOLATED DETERMINISTIC)";
 
   console.log("================================================================================");
-  console.log(` AI RESEARCH HUB — RUNNING ${allFiles.length} TEST SUITE(S)`);
+  console.log(` AI RESEARCH HUB — RUNNING ${testFiles.length} TEST SUITE(S) [${suiteMode}]`);
   console.log(" Environment: Isolated Local DB & Storage (tests/test-setup.ts)");
   console.log("================================================================================\n");
 
   const results: TestFileResult[] = [];
   const startTime = Date.now();
 
-  for (const file of allFiles) {
-    const fullPath = path.join(testsDir, file);
-    console.log(`\n▶ RUNNING: ${file}...`);
+  for (const { name, fullPath } of testFiles) {
+    console.log(`\n▶ RUNNING: ${name}...`);
     const result = await runSingleTest(fullPath);
     results.push(result);
     if (result.passed) {
-      console.log(`✔ FINISHED: ${file} in ${(result.durationMs / 1000).toFixed(2)}s\n`);
+      console.log(`✔ FINISHED: ${name} in ${(result.durationMs / 1000).toFixed(2)}s\n`);
     } else {
-      console.error(`✖ FAILED: ${file} (exit code ${result.exitCode}) in ${(result.durationMs / 1000).toFixed(2)}s\n`);
+      console.error(`✖ FAILED: ${name} (exit code ${result.exitCode}) in ${(result.durationMs / 1000).toFixed(2)}s\n`);
     }
   }
 
@@ -118,6 +168,7 @@ async function main() {
   console.log("\n================================================================================");
   console.log(" TEST RUNNER SUMMARY REPORT");
   console.log("================================================================================");
+  console.log(`Mode:          ${suiteMode}`);
   console.log(`Total Suites:  ${results.length}`);
   console.log(`Passed:        ${passedCount}`);
   console.log(`Failed:        ${failedCount}`);

@@ -24,7 +24,7 @@ import {
   isScientificValueEquivalent,
   TableGeometryLayout,
   NativeTextItem,
-} from "../src/lib/tables/cell-verifier";
+} from "../../src/lib/tables/cell-verifier";
 
 console.log("================================================================================");
 console.log(" PHASE 3C STAGE 2: GEOMETRIC DISTORTION & EXACT-VALUE VALIDATION");

@@ -54,14 +54,19 @@ export function generateDeterministicMockEmbedding(
   text: string,
   dimensions: number = AI_CONFIG.embeddingDimensions
 ): number[] {
-  const hash = createHash("sha256").update(text, "utf8").digest();
-  const vector: number[] = new Array(dimensions);
+  const tokens = text.toLowerCase().match(/\b[a-z0-9_-]+\b/g) || [text];
+  const vector: number[] = new Array(dimensions).fill(0);
+  for (const token of tokens) {
+    const hash = createHash("sha256").update(token, "utf8").digest();
+    for (let i = 0; i < dimensions; i++) {
+      const byte = hash[i % hash.length];
+      const val = ((byte + (i % 31)) / 143.0) - 1.0;
+      vector[i] += val;
+    }
+  }
   let norm = 0;
   for (let i = 0; i < dimensions; i++) {
-    const byte = hash[i % hash.length];
-    const val = ((byte + (i % 31)) / 143.0) - 1.0;
-    vector[i] = val;
-    norm += val * val;
+    norm += vector[i] * vector[i];
   }
   const sqrtNorm = Math.sqrt(norm) || 1;
   return vector.map((v) => Number((v / sqrtNorm).toFixed(6)));

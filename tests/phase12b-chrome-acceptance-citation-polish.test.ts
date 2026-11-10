@@ -69,14 +69,9 @@ describe("Phase 12B Chrome Acceptance: Final Editor Citation Polish", () => {
   let moralesPaper: any;
 
   before(async () => {
-    // 1. Primary Scholar
-    const existingScholar = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { id: "cmvb1cabk0001vrgo46umk5zp" },
-          { email: "phase12b-scholar-a@university.edu" },
-        ],
-      },
+    // 1. Primary Scholar (Scholar A - owner of authentic Morales paper fixture)
+    const existingScholar = await prisma.user.findUnique({
+      where: { id: "cmvb1cabk0001vrgo46umk5zp" },
     });
 
     if (existingScholar) {
@@ -86,7 +81,7 @@ describe("Phase 12B Chrome Acceptance: Final Editor Citation Polish", () => {
         data: {
           id: "cmvb1cabk0001vrgo46umk5zp",
           name: "Dr. Elena Vance (Phase 12B Acceptance)",
-          email: "phase12b-scholar-a@university.edu",
+          email: "elena.morales.owner@university.edu",
           passwordHash: "$2a$10$wT0oA536e8bS1zC3P2eIHe9B/q1t7zN4L9fXyE3rT2.kM5YQ7hI6i",
           role: "USER",
         },

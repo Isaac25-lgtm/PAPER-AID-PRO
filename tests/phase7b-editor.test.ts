@@ -177,9 +177,13 @@ async function runPhase7BTestSuite() {
     },
   });
 
-  // Fetch or create a test paper
+  // Fetch or create a test paper (Attention Is All You Need)
   let testPaper = await prisma.paper.findFirst({
-    where: { status: "COMPLETED" },
+    where: {
+      doi: "10.48550/arXiv.1706.03762",
+      status: "COMPLETED",
+      chunks: { some: { pageNumber: 1 } },
+    },
     include: { chunks: true },
   });
 
@@ -421,7 +425,7 @@ async function runPhase7BTestSuite() {
     assert(bibCitation.documentId === docA.id, "Links citation to document");
 
     // Insert passage-verified citation anchored to chunk
-    const chunk = testPaper.chunks[0];
+    const chunk = testPaper.chunks.find((c: any) => c.pageNumber === 1) || testPaper.chunks[0];
     const passageCitation = await insertDocumentCitation(userA.id, docA.id, {
       paperId: testPaper.id,
       chunkId: chunk?.id,

@@ -52,13 +52,8 @@ describe("Phase 12B: Citation Insertion Acceptance Suite", () => {
 
   before(async () => {
     // 1. Retrieve or verify primary researcher (owner of Morales private manuscript fixture)
-    const existingScholar = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { id: "cmvb1cabk0001vrgo46umk5zp" },
-          { email: "phase12b-scholar-a@university.edu" },
-        ],
-      },
+    const existingScholar = await prisma.user.findUnique({
+      where: { id: "cmvb1cabk0001vrgo46umk5zp" },
     });
 
     if (existingScholar) {
@@ -67,7 +62,7 @@ describe("Phase 12B: Citation Insertion Acceptance Suite", () => {
       const userA = await prisma.user.create({
         data: {
           id: "cmvb1cabk0001vrgo46umk5zp",
-          email: "phase12b-scholar-a@university.edu",
+          email: "primary.morales.owner@university.edu",
           name: "Dr. Alice Morgan (Phase 12B)",
           passwordHash: "$2a$10$abcdefghijklmnopqrstuvwxyz012345",
         },

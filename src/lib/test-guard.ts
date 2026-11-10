@@ -119,6 +119,7 @@ let mockStorageInstalled = false;
 export function enableMockStorage(): void {
   const mockClient = createMockStorageClient();
   setStorageClientOverride(mockClient);
+  process.env.USE_MOCK_STORAGE = "true";
   mockStorageInstalled = true;
 }
 

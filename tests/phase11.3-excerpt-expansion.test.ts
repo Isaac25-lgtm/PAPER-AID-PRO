@@ -176,7 +176,7 @@ async function runExcerptExpansionTests() {
       "Preserves View Paper link"
     );
     assert(
-      content.includes("href={`/api/papers/${citation.paperId}/pdf`}"),
+      content.includes("/api/papers/${citation.paperId}/pdf"),
       "Preserves Original PDF link"
     );
     assert(

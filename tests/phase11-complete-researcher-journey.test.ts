@@ -177,10 +177,10 @@ async function runCompleteResearcherJourney() {
     const anDoi = `10.3389/fmed.2025.1533648.test-${timestamp}`;
     const existingStalePapers = await prisma.paper.findMany({
       where: {
+        id: { not: "cmvkznrpr001fvrggnajkkq4b" },
         OR: [
-          { doi: { startsWith: "10.1002/uog.70315" } },
-          { doi: { startsWith: "10.3389/fmed.2025.1533648" } },
-          { doi: { startsWith: "10.1016/j.ajog.2025.10.012" } },
+          { doi: { contains: "test-" } },
+          { title: { contains: "test-" } },
         ],
       },
       select: { id: true },
@@ -1106,7 +1106,7 @@ async function runCompleteResearcherJourney() {
       await prisma.documentPaper.deleteMany({ where: { documentId: manuscriptId } }).catch(() => {});
       await prisma.researchDocument.deleteMany({ where: { id: manuscriptId } }).catch(() => {});
     }
-    if (paperMoralesId) {
+    if (paperMoralesId && paperMoralesId !== "cmvkznrpr001fvrggnajkkq4b") {
       await prisma.aIMessage.deleteMany({ where: { conversation: { paperId: paperMoralesId } } }).catch(() => {});
       await prisma.aIConversation.deleteMany({ where: { paperId: paperMoralesId } }).catch(() => {});
       await prisma.paperChunk.deleteMany({ where: { paperId: paperMoralesId } }).catch(() => {});

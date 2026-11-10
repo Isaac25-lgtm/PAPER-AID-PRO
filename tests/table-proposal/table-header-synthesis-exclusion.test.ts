@@ -10,7 +10,7 @@
  * 6. Legitimate scientific measurements (AUC, accuracy, sensitivity, mIOU, confusion counts) are retained.
  */
 
-import { isScientificNumericalMeasurement } from "../src/lib/tables/types";
+import { isScientificNumericalMeasurement } from "../../src/lib/tables/types";
 
 let passed = 0;
 let failed = 0;

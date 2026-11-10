@@ -1,0 +1,3886 @@
+{
+  "exportedAt": "2026-11-10T05:50:19.658Z",
+  "users": [
+    {
+      "id": "cmvb1cabk0001vrgo46umk5zp",
+      "email": "synthetic-scholar@test.local",
+      "name": "Dr. Elena Vance (Synthetic Test User)",
+      "passwordHash": "$2a$10$abcdefghijklmnopqrstuvwxyz012345678901234567890123456789",
+      "avatarUrl": null,
+      "role": "ADMIN",
+      "createdAt": "2026-10-16T14:00:43.328Z",
+      "updatedAt": "2026-10-24T08:35:43.412Z"
+    }
+  ],
+  "documents": [
+    {
+      "id": "cmvwmjzsp0001vr9wtzqjh29y",
+      "userId": "cmvb1cabk0001vrgo46umk5zp",
+      "title": "Synthetic Manuscript on Endometrial Hyperplasia",
+      "content": {
+        "meta": {
+          "docType": "MANUSCRIPT",
+          "headings": [
+            "Abstract",
+            "Introduction & Theoretical Background",
+            "Research Objectives & Hypotheses",
+            "Materials & Methods",
+            "Results & Empirical Findings",
+            "Discussion & Scholarly Implications",
+            "Study Limitations & Ethical Considerations",
+            "References"
+          ],
+          "objectives": {
+            "general": "To investigate, quantify, and empirically characterize the dynamics of the specified research problem.",
+            "specific": [
+              "Formulate and execute a controlled experimental evaluation of the specified research problem.",
+              "Evaluate empirical outcomes against state-of-the-art benchmarks and multi-cohort data.",
+              "Identify boundary conditions, delineate systematic limitations, and discuss theoretical implications."
+            ]
+          },
+          "studyDesign": "",
+          "citationStyle": "apa",
+          "researchTopic": "enndometrial hyperplasia"
+        },
+        "type": "doc",
+        "content": [
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "content": [
+              {
+                "text": "enndometrial hyperplasia",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Document Mode: ",
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "text": "Guided (Original Research Manuscript)",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Primary Research Objective: ",
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "text": "To investigate, quantify, and empirically characterize the dynamics of the specified research problem.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 3
+            },
+            "content": [
+              {
+                "text": "Approved Specific Objectives",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "bulletList",
+            "content": [
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "text": "Formulate and execute a controlled experimental evaluation of the specified research problem.",
+                        "type": "text"
+                      },
+                      {
+                        "type": "citation",
+                        "attrs": {
+                          "items": [
+                            {
+                              "label": "page",
+                              "locator": "5",
+                              "paperId": "cmvkznrpr001fvrggnajkkq4b",
+                              "paperTitle": "Diagnostic accuracy of transvaginal ultrasound for adenomyosis using consensus-based direct and indirect sonographic signs: prospective cohort study"
+                            }
+                          ],
+                          "styleId": "apa",
+                          "citationId": "csl-1793474705033-ryar",
+                          "renderedText": "(Morales et al., 2026, p. 5)"
+                        }
+                      },
+                      {
+                        "text": " ",
+                        "type": "text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "text": "Evaluate empirical outcomes against state-of-the-art benchmarks and multi-cohort data.",
+                        "type": "text"
+                      },
+                      {
+                        "type": "citation",
+                        "attrs": {
+                          "items": [
+                            {
+                              "label": "page",
+                              "locator": "5",
+                              "paperId": "cmvkznrpr001fvrggnajkkq4b",
+                              "paperTitle": "Diagnostic accuracy of transvaginal ultrasound for adenomyosis using consensus-based direct and indirect sonographic signs: prospective cohort study"
+                            }
+                          ],
+                          "styleId": "apa",
+                          "citationId": "csl-1793474791527-d2qq",
+                          "renderedText": "(Morales et al., 2026, p. 5)"
+                        }
+                      },
+                      {
+                        "text": " ",
+                        "type": "text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "text": "Identify boundary conditions, delineate systematic limitations, and discuss theoretical implications.",
+                        "type": "text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Abstract",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Provide a concise synthesis outlining the scientific background, core objectives, methodology, primary findings, and broader impact of this work.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Introduction & Theoretical Background",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "signs of endometrial plasisa ",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Establish the empirical rationale and scholarly context. Articulate existing gaps in the literature and justify why this investigation is necessary.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Research Objectives & Hypotheses",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "State the primary and secondary hypotheses. Ensure alignment with the pre-specified research objectives and experimental design.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Materials & Methods",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Detail the operational methodology, including sampling criteria, measurement instruments, data validation procedures, and statistical protocols.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Results & Empirical Findings",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Present findings with strict objective neutrality. Report empirical observations, effect estimates, and statistical confidence intervals without premature speculative interpretation.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Discussion & Scholarly Implications",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Interpret the observations within the broader theoretical literature. Discuss how the findings address the stated research question and contrast with prior studies.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Study Limitations & Ethical Considerations",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Candidly articulate methodological boundaries, potential selection or measurement biases, cohort constraints, and ethical safeguards.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "bibliography",
+            "attrs": {
+              "entries": [
+                "Morales, C., Crovo, E., Ebner, P., Joublan, P., Concha, P., Assar, R., & Alcazar, J. (2026). Diagnostic accuracy of transvaginal ultrasound for adenomyosis using consensus-based direct and indirect sonographic signs: prospective cohort study. Ultrasound in Obstetrics & Gynecology, 68, 426–433. https://doi.org/10.1002/uog.70315"
+              ],
+              "styleId": "apa",
+              "styleTitle": "American Psychological Association 7th edition"
+            }
+          },
+          {
+            "type": "paragraph"
+          }
+        ]
+      },
+      "textContent": "enndometrial hyperplasia\n\nDocument Mode: Guided (Original Research Manuscript)\n\nPrimary Research Objective: To investigate, quantify, and empirically characterize the dynamics of the specified research problem.\n\nApproved Specific Objectives\n\n\n\n\n\nFormulate and execute a controlled experimental evaluation of the specified research problem. \n\n\n\nEvaluate empirical outcomes against state-of-the-art benchmarks and multi-cohort data. \n\n\n\nIdentify boundary conditions, delineate systematic limitations, and discuss theoretical implications.\n\nAbstract\n\nProvide a concise synthesis outlining the scientific background, core objectives, methodology, primary findings, and broader impact of this work.\n\nIntroduction & Theoretical Background\n\nsigns of endometrial plasisa \n\nEstablish the empirical rationale and scholarly context. Articulate existing gaps in the literature and justify why this investigation is necessary.\n\nResearch Objectives & Hypotheses\n\nState the primary and secondary hypotheses. Ensure alignment with the pre-specified research objectives and experimental design.\n\nMaterials & Methods\n\nDetail the operational methodology, including sampling criteria, measurement instruments, data validation procedures, and statistical protocols.\n\nResults & Empirical Findings\n\nPresent findings with strict objective neutrality. Report empirical observations, effect estimates, and statistical confidence intervals without premature speculative interpretation.\n\nDiscussion & Scholarly Implications\n\nInterpret the observations within the broader theoretical literature. Discuss how the findings address the stated research question and contrast with prior studies.\n\nStudy Limitations & Ethical Considerations\n\nCandidly articulate methodological boundaries, potential selection or measurement biases, cohort constraints, and ethical safeguards.\n\n\n\n",
+      "docType": "MANUSCRIPT",
+      "version": 7,
+      "createdAt": "2026-10-31T16:37:44.540Z",
+      "updatedAt": "2026-10-31T19:26:33.814Z",
+      "cslStyleId": "apa",
+      "cslRevisionSha": "v1.0.2-baseline-catalog",
+      "citations": [
+        {
+          "id": "cmvwsj7t50005vrvo5y4wk8ve",
+          "documentId": "cmvwmjzsp0001vr9wtzqjh29y",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkId": null,
+          "citationKey": null,
+          "citationText": "(Morales et al., 2026, p. 5)",
+          "citationType": "BIBLIOGRAPHIC",
+          "pageNumber": 5,
+          "section": null,
+          "prefix": null,
+          "suffix": null,
+          "createdAt": "2026-10-31T19:25:05.993Z"
+        },
+        {
+          "id": "cmvwsl2ey0009vrvow2m8g4sj",
+          "documentId": "cmvwmjzsp0001vr9wtzqjh29y",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkId": null,
+          "citationKey": null,
+          "citationText": "(Morales et al., 2026, p. 5)",
+          "citationType": "BIBLIOGRAPHIC",
+          "pageNumber": 5,
+          "section": null,
+          "prefix": null,
+          "suffix": null,
+          "createdAt": "2026-10-31T19:26:32.314Z"
+        }
+      ],
+      "linkedPapers": [
+        {
+          "id": "cmvyxl9ou000hvrxo7n4hnbnk",
+          "documentId": "cmvwmjzsp0001vr9wtzqjh29y",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "addedAt": "2026-11-02T07:22:12.175Z"
+        }
+      ]
+    },
+    {
+      "id": "cmvowff0s0007vrysxrjth4kq",
+      "userId": "cmvb1cabk0001vrgo46umk5zp",
+      "title": "Synthetic Manuscript on Ultrasound of Adenomyosis",
+      "content": {
+        "meta": {
+          "docType": "MANUSCRIPT",
+          "headings": [
+            "Abstract",
+            "Introduction & Theoretical Background",
+            "Research Objectives & Hypotheses",
+            "Materials & Methods",
+            "Results & Empirical Findings",
+            "Discussion & Scholarly Implications",
+            "Study Limitations & Ethical Considerations",
+            "References"
+          ],
+          "objectives": {
+            "general": "To investigate, quantify, and empirically characterize the dynamics of the specified research problem.",
+            "specific": [
+              "Formulate and execute a controlled experimental evaluation of the specified research problem.",
+              "Evaluate empirical outcomes against state-of-the-art benchmarks and multi-cohort data.",
+              "Identify boundary conditions, delineate systematic limitations, and discuss theoretical implications."
+            ]
+          },
+          "studyDesign": "",
+          "citationStyle": "apa",
+          "researchTopic": "ultrasound of adenomyosis"
+        },
+        "type": "doc",
+        "content": [
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "content": [
+              {
+                "text": "ultrasound of adenomyosis",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Document Mode: ",
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "text": "Guided (Original Research Manuscript)",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Primary Research Objective: ",
+                "type": "text",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "text": "To investigate, quantify, and empirically characterize the dynamics of the specified research problem.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 3
+            },
+            "content": [
+              {
+                "text": "Approved Specific Objectives",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "bulletList",
+            "content": [
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "text": "Formulate and execute a controlled experimental evaluation of the specified research problem.",
+                        "type": "text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "text": "Evaluate empirical outcomes against state-of-the-art benchmarks and multi-cohort data.",
+                        "type": "text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "text": "Identify boundary conditions, delineate systematic limitations, and discuss theoretical implications.",
+                        "type": "text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Abstract",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Provide a concise synthesis outlining the scientific background, core objectives, methodology, primary findings, and broader impact of this work.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Introduction & Theoretical Background",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Establish the empirical rationale and scholarly context. Articulate existing gaps in the literature and justify why this investigation is necessary. Previous investigations into ultrasound of adenomyosis highlight substantial promise, yet establishing reproducible methodological consensus remains an ongoing priority across the research community.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Research Objectives & Hypotheses",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "State the primary and secondary hypotheses. Ensure alignment with the pre-specified research objectives and experimental design.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Materials & Methods",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Detail the operational methodology, including sampling criteria, measurement instruments, data validation procedures, and statistical protocols.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Results & Empirical Findings",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Present findings with strict objective neutrality. Report empirical observations, effect estimates, and statistical confidence intervals without premature speculative interpretation.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Discussion & Scholarly Implications",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Interpret the observations within the broader theoretical literature. Discuss how the findings address the stated research question and contrast with prior studies.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "Study Limitations & Ethical Considerations",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Candidly articulate methodological boundaries, potential selection or measurement biases, cohort constraints, and ethical safeguards.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": "References",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "text": "Insert citations directly from My Library or search Crossref/PubMed using the citation tools in the right-hand drawer.",
+                "type": "text"
+              }
+            ]
+          },
+          {
+            "type": "bibliography",
+            "attrs": {
+              "entries": [
+                "Morales, C., Crovo, E., Ebner, P., Joublan, P., Concha, P., Assar, R., & Alcazar, J. (2026). Diagnostic accuracy of transvaginal ultrasound for adenomyosis using consensus-based direct and indirect sonographic signs: prospective cohort study. Ultrasound in Obstetrics & Gynecology."
+              ],
+              "styleId": "apa",
+              "styleTitle": "American Psychological Association 7th edition"
+            }
+          },
+          {
+            "type": "paragraph"
+          }
+        ]
+      },
+      "textContent": "ultrasound of adenomyosis\n\nDocument Mode: Guided (Original Research Manuscript)\n\nPrimary Research Objective: To investigate, quantify, and empirically characterize the dynamics of the specified research problem.\n\nApproved Specific Objectives\n\n\n\n\n\nFormulate and execute a controlled experimental evaluation of the specified research problem.\n\n\n\nEvaluate empirical outcomes against state-of-the-art benchmarks and multi-cohort data.\n\n\n\nIdentify boundary conditions, delineate systematic limitations, and discuss theoretical implications.\n\nAbstract\n\nProvide a concise synthesis outlining the scientific background, core objectives, methodology, primary findings, and broader impact of this work.\n\nIntroduction & Theoretical Background\n\nEstablish the empirical rationale and scholarly context. Articulate existing gaps in the literature and justify why this investigation is necessary. Previous investigations into ultrasound of adenomyosis highlight substantial promise, yet establishing reproducible methodological consensus remains an ongoing priority across the research community.\n\nResearch Objectives & Hypotheses\n\nState the primary and secondary hypotheses. Ensure alignment with the pre-specified research objectives and experimental design.\n\nMaterials & Methods\n\nDetail the operational methodology, including sampling criteria, measurement instruments, data validation procedures, and statistical protocols.\n\nResults & Empirical Findings\n\nPresent findings with strict objective neutrality. Report empirical observations, effect estimates, and statistical confidence intervals without premature speculative interpretation.\n\nDiscussion & Scholarly Implications\n\nInterpret the observations within the broader theoretical literature. Discuss how the findings address the stated research question and contrast with prior studies.\n\nStudy Limitations & Ethical Considerations\n\nCandidly articulate methodological boundaries, potential selection or measurement biases, cohort constraints, and ethical safeguards.\n\nReferences\n\nInsert citations directly from My Library or search Crossref/PubMed using the citation tools in the right-hand drawer.\n\n\n\n",
+      "docType": "MANUSCRIPT",
+      "version": 10,
+      "createdAt": "2026-10-26T06:51:57.769Z",
+      "updatedAt": "2026-10-31T18:21:24.977Z",
+      "cslStyleId": "apa",
+      "cslRevisionSha": "v1.0.2-baseline-catalog",
+      "citations": [
+        {
+          "id": "cmvwq3hue0005vrdwi877lsmk",
+          "documentId": "cmvowff0s0007vrysxrjth4kq",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkId": null,
+          "citationKey": null,
+          "citationText": "(Morales et al., 2026, p. 5)",
+          "citationType": "BIBLIOGRAPHIC",
+          "pageNumber": 5,
+          "section": null,
+          "prefix": null,
+          "suffix": null,
+          "createdAt": "2026-10-31T18:16:53.270Z"
+        },
+        {
+          "id": "cmvwq66g90009vrdwmzhnkgl9",
+          "documentId": "cmvowff0s0007vrysxrjth4kq",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkId": null,
+          "citationKey": null,
+          "citationText": "(Morales et al., 2026, p. 5)",
+          "citationType": "BIBLIOGRAPHIC",
+          "pageNumber": 5,
+          "section": null,
+          "prefix": null,
+          "suffix": null,
+          "createdAt": "2026-10-31T18:18:58.473Z"
+        },
+        {
+          "id": "cmvwq8lao000dvrdw4yqmu70a",
+          "documentId": "cmvowff0s0007vrysxrjth4kq",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkId": null,
+          "citationKey": null,
+          "citationText": "(Morales et al., 2026, p. 3)",
+          "citationType": "BIBLIOGRAPHIC",
+          "pageNumber": 3,
+          "section": null,
+          "prefix": null,
+          "suffix": null,
+          "createdAt": "2026-10-31T18:20:51.024Z"
+        }
+      ],
+      "linkedPapers": []
+    }
+  ],
+  "papers": [
+    {
+      "id": "cmv6b8tap000pvrict91lcg6d",
+      "title": "Highly accurate protein structure prediction with AlphaFold",
+      "abstract": "Abstract not provided in reference file.",
+      "publicationDate": "2021-01-01T00:00:00.000Z",
+      "journal": "Nature",
+      "doi": "10.1038/s41586-021-03819-2",
+      "arxivId": null,
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": false,
+      "pdfUrl": null,
+      "storagePath": null,
+      "status": "COMPLETED",
+      "sourceProvenance": {
+        "provider": "BIBTEX_IMPORT",
+        "importedAt": "2026-10-13T06:39:06.576Z",
+        "isMetadataOnly": true,
+        "importedByUserId": "cmv6b3tjq0000vrpcwcak3xq3"
+      },
+      "researchQuestion": null,
+      "methodology": null,
+      "results": null,
+      "limitations": null,
+      "conclusion": null,
+      "keywords": [],
+      "citationCount": 0,
+      "rawMetadata": null,
+      "createdAt": "2026-10-13T06:39:06.577Z",
+      "updatedAt": "2026-10-13T07:42:58.031Z",
+      "authors": [
+        {
+          "id": "cmv6b8taz000svricu1di3218",
+          "paperId": "cmv6b8tap000pvrict91lcg6d",
+          "authorId": "cmv6b8tau000qvric3p11o19n",
+          "orderIndex": 0,
+          "isCorresponding": false,
+          "createdAt": "2026-10-13T06:39:06.587Z",
+          "author": {
+            "id": "cmv6b8tau000qvric3p11o19n",
+            "name": "Jumper, John",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-13T06:39:06.583Z",
+            "updatedAt": "2026-10-13T06:39:06.583Z"
+          }
+        },
+        {
+          "id": "cmv6b8tb8000vvricwp5eiwvy",
+          "paperId": "cmv6b8tap000pvrict91lcg6d",
+          "authorId": "cmv6b8tb4000tvricv2ek0wuy",
+          "orderIndex": 1,
+          "isCorresponding": false,
+          "createdAt": "2026-10-13T06:39:06.596Z",
+          "author": {
+            "id": "cmv6b8tb4000tvricv2ek0wuy",
+            "name": "Evans, Richard",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-13T06:39:06.592Z",
+            "updatedAt": "2026-10-13T06:39:06.592Z"
+          }
+        },
+        {
+          "id": "cmv6b8tbh000yvricffqoq0g6",
+          "paperId": "cmv6b8tap000pvrict91lcg6d",
+          "authorId": "cmv6b8tbe000wvrictf51kqrd",
+          "orderIndex": 2,
+          "isCorresponding": false,
+          "createdAt": "2026-10-13T06:39:06.606Z",
+          "author": {
+            "id": "cmv6b8tbe000wvrictf51kqrd",
+            "name": "Pritzel, Alexander",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-13T06:39:06.602Z",
+            "updatedAt": "2026-10-13T06:39:06.602Z"
+          }
+        }
+      ],
+      "chunks": [
+        {
+          "id": "cmv6dixng0001vrfg03r604bb",
+          "paperId": "cmv6b8tap000pvrict91lcg6d",
+          "chunkIndex": 0,
+          "text": "AlphaFold regularly predicts protein structures with atomic accuracy of 1.5 Angstroms, demonstrating state-of-the-art biological modelling.",
+          "section": "Abstract",
+          "pageNumber": 1,
+          "tokenCount": null,
+          "metadata": null,
+          "embeddingModel": "text-embedding-3-small",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "89d2ca7b90bae60c8859b9ae39ebbfc97d8e55d4e2e503d8a5a7a200dec4284c",
+          "embeddedAt": "2026-10-13T07:42:59.895Z",
+          "createdAt": "2026-10-13T07:42:58.012Z"
+        }
+      ],
+      "processingJobs": [
+        {
+          "id": "cmv6dixok0003vrfglbmex33o",
+          "paperId": "cmv6b8tap000pvrict91lcg6d",
+          "stage": "EMBEDDING_GENERATION",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-13T07:42:58.051Z",
+          "completedAt": "2026-10-13T07:42:59.914Z",
+          "createdAt": "2026-10-13T07:42:58.053Z",
+          "updatedAt": "2026-10-13T07:42:59.916Z"
+        }
+      ],
+      "categories": []
+    },
+    {
+      "id": "cmvkuwvv7000fvrkgon29vnk2",
+      "title": "Ultrasound diagnosis of adenomyosis: new technologies – new approaches",
+      "abstract": "To date, one of the most common endometriosis types is uterine endometriosis (adenomyosis). Persistent adenomyosis in older age is followed by worsening of complaints associated with a high frequency of chronic pelvic pain syndrome, menorrhagia, abnormal uterine bleeding, and dyspareunia. Objective. To determine the efficacy of two- and three-dimensional ultrasound in the diagnosis of adenomyosis in patients in the late reproductive and perimenopausal periods. Patients and methods. A total of 143 patients with adenomyosis were included in the study and divided into two groups: group 1 – 65 patients in the late reproductive period, group 2 – 78 patients in the perimenopause. The thickness, volume and structure of the endometrium, qualitative hemodynamic parameters of uterine terminal vessels were determined in 2D mode. In 3D mode, volumetric indices of blood flow in the endometrium and sub-endometrium were calculated. Results. Adenomyosis in the late reproductive and perimenopausal periods is associated with changes in the morpho-functional state of the endometrium due to elevated blood flow resistance in uterine terminal vessels. The vascularization index (VI) should be considered the most objective 3D blood flow parameter. Conclusion. A comprehensive 2D/3D ultrasound is a reliable method of adenomyosis diagnosis in patients in the late reproductive and perimenopausal periods. 3D ultrasound is an additional objective method to assess the endometrial volume and hemodynamics in the terminal branches of the radial artery. Key words: adenomyosis, three-dimensional ultrasound, junctional zone",
+      "publicationDate": "2025-01-01T00:00:00.000Z",
+      "journal": "Voprosy ginekologii akušerstva i perinatologii",
+      "doi": "10.20953/1726-1678-2025-3-42-48",
+      "arxivId": null,
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": false,
+      "pdfUrl": null,
+      "storagePath": null,
+      "status": "METADATA_ONLY",
+      "sourceProvenance": {
+        "externalUrl": "https://doi.org/10.20953/1726-1678-2025-3-42-48",
+        "rawMetadata": {
+          "citedEvidence": {
+            "license": null,
+            "concepts": [
+              {
+                "id": "https://openalex.org/C2779166600",
+                "level": 3,
+                "score": 0.9889,
+                "wikidata": "https://www.wikidata.org/wiki/Q2012569",
+                "display_name": "Adenomyosis"
+              },
+              {
+                "id": "https://openalex.org/C71924100",
+                "level": 0,
+                "score": 0.8602,
+                "wikidata": "https://www.wikidata.org/wiki/Q11190",
+                "display_name": "Medicine"
+              },
+              {
+                "id": "https://openalex.org/C2779522080",
+                "level": 2,
+                "score": 0.6871,
+                "wikidata": "https://www.wikidata.org/wiki/Q205764",
+                "display_name": "Endometriosis"
+              },
+              {
+                "id": "https://openalex.org/C2779742232",
+                "level": 2,
+                "score": 0.5913,
+                "wikidata": "https://www.wikidata.org/wiki/Q839508",
+                "display_name": "Endometrium"
+              },
+              {
+                "id": "https://openalex.org/C158846371",
+                "level": 2,
+                "score": 0.5448,
+                "wikidata": "https://www.wikidata.org/wiki/Q1642137",
+                "display_name": "Blood flow"
+              }
+            ],
+            "openAlexId": "W7124301108",
+            "hasFulltext": false,
+            "citedByCount": 0
+          },
+          "relevanceScore": 102,
+          "relevanceConcepts": [
+            "ultrasound_imaging",
+            "clinical_tasks"
+          ],
+          "relevanceAlignment": "ALIGNED"
+        },
+        "discoveredAt": "2026-10-23T10:58:28.801Z",
+        "isOpenAccess": false,
+        "sourceProviders": [
+          "CITED_EVIDENCE"
+        ],
+        "importedByUserId": "cmvb1cabk0001vrgo46umk5zp",
+        "openAccessPdfUrl": null,
+        "sourceResolution": {
+          "resolvedAt": "2026-10-23T12:23:11.035Z",
+          "explanation": "Bibliographic metadata only. Publication is paywalled or restricted to subscribers.",
+          "identifiers": {
+            "doi": "10.20953/1726-1678-2025-3-42-48",
+            "pmid": null,
+            "pmcid": null,
+            "arxivId": null,
+            "canonicalId": "10.20953/1726-1678-2025-3-42-48"
+          },
+          "permissions": {
+            "canReadDirectly": false,
+            "canRedistribute": false,
+            "canPlatformIngest": false,
+            "canDeriveOrTransform": false
+          },
+          "allCandidates": [
+            {
+              "pdfUrl": null,
+              "license": null,
+              "canDirectRead": false,
+              "lastCheckedAt": "2026-10-23T12:23:11.035Z",
+              "landingPageUrl": "https://doi.org/10.20953/1726-1678-2025-3-42-48",
+              "sourceProvider": "CROSSREF",
+              "licenseEvidence": "Canonical Crossref publisher DOI landing page",
+              "paperIdentifier": "10.20953/1726-1678-2025-3-42-48",
+              "canPlatformIngest": false,
+              "manuscriptVersion": "publishedVersion",
+              "verificationStatus": "VERIFIED"
+            }
+          ],
+          "bestCandidate": {
+            "pdfUrl": null,
+            "license": null,
+            "canDirectRead": false,
+            "lastCheckedAt": "2026-10-23T12:23:11.035Z",
+            "landingPageUrl": "https://doi.org/10.20953/1726-1678-2025-3-42-48",
+            "sourceProvider": "CROSSREF",
+            "licenseEvidence": "Canonical Crossref publisher DOI landing page",
+            "paperIdentifier": "10.20953/1726-1678-2025-3-42-48",
+            "canPlatformIngest": false,
+            "manuscriptVersion": "publishedVersion",
+            "verificationStatus": "VERIFIED"
+          },
+          "classification": "ABSTRACT_ONLY",
+          "versionSummary": {
+            "hasPreprint": false,
+            "hasVersionOfRecord": true,
+            "hasAcceptedManuscript": false
+          }
+        },
+        "originalIdentifiers": {
+          "doi": "10.20953/1726-1678-2025-3-42-48",
+          "pmid": null,
+          "pmcid": null,
+          "arxivId": null,
+          "semanticScholarId": null
+        },
+        "scholarlyClassification": "ABSTRACT_ONLY"
+      },
+      "researchQuestion": null,
+      "methodology": null,
+      "results": null,
+      "limitations": null,
+      "conclusion": null,
+      "keywords": [],
+      "citationCount": 0,
+      "rawMetadata": null,
+      "createdAt": "2026-10-23T10:58:28.819Z",
+      "updatedAt": "2026-10-23T12:23:19.290Z",
+      "authors": [
+        {
+          "id": "cmvkuwvx2000uvrkg9sb9sna4",
+          "paperId": "cmvkuwvv7000fvrkgon29vnk2",
+          "authorId": "cmvkuwvwz000svrkgnc2gzwwp",
+          "orderIndex": 4,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:28.887Z",
+          "author": {
+            "id": "cmvkuwvwz000svrkgnc2gzwwp",
+            "name": "O.V. Bratchikova",
+            "institution": null,
+            "bio": null,
+            "orcid": "https://orcid.org/0000-0002-5658-3212",
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:28.883Z",
+            "updatedAt": "2026-10-23T10:58:28.883Z"
+          }
+        },
+        {
+          "id": "cmvkuwvvn000ivrkgqpvtmoow",
+          "paperId": "cmvkuwvv7000fvrkgon29vnk2",
+          "authorId": "cmvkuwvvi000gvrkg8z4y65e3",
+          "orderIndex": 0,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:28.835Z",
+          "author": {
+            "id": "cmvkuwvvi000gvrkg8z4y65e3",
+            "name": "A.A. Solomatina",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:28.831Z",
+            "updatedAt": "2026-10-23T10:58:28.831Z"
+          }
+        },
+        {
+          "id": "cmvkuwvvz000lvrkgqfifmxhc",
+          "paperId": "cmvkuwvv7000fvrkgon29vnk2",
+          "authorId": "cmvkuwvvu000jvrkg1x3abwyn",
+          "orderIndex": 1,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:28.847Z",
+          "author": {
+            "id": "cmvkuwvvu000jvrkg1x3abwyn",
+            "name": "A. P. Yesakova",
+            "institution": null,
+            "bio": null,
+            "orcid": "https://orcid.org/0000-0002-4756-0342",
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:28.843Z",
+            "updatedAt": "2026-10-23T10:58:28.843Z"
+          }
+        },
+        {
+          "id": "cmvkuwvwc000ovrkgh17pdv3a",
+          "paperId": "cmvkuwvv7000fvrkgon29vnk2",
+          "authorId": "cmvkuwvw7000mvrkgkkjjmpct",
+          "orderIndex": 2,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:28.860Z",
+          "author": {
+            "id": "cmvkuwvw7000mvrkgkkjjmpct",
+            "name": "S.V. Regul",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:28.855Z",
+            "updatedAt": "2026-10-23T10:58:28.855Z"
+          }
+        },
+        {
+          "id": "cmvkuwvwq000rvrkgdyja9o4o",
+          "paperId": "cmvkuwvv7000fvrkgon29vnk2",
+          "authorId": "cmvkuwvwm000pvrkgwm9jh083",
+          "orderIndex": 3,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:28.875Z",
+          "author": {
+            "id": "cmvkuwvwm000pvrkgwm9jh083",
+            "name": "B.I. Baisova",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:28.870Z",
+            "updatedAt": "2026-10-23T10:58:28.870Z"
+          }
+        },
+        {
+          "id": "cmvkuwvxf000xvrkgkfd8x5am",
+          "paperId": "cmvkuwvv7000fvrkgon29vnk2",
+          "authorId": "cmvkuwvxa000vvrkgtsvwavjb",
+          "orderIndex": 5,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:28.899Z",
+          "author": {
+            "id": "cmvkuwvxa000vvrkgtsvwavjb",
+            "name": "I.Z. Khamzin",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:28.895Z",
+            "updatedAt": "2026-10-23T10:58:28.895Z"
+          }
+        },
+        {
+          "id": "cmvkuwvxt0010vrkgkejrxrou",
+          "paperId": "cmvkuwvv7000fvrkgon29vnk2",
+          "authorId": "cmvkuwvxp000yvrkgsd212t7e",
+          "orderIndex": 6,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:28.913Z",
+          "author": {
+            "id": "cmvkuwvxp000yvrkgsd212t7e",
+            "name": "P. D. Ismaiilova",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:28.909Z",
+            "updatedAt": "2026-10-23T10:58:28.909Z"
+          }
+        },
+        {
+          "id": "cmvkuwvy30013vrkg23ki0sro",
+          "paperId": "cmvkuwvv7000fvrkgon29vnk2",
+          "authorId": "cmvkuwvy00011vrkglrxh2oor",
+          "orderIndex": 7,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:28.924Z",
+          "author": {
+            "id": "cmvkuwvy00011vrkglrxh2oor",
+            "name": "Z. Z. Khalifaeva",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:28.920Z",
+            "updatedAt": "2026-10-23T10:58:28.920Z"
+          }
+        }
+      ],
+      "chunks": [],
+      "processingJobs": [
+        {
+          "id": "cmvkv1r3a001jvrkgbvg614e2",
+          "paperId": "cmvkuwvv7000fvrkgon29vnk2",
+          "stage": "METADATA_EXTRACTION",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": "lease_cmvkuwvv7000fvrkgon29vnk2_att1_1792753335902_6e21feccee5c88c7",
+          "startedAt": "2026-10-23T11:02:15.902Z",
+          "completedAt": "2026-10-23T11:02:25.195Z",
+          "createdAt": "2026-10-23T11:02:15.910Z",
+          "updatedAt": "2026-10-23T11:02:25.197Z"
+        },
+        {
+          "id": "cmvkxxtaz000dvrgg602ug7z7",
+          "paperId": "cmvkuwvv7000fvrkgon29vnk2",
+          "stage": "METADATA_EXTRACTION",
+          "status": "COMPLETED",
+          "attempt": 2,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": "lease_cmvkuwvv7000fvrkgon29vnk2_att2_1792758190998_cd459c66d38e6c2a",
+          "startedAt": "2026-10-23T12:23:10.998Z",
+          "completedAt": "2026-10-23T12:23:19.257Z",
+          "createdAt": "2026-10-23T12:23:11.004Z",
+          "updatedAt": "2026-10-23T12:23:19.260Z"
+        }
+      ],
+      "categories": []
+    },
+    {
+      "id": "cmvkuwxdy0016vrkgmltugp5d",
+      "title": "EP25.17: Ultrasound diagnosis of adenomyosis with histopathological correlation in women undergoing pre‐IVF ICSI treatment",
+      "abstract": "Abstract not provided in scholarly metadata.",
+      "publicationDate": "2024-09-01T00:00:00.000Z",
+      "journal": "Ultrasound in Obstetrics &amp; Gynecology",
+      "doi": "10.1002/uog.29064",
+      "arxivId": null,
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": false,
+      "pdfUrl": null,
+      "storagePath": null,
+      "status": "METADATA_ONLY",
+      "sourceProvenance": {
+        "externalUrl": "https://doi.org/10.1002/uog.29064",
+        "rawMetadata": {
+          "crossref": {},
+          "relevanceScore": 87,
+          "relevanceConcepts": [
+            "ultrasound_imaging",
+            "clinical_tasks"
+          ],
+          "relevanceAlignment": "ALIGNED"
+        },
+        "discoveredAt": "2026-10-23T10:58:30.783Z",
+        "isOpenAccess": false,
+        "sourceProviders": [
+          "CROSSREF"
+        ],
+        "importedByUserId": "cmvb1cabk0001vrgo46umk5zp",
+        "openAccessPdfUrl": null,
+        "sourceResolution": {
+          "resolvedAt": "2026-10-23T12:23:42.526Z",
+          "explanation": "Direct PDF link available at UNPAYWALL, but reuse license is unverified. Preserving external reading link without automated platform ingestion.",
+          "identifiers": {
+            "doi": "10.1002/uog.29064",
+            "pmid": null,
+            "pmcid": null,
+            "arxivId": null,
+            "canonicalId": "10.1002/uog.29064"
+          },
+          "permissions": {
+            "canReadDirectly": true,
+            "canRedistribute": false,
+            "canPlatformIngest": false,
+            "canDeriveOrTransform": false
+          },
+          "allCandidates": [
+            {
+              "pdfUrl": "https://onlinelibrary.wiley.com/doi/pdfdirect/10.1002/uog.29064",
+              "license": null,
+              "canDirectRead": true,
+              "lastCheckedAt": "2026-10-23T12:23:42.526Z",
+              "landingPageUrl": "http://dx.doi.org/10.1002/uog.29064",
+              "sourceProvider": "UNPAYWALL",
+              "licenseEvidence": "Unpaywall API (host: publisher, evidence: deprecated)",
+              "paperIdentifier": "10.1002/uog.29064",
+              "canPlatformIngest": false,
+              "manuscriptVersion": "publishedVersion",
+              "verificationStatus": "VERIFIED"
+            },
+            {
+              "pdfUrl": null,
+              "license": null,
+              "canDirectRead": false,
+              "lastCheckedAt": "2026-10-23T12:23:42.526Z",
+              "landingPageUrl": "https://doi.org/10.1002/uog.29064",
+              "sourceProvider": "CROSSREF",
+              "licenseEvidence": "Canonical Crossref publisher DOI landing page",
+              "paperIdentifier": "10.1002/uog.29064",
+              "canPlatformIngest": false,
+              "manuscriptVersion": "publishedVersion",
+              "verificationStatus": "VERIFIED"
+            }
+          ],
+          "bestCandidate": {
+            "pdfUrl": "https://onlinelibrary.wiley.com/doi/pdfdirect/10.1002/uog.29064",
+            "license": null,
+            "canDirectRead": true,
+            "lastCheckedAt": "2026-10-23T12:23:42.526Z",
+            "landingPageUrl": "http://dx.doi.org/10.1002/uog.29064",
+            "sourceProvider": "UNPAYWALL",
+            "licenseEvidence": "Unpaywall API (host: publisher, evidence: deprecated)",
+            "paperIdentifier": "10.1002/uog.29064",
+            "canPlatformIngest": false,
+            "manuscriptVersion": "publishedVersion",
+            "verificationStatus": "VERIFIED"
+          },
+          "classification": "LICENSE_UNVERIFIED",
+          "versionSummary": {
+            "hasPreprint": false,
+            "hasVersionOfRecord": true,
+            "hasAcceptedManuscript": false
+          }
+        },
+        "originalIdentifiers": {
+          "doi": "10.1002/uog.29064",
+          "pmid": null,
+          "pmcid": null,
+          "arxivId": null,
+          "semanticScholarId": null
+        },
+        "scholarlyClassification": "LICENSE_UNVERIFIED"
+      },
+      "researchQuestion": null,
+      "methodology": null,
+      "results": null,
+      "limitations": null,
+      "conclusion": null,
+      "keywords": [],
+      "citationCount": 0,
+      "rawMetadata": null,
+      "createdAt": "2026-10-23T10:58:30.791Z",
+      "updatedAt": "2026-10-23T12:23:51.318Z",
+      "authors": [
+        {
+          "id": "cmvkuwxeh0019vrkgveo4z0dr",
+          "paperId": "cmvkuwxdy0016vrkgmltugp5d",
+          "authorId": "cmvkuwxed0017vrkg1v3gxjgx",
+          "orderIndex": 0,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:30.809Z",
+          "author": {
+            "id": "cmvkuwxed0017vrkg1v3gxjgx",
+            "name": "M.R. Letifi",
+            "institution": "Obstetrics and Gynecology, Universite de Sousse Sousse Tunisia",
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:30.805Z",
+            "updatedAt": "2026-10-23T10:58:30.805Z"
+          }
+        }
+      ],
+      "chunks": [],
+      "processingJobs": [
+        {
+          "id": "cmvkxyhls000fvrgg6e5gfdvj",
+          "paperId": "cmvkuwxdy0016vrkgmltugp5d",
+          "stage": "METADATA_EXTRACTION",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": "lease_cmvkuwxdy0016vrkgmltugp5d_att1_1792758222492_4596af07ebef395e",
+          "startedAt": "2026-10-23T12:23:42.492Z",
+          "completedAt": "2026-10-23T12:23:51.306Z",
+          "createdAt": "2026-10-23T12:23:42.496Z",
+          "updatedAt": "2026-10-23T12:23:51.307Z"
+        }
+      ],
+      "categories": []
+    },
+    {
+      "id": "cmvkuwtx10000vrkgzji2dta3",
+      "title": "Comprehensive method of ultrasound diagnosis of adenomyosis",
+      "abstract": "BACKGROUND: There are currently no uniform standards for adenomyosis diagnosis, so the search for the most informative methods is an urgent task. This article presents modern views on the diagnosis of adenomyosis and the role of ultrasound in its diagnostics.&#x0D; AIM: The aim of this study was to determine the diagnostic capabilities of ultrasound in the diffuse form of adenomyosis.&#x0D; MATERIALS AND METHODS: This study included 164 patients aged 22 to 43 years old, who had a comprehensive ultrasound examination done. The points were calculated and the presence or absence of adenomyosis, as well as its severity, were determined using the developed scale. The sequential implementation of six ultrasound techniques were used for a comprehensive ultrasound assessment of adenomyosis: assessment of the myometrium echostructure homogeneity; assessment of the ratio of the anterior and posterior uterine wall thicknesses; compression elastography; assessment of the junctional zone in the 3D mode; assessment of the uniformity of the junctional zone thickness along uterine walls; vascularization of the myometrium in the Power Doppler 3D Glass Body mode.&#x0D; RESULTS: We have developed the comprehensive ultrasound method of adenomyosis diagnostics. The sensitivity of the method was 95%, and the specificity was 100%. The positive predictive value was 100%, and the negative predictive value was 90%. The accuracy of the method was 97%.&#x0D; CONCLUSIONS: The developed scoring system for the comprehensive assessment of adenomyosis allows for an independent assessment of the myometrium for each criterion, summarizing the scores and, therefore, assessing the presence and severity of adenomyosis more objectively and reliably. The high sensitivity and specificity of this technique allows recommending it for use by ultrasound specialists.",
+      "publicationDate": "2021-12-15T00:00:00.000Z",
+      "journal": "Journal of obstetrics and women s diseases",
+      "doi": "10.17816/jowd83066",
+      "arxivId": null,
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": false,
+      "pdfUrl": null,
+      "storagePath": null,
+      "status": "METADATA_ONLY",
+      "sourceProvenance": {
+        "externalUrl": "https://doi.org/10.17816/jowd83066",
+        "rawMetadata": {
+          "citedEvidence": {
+            "license": null,
+            "concepts": [
+              {
+                "id": "https://openalex.org/C2779166600",
+                "level": 3,
+                "score": 0.9776585,
+                "wikidata": "https://www.wikidata.org/wiki/Q2012569",
+                "display_name": "Adenomyosis"
+              },
+              {
+                "id": "https://openalex.org/C71924100",
+                "level": 0,
+                "score": 0.86670923,
+                "wikidata": "https://www.wikidata.org/wiki/Q11190",
+                "display_name": "Medicine"
+              },
+              {
+                "id": "https://openalex.org/C143753070",
+                "level": 2,
+                "score": 0.73710656,
+                "wikidata": "https://www.wikidata.org/wiki/Q162564",
+                "display_name": "Ultrasound"
+              },
+              {
+                "id": "https://openalex.org/C126838900",
+                "level": 1,
+                "score": 0.56971985,
+                "wikidata": "https://www.wikidata.org/wiki/Q77604",
+                "display_name": "Radiology"
+              },
+              {
+                "id": "https://openalex.org/C2778164554",
+                "level": 3,
+                "score": 0.5481305,
+                "wikidata": "https://www.wikidata.org/wiki/Q2562472",
+                "display_name": "Myometrium"
+              }
+            ],
+            "openAlexId": "W4210671567",
+            "hasFulltext": false,
+            "citedByCount": 2
+          },
+          "relevanceScore": 102.286,
+          "relevanceConcepts": [
+            "ultrasound_imaging",
+            "clinical_tasks"
+          ],
+          "relevanceAlignment": "ALIGNED"
+        },
+        "discoveredAt": "2026-10-23T10:58:26.266Z",
+        "isOpenAccess": false,
+        "sourceProviders": [
+          "CITED_EVIDENCE"
+        ],
+        "importedByUserId": "cmvb1cabk0001vrgo46umk5zp",
+        "openAccessPdfUrl": null,
+        "sourceResolution": {
+          "resolvedAt": "2026-10-23T11:02:33.682Z",
+          "explanation": "Bibliographic metadata only. Publication is paywalled or restricted to subscribers.",
+          "identifiers": {
+            "doi": "10.17816/jowd83066",
+            "pmid": null,
+            "pmcid": null,
+            "arxivId": null,
+            "canonicalId": "10.17816/jowd83066"
+          },
+          "permissions": {
+            "canReadDirectly": false,
+            "canRedistribute": false,
+            "canPlatformIngest": false,
+            "canDeriveOrTransform": false
+          },
+          "allCandidates": [
+            {
+              "pdfUrl": null,
+              "license": null,
+              "canDirectRead": false,
+              "lastCheckedAt": "2026-10-23T11:02:33.682Z",
+              "landingPageUrl": "https://doi.org/10.17816/jowd83066",
+              "sourceProvider": "CROSSREF",
+              "licenseEvidence": "Canonical Crossref publisher DOI landing page",
+              "paperIdentifier": "10.17816/jowd83066",
+              "canPlatformIngest": false,
+              "manuscriptVersion": "publishedVersion",
+              "verificationStatus": "VERIFIED"
+            }
+          ],
+          "bestCandidate": {
+            "pdfUrl": null,
+            "license": null,
+            "canDirectRead": false,
+            "lastCheckedAt": "2026-10-23T11:02:33.682Z",
+            "landingPageUrl": "https://doi.org/10.17816/jowd83066",
+            "sourceProvider": "CROSSREF",
+            "licenseEvidence": "Canonical Crossref publisher DOI landing page",
+            "paperIdentifier": "10.17816/jowd83066",
+            "canPlatformIngest": false,
+            "manuscriptVersion": "publishedVersion",
+            "verificationStatus": "VERIFIED"
+          },
+          "classification": "ABSTRACT_ONLY",
+          "versionSummary": {
+            "hasPreprint": false,
+            "hasVersionOfRecord": true,
+            "hasAcceptedManuscript": false
+          }
+        },
+        "originalIdentifiers": {
+          "doi": "10.17816/jowd83066",
+          "pmid": null,
+          "pmcid": null,
+          "arxivId": null,
+          "semanticScholarId": null
+        },
+        "scholarlyClassification": "ABSTRACT_ONLY"
+      },
+      "researchQuestion": null,
+      "methodology": null,
+      "results": null,
+      "limitations": null,
+      "conclusion": null,
+      "keywords": [],
+      "citationCount": 2,
+      "rawMetadata": null,
+      "createdAt": "2026-10-23T10:58:26.293Z",
+      "updatedAt": "2026-10-23T11:02:40.265Z",
+      "authors": [
+        {
+          "id": "cmvkuwty00003vrkgmg94y5tb",
+          "paperId": "cmvkuwtx10000vrkgzji2dta3",
+          "authorId": "cmvkuwtxo0001vrkgelrepxsg",
+          "orderIndex": 0,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:26.328Z",
+          "author": {
+            "id": "cmvkuwtxo0001vrkgelrepxsg",
+            "name": "Stanislava V. Nagorneva",
+            "institution": "Research Institute of Obstetrics and Gynecology named after D.O. Ott",
+            "bio": null,
+            "orcid": "https://orcid.org/0000-0003-0402-5304",
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:26.317Z",
+            "updatedAt": "2026-10-23T10:58:26.317Z"
+          }
+        },
+        {
+          "id": "cmvkuwtyj0006vrkgoocbuuu3",
+          "paperId": "cmvkuwtx10000vrkgzji2dta3",
+          "authorId": "cmvkuwtyg0004vrkgr2n5wqll",
+          "orderIndex": 1,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:26.348Z",
+          "author": {
+            "id": "cmvkuwtyg0004vrkgr2n5wqll",
+            "name": "Maria A. Shalina",
+            "institution": "Research Institute of Obstetrics and Gynecology named after D.O. Ott",
+            "bio": null,
+            "orcid": "https://orcid.org/0000-0002-5921-3217",
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:26.344Z",
+            "updatedAt": "2026-10-23T10:58:26.344Z"
+          }
+        },
+        {
+          "id": "cmvkuwtyx0009vrkg9uvxu1rs",
+          "paperId": "cmvkuwtx10000vrkgzji2dta3",
+          "authorId": "cmvkuwtys0007vrkgw85k6wr4",
+          "orderIndex": 2,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:26.361Z",
+          "author": {
+            "id": "cmvkuwtys0007vrkgw85k6wr4",
+            "name": "Maria I. Yarmolinskaya",
+            "institution": "Research Institute of Obstetrics and Gynecology named after D.O. Ott",
+            "bio": null,
+            "orcid": "https://orcid.org/0000-0002-6551-4147",
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:26.357Z",
+            "updatedAt": "2026-10-23T10:58:26.357Z"
+          }
+        },
+        {
+          "id": "cmvkuwtzb000cvrkg2esp03d6",
+          "paperId": "cmvkuwtx10000vrkgzji2dta3",
+          "authorId": "cmvkuwtz5000avrkgzxjp7b5y",
+          "orderIndex": 3,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:26.376Z",
+          "author": {
+            "id": "cmvkuwtz5000avrkgzxjp7b5y",
+            "name": "Elena A. Netreba",
+            "institution": "Research Institute of Obstetrics and Gynecology named after D.O. Ott",
+            "bio": null,
+            "orcid": "https://orcid.org/0000-0002-0485-3612",
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:26.370Z",
+            "updatedAt": "2026-10-23T10:58:26.370Z"
+          }
+        }
+      ],
+      "chunks": [],
+      "processingJobs": [
+        {
+          "id": "cmvkv24rk001lvrkgede42ge0",
+          "paperId": "cmvkuwtx10000vrkgzji2dta3",
+          "stage": "METADATA_EXTRACTION",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": "lease_cmvkuwtx10000vrkgzji2dta3_att1_1792753353624_f8333a20791c46b0",
+          "startedAt": "2026-10-23T11:02:33.624Z",
+          "completedAt": "2026-10-23T11:02:40.234Z",
+          "createdAt": "2026-10-23T11:02:33.632Z",
+          "updatedAt": "2026-10-23T11:02:40.236Z"
+        }
+      ],
+      "categories": []
+    },
+    {
+      "id": "cmvm4wiwm000cvri8nmzxo48m",
+      "title": "Accurate Structure Prediction of Biomolecular Interactions with AlphaFold 3",
+      "abstract": "Introduces a unified generative diffusion architecture capable of predicting joint 3D coordinates for complexes including proteins, nucleic acids (DNA/RNA), small molecule ligands, and chemical modifications.",
+      "publicationDate": "2024-05-08T00:00:00.000Z",
+      "journal": "Nature Biomedical Science",
+      "doi": "10.1038/s41586-024-07487-w",
+      "arxivId": "2405.08888",
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": false,
+      "pdfUrl": "https://www.nature.com/articles/s41586-024-07487-w.pdf",
+      "storagePath": null,
+      "status": "COMPLETED",
+      "sourceProvenance": null,
+      "researchQuestion": "Can a single deep generative diffusion network predict atomic-resolution coordinates of heterogeneous multi-molecule complexes without dedicated physics-based docking approximations?",
+      "methodology": "Couples a Pairformer representation network with a direct 3D Cartesian coordinate diffusion module to progressively denoise spatial structures across all biological molecule classes.",
+      "results": "Substantially exceeds classical molecular docking packages on standardized protein-ligand and protein-nucleic acid benchmark evaluations (e.g., PoseBusters).",
+      "limitations": "Static single-state coordinate predictions do not sample full kinetic conformational ensembles or solve arbitrary disordered loop transitions.",
+      "conclusion": "Unified generative diffusion frameworks provide a shared foundational platform for structural biology across the broader chemical spectrum of life.",
+      "keywords": [
+        "AlphaFold 3",
+        "Structural Biology",
+        "Diffusion Models",
+        "Biomolecules",
+        "Cross-Docking"
+      ],
+      "citationCount": 4200,
+      "rawMetadata": null,
+      "createdAt": "2026-10-24T08:25:54.358Z",
+      "updatedAt": "2026-10-24T08:35:43.185Z",
+      "authors": [
+        {
+          "id": "cmvm4wiws000evri85wi2f9ha",
+          "paperId": "cmvm4wiwm000cvri8nmzxo48m",
+          "authorId": "cmvb0j9030009vrusofvkshgl",
+          "orderIndex": 0,
+          "isCorresponding": false,
+          "createdAt": "2026-10-24T08:25:54.365Z",
+          "author": {
+            "id": "cmvb0j9030009vrusofvkshgl",
+            "name": "John Jumper",
+            "institution": "Google DeepMind",
+            "bio": "Senior Research Scientist at DeepMind; Nobel Laureate in Chemistry (2024) and lead architect of AlphaFold 2 and AlphaFold 3.",
+            "orcid": "0000-0001-9876-5432",
+            "citationCount": 95000,
+            "hIndex": 45,
+            "createdAt": "2026-10-16T13:38:08.595Z",
+            "updatedAt": "2026-10-24T08:35:43.118Z"
+          }
+        },
+        {
+          "id": "cmvm4wix6000gvri82c9wu2mq",
+          "paperId": "cmvm4wiwm000cvri8nmzxo48m",
+          "authorId": "cmvb0j8zy0008vrusmlu16fdi",
+          "orderIndex": 1,
+          "isCorresponding": true,
+          "createdAt": "2026-10-24T08:25:54.378Z",
+          "author": {
+            "id": "cmvb0j8zy0008vrusmlu16fdi",
+            "name": "Demis Hassabis",
+            "institution": "Google DeepMind",
+            "bio": "Co-founder & CEO of DeepMind; Nobel Laureate in Chemistry (2024) for computational protein structure prediction (AlphaFold).",
+            "orcid": "0000-0003-0123-9999",
+            "citationCount": 240000,
+            "hIndex": 85,
+            "createdAt": "2026-10-16T13:38:08.590Z",
+            "updatedAt": "2026-10-24T08:35:43.113Z"
+          }
+        }
+      ],
+      "chunks": [
+        {
+          "id": "cmvm4zu4g0001vruoez08lvui",
+          "paperId": "cmvm4wiwm000cvri8nmzxo48m",
+          "chunkIndex": 0,
+          "text": "Introduces a unified generative diffusion architecture capable of predicting joint 3D coordinates for complexes including proteins, nucleic acids (DNA/RNA), small molecule ligands, and chemical modifications.",
+          "section": "Abstract",
+          "pageNumber": 1,
+          "tokenCount": 20,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "0bd36b04c3f806a50546a6b18d462f01cc69250abe3e1cf4d8c02702b738cf86",
+          "embeddedAt": "2026-10-24T08:38:00.289Z",
+          "createdAt": "2026-10-24T08:28:28.864Z"
+        }
+      ],
+      "processingJobs": [
+        {
+          "id": "cmvm5c3120003vrs89tenpswf",
+          "paperId": "cmvm4wiwm000cvri8nmzxo48m",
+          "stage": "EMBEDDING_GENERATION",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-24T08:38:00.277Z",
+          "completedAt": "2026-10-24T08:38:00.301Z",
+          "createdAt": "2026-10-24T08:38:00.278Z",
+          "updatedAt": "2026-10-24T08:38:00.303Z"
+        }
+      ],
+      "categories": [
+        {
+          "id": "cmvm4wixa000ivri8ghb1ywaa",
+          "paperId": "cmvm4wiwm000cvri8nmzxo48m",
+          "categoryId": "cmvb0j8z20002vruspvoj3x9f",
+          "createdAt": "2026-10-24T08:25:54.383Z",
+          "category": {
+            "id": "cmvb0j8z20002vruspvoj3x9f",
+            "name": "Computational Biology",
+            "slug": "comp-bio",
+            "description": "Protein structure prediction, biomolecular complexes, genomic variant analysis, and molecular dynamics.",
+            "iconName": "Dna",
+            "createdAt": "2026-10-16T13:38:08.559Z",
+            "updatedAt": "2026-10-24T08:35:43.083Z"
+          }
+        },
+        {
+          "id": "cmvm4wixi000kvri8hxwjuz3a",
+          "paperId": "cmvm4wiwm000cvri8nmzxo48m",
+          "categoryId": "cmvb0j8yf0000vrus6llzmc08",
+          "createdAt": "2026-10-24T08:25:54.391Z",
+          "category": {
+            "id": "cmvb0j8yf0000vrus6llzmc08",
+            "name": "Artificial Intelligence",
+            "slug": "ai",
+            "description": "Neural architectures, foundation models, reinforcement learning, and agentic workflows.",
+            "iconName": "Brain",
+            "createdAt": "2026-10-16T13:38:08.535Z",
+            "updatedAt": "2026-10-24T08:35:43.057Z"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cmvkznrpr001fvrggnajkkq4b",
+      "title": "Diagnostic accuracy of transvaginal ultrasound for adenomyosis using consensus-based direct and indirect sonographic signs: prospective cohort study",
+      "abstract": "ABSTRACT\n                  \n                    Objective\n                    To evaluate the diagnostic performance of transvaginal ultrasound (TVS) for adenomyosis using consensus‐based direct and indirect ultrasound signs, with histopathology as the reference standard.\n                  \n                  \n                    Methods\n                    This prospective diagnostic accuracy study included women undergoing TVS examination at a tertiary referral center (Hospital San Juan de Dios, Santiago, Chile) between 1 December 2022 and 1 December 2023. Women aged ≥ 18 years who underwent hysterectomy within 6 months after TVS examination were enrolled consecutively. Cases with malignant histopathological findings were excluded. Ultrasound signs of adenomyosis were assessed according to the revised Morphological Uterus Sonographic Assessment consensus. Histopathology served as the reference standard. Diagnostic performance measures for individual ultrasound features and multivariable models were calculated.\n                  \n                  \n                    Results\n                    Among 2967 women evaluated using TVS, 345 (11.6%) underwent hysterectomy within 6 weeks and constituted the study cohort. Histopathology confirmed adenomyosis in 155 (44.9%) women. Individual ultrasound features showed high specificity but limited sensitivity. Among direct signs, echogenic subendometrial lines showed the best overall balance (sensitivity, 53.5% (95% CI, 45.4–61.6%); specificity, 94.7% (95% CI, 90.5–97.4%)). Individual indirect signs showed specificity &gt; 97% but low sensitivity. A model combining direct ultrasound signs showed high specificity (93.7% (95% CI, 89.2–96.7%)) but limited sensitivity (60.0% (95% CI, 51.8–67.8%)); overall diagnostic accuracy was 78.6% (95% CI, 73.8–82.8%). The addition of indirect ultrasound signs into the model did not provide meaningful incremental benefit.\n                  \n                  \n                    Conclusions\n                    Our findings highlight the importance of distinguishing between direct and indirect ultrasound features, with direct signs providing the most consistent diagnostic value, while indirect signs should be interpreted as supportive rather than definitive. © 2026 International Society of Ultrasound in Obstetrics and Gynecology.",
+      "publicationDate": "2026-09-01T07:00:00.000Z",
+      "journal": "Ultrasound in Obstetrics & Gynecology",
+      "doi": null,
+      "arxivId": null,
+      "pmid": "42584944",
+      "pmcid": "PMC13532111",
+      "semanticScholarId": null,
+      "isOpenAccess": true,
+      "pdfUrl": null,
+      "storagePath": "research-papers/users/cmvb1cabk0001vrgo46umk5zp/papers/cmvkznrpr001fvrggnajkkq4b/original.pdf",
+      "status": "COMPLETED",
+      "sourceProvenance": {
+        "isPrivate": true,
+        "ownerId": "cmvb1cabk0001vrgo46umk5zp",
+        "canonicalDoi": "10.1002/uog.70315",
+        "issue": "3",
+        "pages": "426-433",
+        "volume": "68"
+      },
+      "researchQuestion": null,
+      "methodology": null,
+      "results": null,
+      "limitations": null,
+      "conclusion": null,
+      "keywords": [],
+      "citationCount": 0,
+      "rawMetadata": null,
+      "createdAt": "2026-11-02T07:22:12.109Z",
+      "updatedAt": "2026-11-03T06:53:30.270Z",
+      "authors": [
+        {
+          "id": "cmvyxl9nc0001vrxobt09lfvn",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "authorId": "cmvkzgnhd000svrggxzfug0pr",
+          "orderIndex": 0,
+          "isCorresponding": false,
+          "createdAt": "2026-11-02T07:22:12.120Z",
+          "author": {
+            "id": "cmvkzgnhd000svrggxzfug0pr",
+            "name": "Morales C",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T13:05:49.537Z",
+            "updatedAt": "2026-10-23T13:05:49.537Z"
+          }
+        },
+        {
+          "id": "cmvyxl9nl0003vrxozr5v92tt",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "authorId": "cmvkzgnhn000vvrggl5rwh32u",
+          "orderIndex": 1,
+          "isCorresponding": false,
+          "createdAt": "2026-11-02T07:22:12.130Z",
+          "author": {
+            "id": "cmvkzgnhn000vvrggl5rwh32u",
+            "name": "Crovo E",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T13:05:49.548Z",
+            "updatedAt": "2026-10-23T13:05:49.548Z"
+          }
+        },
+        {
+          "id": "cmvyxl9ns0005vrxo4a6rybwx",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "authorId": "cmvkzgnhv000yvrgg7xq06s2r",
+          "orderIndex": 2,
+          "isCorresponding": false,
+          "createdAt": "2026-11-02T07:22:12.137Z",
+          "author": {
+            "id": "cmvkzgnhv000yvrgg7xq06s2r",
+            "name": "Ebner P",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T13:05:49.556Z",
+            "updatedAt": "2026-10-23T13:05:49.556Z"
+          }
+        },
+        {
+          "id": "cmvyxl9ny0007vrxo78fiv8kk",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "authorId": "cmvkzgni30011vrggyq06gakb",
+          "orderIndex": 3,
+          "isCorresponding": false,
+          "createdAt": "2026-11-02T07:22:12.143Z",
+          "author": {
+            "id": "cmvkzgni30011vrggyq06gakb",
+            "name": "Joublan P",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T13:05:49.564Z",
+            "updatedAt": "2026-10-23T13:05:49.564Z"
+          }
+        },
+        {
+          "id": "cmvyxl9o40009vrxoe67j9fj8",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "authorId": "cmvkzgnic0014vrggyquwlgim",
+          "orderIndex": 4,
+          "isCorresponding": false,
+          "createdAt": "2026-11-02T07:22:12.148Z",
+          "author": {
+            "id": "cmvkzgnic0014vrggyquwlgim",
+            "name": "Concha P",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T13:05:49.572Z",
+            "updatedAt": "2026-10-23T13:05:49.572Z"
+          }
+        },
+        {
+          "id": "cmvyxl9oa000bvrxoe555x0tc",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "authorId": "cmvkzgnij0017vrggpy2k3ha3",
+          "orderIndex": 5,
+          "isCorresponding": false,
+          "createdAt": "2026-11-02T07:22:12.154Z",
+          "author": {
+            "id": "cmvkzgnij0017vrggpy2k3ha3",
+            "name": "Assar R",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T13:05:49.580Z",
+            "updatedAt": "2026-10-23T13:05:49.580Z"
+          }
+        },
+        {
+          "id": "cmvyxl9og000dvrxotdqvm1uq",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "authorId": "cmvkzgniq001avrggksw87y4h",
+          "orderIndex": 6,
+          "isCorresponding": false,
+          "createdAt": "2026-11-02T07:22:12.160Z",
+          "author": {
+            "id": "cmvkzgniq001avrggksw87y4h",
+            "name": "Alcazar JL",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T13:05:49.586Z",
+            "updatedAt": "2026-10-23T13:05:49.586Z"
+          }
+        }
+      ],
+      "chunks": [
+        {
+          "id": "cmvo28mw1001lvrv44dfqmbal",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 0,
+          "section": null,
+          "pageNumber": 1,
+          "text": "Diagnostic accuracy of transvaginal ultrasound for adenomyosis. [Synthetic excerpt of abstract]",
+          "metadata": null,
+          "tokenCount": 24,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-0",
+          "embeddedAt": "2026-11-10T09:09:18.739Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvz0n4qe0003vrloe76eiz9j",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 1,
+          "section": null,
+          "pageNumber": 1,
+          "text": "[Synthetic research excerpt for chunk 1]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-1",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvz0n4qe0004vrlo4terr3yn",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 2,
+          "section": "Abstract",
+          "pageNumber": 1,
+          "text": "[Synthetic research excerpt for chunk 2]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-2",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001ovrv4dlkpmajm",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 3,
+          "section": "Abstract",
+          "pageNumber": 1,
+          "text": "[Synthetic research excerpt for chunk 3]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-3",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001pvrv4w8bn0zpp",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 4,
+          "section": "Abstract",
+          "pageNumber": 1,
+          "text": "[Synthetic research excerpt for chunk 4]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-4",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001qvrv4xepm2uuw",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 5,
+          "section": "Introduction",
+          "pageNumber": 1,
+          "text": "[Synthetic research excerpt for chunk 5]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-5",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001rvrv4bit3uczv",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 6,
+          "section": "Introduction",
+          "pageNumber": 1,
+          "text": "[Synthetic research excerpt for chunk 6]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-6",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001svrv4ml5fqwc6",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 7,
+          "section": "Introduction",
+          "pageNumber": 2,
+          "text": "[Synthetic research excerpt for chunk 7]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-7",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001tvrv49m16hnr7",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 8,
+          "section": "Introduction",
+          "pageNumber": 2,
+          "text": "[Synthetic research excerpt for chunk 8]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-8",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001uvrv4w7vzv1yg",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 9,
+          "section": "Introduction",
+          "pageNumber": 2,
+          "text": "[Synthetic research excerpt for chunk 9]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-9",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001vvrv421ao8n4x",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 10,
+          "section": "Methods",
+          "pageNumber": 2,
+          "text": "[Synthetic research excerpt for chunk 10]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-10",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001wvrv4yrljws5j",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 11,
+          "section": "Methods",
+          "pageNumber": 2,
+          "text": "[Synthetic research excerpt for chunk 11]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-11",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001xvrv4jlnwr62h",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 12,
+          "section": "Methods",
+          "pageNumber": 2,
+          "text": "[Synthetic research excerpt for chunk 12]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-12",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001yvrv42uiy1d37",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 13,
+          "section": "Methods",
+          "pageNumber": 2,
+          "text": "[Synthetic research excerpt for chunk 13]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-13",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw1001zvrv4j8mnnn89",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 14,
+          "section": "Methods",
+          "pageNumber": 2,
+          "text": "[Synthetic research excerpt for chunk 14]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-14",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw10020vrv44owdrklg",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 15,
+          "section": "Methods",
+          "pageNumber": 3,
+          "text": "[Synthetic research excerpt for chunk 15]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-15",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw10021vrv4b8s2rvge",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 16,
+          "section": "Methods",
+          "pageNumber": 3,
+          "text": "[Synthetic research excerpt for chunk 16]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-16",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw10022vrv4qeiv75jq",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 17,
+          "section": "Methods",
+          "pageNumber": 3,
+          "text": "[Synthetic research excerpt for chunk 17]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-17",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw10023vrv4bjnjnjmm",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 18,
+          "section": "Methods",
+          "pageNumber": 3,
+          "text": "[Synthetic research excerpt for chunk 18]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-18",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw10024vrv4wjvq9a5g",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 19,
+          "section": "Results",
+          "pageNumber": 3,
+          "text": "[Synthetic research excerpt for chunk 19]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-19",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw10025vrv4ajglfdfj",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 20,
+          "section": "Results",
+          "pageNumber": 4,
+          "text": "[Synthetic research excerpt for chunk 20]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-20",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw10026vrv4e4zoft8y",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 21,
+          "section": "Results",
+          "pageNumber": 4,
+          "text": "[Synthetic research excerpt for chunk 21]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-21",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvz0n4qf000ovrlohclqdfzj",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 22,
+          "section": "Results",
+          "pageNumber": 4,
+          "text": "[Synthetic research excerpt for chunk 22]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-22",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvz0n4qf000pvrlof982te4d",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 23,
+          "section": "Results",
+          "pageNumber": 4,
+          "text": "[Synthetic research excerpt for chunk 23]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-23",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw20029vrv44us7xar3",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 24,
+          "section": "Results",
+          "pageNumber": 4,
+          "text": "[Synthetic research excerpt for chunk 24]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-24",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvz0n4qf000rvrlomoqiyxge",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 25,
+          "section": "Results",
+          "pageNumber": 5,
+          "text": "[Synthetic research excerpt for chunk 25]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-25",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvz0n4qf000svrloi12gq5qr",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 26,
+          "section": "Results",
+          "pageNumber": 5,
+          "text": "[Synthetic research excerpt for chunk 26]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-26",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002cvrv4ln0t2vi5",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 27,
+          "section": "Results",
+          "pageNumber": 5,
+          "text": "[Synthetic research excerpt for chunk 27]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-27",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002dvrv473z1bcj2",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 28,
+          "section": "Results",
+          "pageNumber": 5,
+          "text": "[Synthetic research excerpt for chunk 28]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-28",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvz0n4qf000vvrlo5k0cxlfj",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 29,
+          "section": "Results",
+          "pageNumber": 5,
+          "text": "[Synthetic research excerpt for chunk 29]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-29",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvz0n4qf000wvrlovfhxff3o",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 30,
+          "section": "Results",
+          "pageNumber": 5,
+          "text": "[Synthetic research excerpt for chunk 30]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-30",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002gvrv49nm24w5o",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 31,
+          "section": "Results",
+          "pageNumber": 5,
+          "text": "Table 2\n\n**table**\n\n| Ultrasound signs | Sensitivity (%) | Specificity (%) | PPV (%) | NPV (%) | Accuracy (%) |\n| --- | --- | --- | --- | --- | --- |\n| Direct ultrasound signs |  |  |  |  |  |\n| Myometrial cysts (n=67) | 41.3 (33.5-49.5) | 98.4 (95.5-99.7) | 95.5 (87.5-99.1) | 67.3 (61.4-72.8) | 72.8 (67.7-77.4) |\n| Echogenic subendometrial lines (n=93) | 53.5 (45.4-61.6) | 94.7 (90.5-97.4) | 89.2 (81.1-94.7) | 71.4 (65.4-76.9) | 76.2 (71.4-80.6) |\n| Hyperechogenic islands (n=22) | 14.2 (9.1-20.7) | 100 (98.1-100) | 100 (84.6-100) | 58.8 (53.2-64.2) | 61.4 (56.1-66.6) |\n| Indirect ultrasound signs |  |  |  |  |  |\n| Asymmetrical myometrial wall thickening (n = 35) | 21.3 (15.1-28.6) | 98.9 (96.2-99.9) | 94.3 (80.8-99.3) | 60.6 (54.9-66.1) | 64.1 (58.7-69.1) |\n| Globular uterus (n=58) | 34.8 (27.4-42.9) | 97.9 (94.7-99.4) | 93.1 (83.3-98.1) | 64.8 (59.0-70.3) | 69.6 (64.4-74.4) |\n| Translesional vascularity (n=18) | 11.0 (6.5-17.0) | 99.5 (97.1-100) | 94.4 (72.7-99.9) | 57.8 (52.2-63.2) | 59.7 (54.3-64.9) |\n| Fan-shaped shadowing (n=38) | 22.6 (16.3-30.0) | 98.4 (95.5-99.7) | 92.1 (78.6-98.3) | 60.9 (55.2-66.4) | 64.3 (59.0-69.4) |\n| Irregular endometrial-myometrial junctional zone (n=63) | 36.1 (28.6-44.2) | 96.3 (92.6-98.5) | 88.9 (78.4-95.4) | 64.9 (59.0-70.5) | 69.3 (64.1-74.1) |\n| Interrupted endometrial-myometrial junctional zone (n=25) | 14.8 (9.6-21.4) | 98.9 (96.2-99.9) | 92.0 (74.0-99.0) | 58.8 (53.1-64.2) | 61.2 (55.8-66.3) |\n| Other ultrasound signs |  |  |  |  |  |\n| Heterogeneous myometrium (n = 244) | 83.9 (77.1-89.3) | 40.0 (33.0-47.3) | 53.3 (46.8-59.7) | 75.2 (65.7-83.3) | 59.7 (54.3-64.9) |\n| Question mark sign (n=15) | 9.0 (5.0-14.7) | 99.5 (97.1-100) | 93.3 (68.1-99.8) | 57.3 (51.7-62.7) | 58.8 (53.4-64.1) |\n\n\nStructured Cell Data:\n[table]\nItem: Direct ultrasound signs -> Ultrasound signs: Direct ultrasound signs\nItem: Myometrial cysts (n=67) -> Ultrasound signs: Myometrial cysts (n=67) | Sensitivity (%): 41.3 (33.5-49.5) | Specificity (%): 98.4 (95.5-99.7) | PPV (%): 95.5 (87.5-99.1) | NPV (%): 67.3 (61.4-72.8) | Accuracy (%): 72.8 (67.7-77.4)\nItem: Echogenic subendometrial lines (n=93) -> Ultrasound signs: Echogenic subendometrial lines (n=93) | Sensitivity (%): 53.5 (45.4-61.6) | Specificity (%): 94.7 (90.5-97.4) | PPV (%): 89.2 (81.1-94.7) | NPV (%): 71.4 (65.4-76.9) | Accuracy (%): 76.2 (71.4-80.6)\nItem: Hyperechogenic islands (n=22) -> Ultrasound signs: Hyperechogenic islands (n=22) | Sensitivity (%): 14.2 (9.1-20.7) | Specificity (%): 100 (98.1-100) | PPV (%): 100 (84.6-100) | NPV (%): 58.8 (53.2-64.2) | Accuracy (%): 61.4 (56.1-66.6)\nItem: Indirect ultrasound signs -> Ultrasound signs: Indirect ultrasound signs\nItem: Asymmetrical myometrial wall thickening (n = 35) -> Ultrasound signs: Asymmetrical myometrial wall thickening (n = 35) | Sensitivity (%): 21.3 (15.1-28.6) | Specificity (%): 98.9 (96.2-99.9) | PPV (%): 94.3 (80.8-99.3) | NPV (%): 60.6 (54.9-66.1) | Accuracy (%): 64.1 (58.7-69.1)\nItem: Globular uterus (n=58) -> Ultrasound signs: Globular uterus (n=58) | Sensitivity (%): 34.8 (27.4-42.9) | Specificity (%): 97.9 (94.7-99.4) | PPV (%): 93.1 (83.3-98.1) | NPV (%): 64.8 (59.0-70.3) | Accuracy (%): 69.6 (64.4-74.4)\nItem: Translesional vascularity (n=18) -> Ultrasound signs: Translesional vascularity (n=18) | Sensitivity (%): 11.0 (6.5-17.0) | Specificity (%): 99.5 (97.1-100) | PPV (%): 94.4 (72.7-99.9) | NPV (%): 57.8 (52.2-63.2) | Accuracy (%): 59.7 (54.3-64.9)\nItem: Fan-shaped shadowing (n=38) -> Ultrasound signs: Fan-shaped shadowing (n=38) | Sensitivity (%): 22.6 (16.3-30.0) | Specificity (%): 98.4 (95.5-99.7) | PPV (%): 92.1 (78.6-98.3) | NPV (%): 60.9 (55.2-66.4) | Accuracy (%): 64.3 (59.0-69.4)\nItem: Irregular endometrial-myometrial junctional zone (n=63) -> Ultrasound signs: Irregular endometrial-myometrial junctional zone (n=63) | Sensitivity (%): 36.1 (28.6-44.2) | Specificity (%): 96.3 (92.6-98.5) | PPV (%): 88.9 (78.4-95.4) | NPV (%): 64.9 (59.0-70.5) | Accuracy (%): 69.3 (64.1-74.1)\nItem: Interrupted endometrial-myometrial junctional zone (n=25) -> Ultrasound signs: Interrupted endometrial-myometrial junctional zone (n=25) | Sensitivity (%): 14.8 (9.6-21.4) | Specificity (%): 98.9 (96.2-99.9) | PPV (%): 92.0 (74.0-99.0) | NPV (%): 58.8 (53.1-64.2) | Accuracy (%): 61.2 (55.8-66.3)\nItem: Other ultrasound signs -> Ultrasound signs: Other ultrasound signs\nItem: Heterogeneous myometrium (n = 244) -> Ultrasound signs: Heterogeneous myometrium (n = 244) | Sensitivity (%): 83.9 (77.1-89.3) | Specificity (%): 40.0 (33.0-47.3) | PPV (%): 53.3 (46.8-59.7) | NPV (%): 75.2 (65.7-83.3) | Accuracy (%): 59.7 (54.3-64.9)\nItem: Question mark sign (n=15) -> Ultrasound signs: Question mark sign (n=15) | Sensitivity (%): 9.0 (5.0-14.7) | Specificity (%): 99.5 (97.1-100) | PPV (%): 93.3 (68.1-99.8) | NPV (%): 57.3 (51.7-62.7) | Accuracy (%): 58.8 (53.4-64.1)",
+          "metadata": null,
+          "tokenCount": 1218,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-31",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002hvrv4qha7tysw",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 32,
+          "section": "Results",
+          "pageNumber": 6,
+          "text": "Original Article\n\n431\n\nTable 3 Diagnostic accuracy of multivariable ultrasound models for the detection of adenomyosis in women that underwent transvaginal ultrasound examination and subsequent hysterectomy within 6months (n=345), using histopathologically confirmed adenomyosis as the reference standard\n\nData in parentheses are 95%CI. *Includes myometrial cysts, echogenic subendometrial lines and hyperechogenic islands. †Includes asymmetrical myometrial wall thickening, globular uterus, translesional vascularity, fan-shaped shadowing, irregular endometrial-myometrial junctional zone and interrupted endometrial-myometrial junctional zone. ‡Includes heterogeneous myometrium and the question mark sign. §Includes all direct and indirect ultrasound features. κ, Cohen's kappa coefficient; NPV, negative predictive value; PPV, positive predictive value.",
+          "metadata": null,
+          "tokenCount": 214,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-32",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002ivrv41di2ksph",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 33,
+          "section": "Results",
+          "pageNumber": 6,
+          "text": "[Synthetic research excerpt for chunk 33]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-33",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002jvrv4nplvezrp",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 34,
+          "section": "Results",
+          "pageNumber": 6,
+          "text": "[Synthetic research excerpt for chunk 34]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-34",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002kvrv4mya18ve0",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 35,
+          "section": "Discussion",
+          "pageNumber": 6,
+          "text": "[Synthetic research excerpt for chunk 35]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-35",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002lvrv42m18u9gm",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 36,
+          "section": "Discussion",
+          "pageNumber": 6,
+          "text": "[Synthetic research excerpt for chunk 36]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-36",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvz0n4qf0013vrlojtkskp0h",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 37,
+          "section": "Discussion",
+          "pageNumber": 6,
+          "text": "[Synthetic research excerpt for chunk 37]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-37",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002nvrv4sbrv7gxz",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 38,
+          "section": "Discussion",
+          "pageNumber": 6,
+          "text": "[Synthetic research excerpt for chunk 38]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-38",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002ovrv43rw3q02d",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 39,
+          "section": "Discussion",
+          "pageNumber": 6,
+          "text": "[Synthetic research excerpt for chunk 39]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-39",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002pvrv4japk5yb7",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 40,
+          "section": "Discussion",
+          "pageNumber": 7,
+          "text": "[Synthetic research excerpt for chunk 40]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-40",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002qvrv4mjnicfwn",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 41,
+          "section": "Discussion",
+          "pageNumber": 7,
+          "text": "[Synthetic research excerpt for chunk 41]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-41",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002rvrv4n6n6rrqo",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 42,
+          "section": "Discussion",
+          "pageNumber": 7,
+          "text": "[Synthetic research excerpt for chunk 42]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-42",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002svrv43uzzhz1b",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 43,
+          "section": "Discussion",
+          "pageNumber": 7,
+          "text": "[Synthetic research excerpt for chunk 43]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-43",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002tvrv4e6mh72jl",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 44,
+          "section": "Discussion",
+          "pageNumber": 7,
+          "text": "[Synthetic research excerpt for chunk 44]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-44",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002uvrv46bby4yyd",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 45,
+          "section": "Discussion",
+          "pageNumber": 7,
+          "text": "[Synthetic research excerpt for chunk 45]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-45",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002vvrv4tfnv85xa",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 46,
+          "section": "References",
+          "pageNumber": 7,
+          "text": "[Synthetic research excerpt for chunk 46]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-46",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002wvrv47ey2y51i",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 47,
+          "section": "References",
+          "pageNumber": 8,
+          "text": "[Synthetic research excerpt for chunk 47]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-47",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002xvrv413rm26fb",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 48,
+          "section": "References",
+          "pageNumber": 8,
+          "text": "[Synthetic research excerpt for chunk 48]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-48",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002yvrv48htr888a",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 49,
+          "section": "References",
+          "pageNumber": 8,
+          "text": "[Synthetic research excerpt for chunk 49]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-49",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw2002zvrv4k4rgatlk",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 50,
+          "section": "References",
+          "pageNumber": 8,
+          "text": "[Synthetic research excerpt for chunk 50]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-50",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw20030vrv4y2m9mmnc",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 51,
+          "section": "References",
+          "pageNumber": 8,
+          "text": "[Synthetic research excerpt for chunk 51]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-51",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        },
+        {
+          "id": "cmvo28mw20031vrv4wnq2glgs",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "chunkIndex": 52,
+          "section": "References",
+          "pageNumber": 8,
+          "text": "[Synthetic research excerpt for chunk 52]",
+          "metadata": null,
+          "tokenCount": 10,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-hash-52",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-10-25T16:46:40.000Z"
+        }
+      ],
+      "processingJobs": [
+        {
+          "id": "cmvkzns7s0032vrgggeohixuu",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "EMBEDDING_GENERATION",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-23T13:11:22.263Z",
+          "completedAt": "2026-10-23T13:11:25.191Z",
+          "createdAt": "2026-10-23T13:11:22.264Z",
+          "updatedAt": "2026-10-23T13:11:25.191Z"
+        },
+        {
+          "id": "cmvo1q56x0001vrkkxeb3y3v7",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 2,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-25T16:32:30.155Z",
+          "completedAt": "2026-10-25T16:32:46.438Z",
+          "createdAt": "2026-10-25T16:32:30.157Z",
+          "updatedAt": "2026-10-25T16:32:46.438Z"
+        },
+        {
+          "id": "cmvo1qhs5001kvrkkh5ui4qjc",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 3,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-25T16:32:46.468Z",
+          "completedAt": "2026-10-25T16:33:04.905Z",
+          "createdAt": "2026-10-25T16:32:46.469Z",
+          "updatedAt": "2026-10-25T16:33:04.905Z"
+        },
+        {
+          "id": "cmvo1und20001vr9cb0p1i2g6",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 4,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-25T16:36:00.324Z",
+          "completedAt": "2026-10-25T16:36:18.928Z",
+          "createdAt": "2026-10-25T16:36:00.326Z",
+          "updatedAt": "2026-10-25T16:36:18.928Z"
+        },
+        {
+          "id": "cmvo1v2fs001kvr9cmdr8u28r",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 5,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-25T16:36:19.865Z",
+          "completedAt": "2026-10-25T16:36:33.760Z",
+          "createdAt": "2026-10-25T16:36:19.866Z",
+          "updatedAt": "2026-10-25T16:36:33.760Z"
+        },
+        {
+          "id": "cmvo1wm8u0001vrc0v9r54ebn",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 6,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-25T16:37:32.190Z",
+          "completedAt": "2026-10-25T16:37:50.562Z",
+          "createdAt": "2026-10-25T16:37:32.191Z",
+          "updatedAt": "2026-10-25T16:37:50.562Z"
+        },
+        {
+          "id": "cmvo1x0xf001kvrc0o73ktyh1",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 7,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-25T16:37:51.219Z",
+          "completedAt": "2026-10-25T16:38:05.752Z",
+          "createdAt": "2026-10-25T16:37:51.220Z",
+          "updatedAt": "2026-10-25T16:38:05.752Z"
+        },
+        {
+          "id": "cmvo25ykq0001vruc9q0qqiaz",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 8,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-25T16:44:48.072Z",
+          "completedAt": "2026-10-25T16:45:06.259Z",
+          "createdAt": "2026-10-25T16:44:48.074Z",
+          "updatedAt": "2026-10-25T16:45:06.259Z"
+        },
+        {
+          "id": "cmvo26cmi001kvruc1prxyiz9",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 9,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-25T16:45:06.281Z",
+          "completedAt": "2026-10-25T16:45:22.428Z",
+          "createdAt": "2026-10-25T16:45:06.283Z",
+          "updatedAt": "2026-10-25T16:45:22.428Z"
+        },
+        {
+          "id": "cmvo27xun0001vrv4efbdm3k9",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 10,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-25T16:46:21.167Z",
+          "completedAt": "2026-10-25T16:46:37.904Z",
+          "createdAt": "2026-10-25T16:46:21.168Z",
+          "updatedAt": "2026-10-25T16:46:37.904Z"
+        },
+        {
+          "id": "cmvo28bzc001kvrv4rzia3q16",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 11,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-25T16:46:38.760Z",
+          "completedAt": "2026-10-25T16:46:52.903Z",
+          "createdAt": "2026-10-25T16:46:38.761Z",
+          "updatedAt": "2026-10-25T16:46:52.903Z"
+        },
+        {
+          "id": "cmvz1j49p0001vr0o5syfzx62",
+          "paperId": "cmvkznrpr001fvrggnajkkq4b",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 12,
+          "maxAttempts": 3,
+          "errorMessage": "REPROCESSING_AFTER_INCIDENT_RECOVERY (local Docling pipeline from intact original.pdf)",
+          "errorStack": null,
+          "startedAt": "2026-11-02T09:12:30.301Z",
+          "completedAt": "2026-11-02T09:12:48.564Z",
+          "createdAt": "2026-11-02T09:12:30.302Z",
+          "updatedAt": "2026-11-02T09:12:48.564Z"
+        }
+      ],
+      "categories": []
+    },
+    {
+      "id": "cmuwoj877000cvr288df6z92u",
+      "title": "Attention Is All You Need",
+      "abstract": "Proposes the Transformer architecture, replacing recurrent and convolutional layers with multi-head self-attention mechanisms to establish direct dependencies across arbitrary token distances in sequence processing with high GPU parallelization.",
+      "publicationDate": "2017-12-06T00:00:00.000Z",
+      "journal": "Advances in Neural Information Processing Systems (NeurIPS 30)",
+      "doi": "10.48550/arXiv.1706.03762",
+      "arxivId": "1706.03762",
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": true,
+      "pdfUrl": "https://arxiv.org/pdf/1706.03762.pdf",
+      "storagePath": null,
+      "status": "COMPLETED",
+      "sourceProvenance": {
+        "isLawfulOpenAccess": true
+      },
+      "researchQuestion": "Can sequence-to-sequence dependencies be effectively mapped in constant computational path length without sequential recurrent or convolutional constraints?",
+      "methodology": "Stacked encoder-decoder multi-head dot-product attention modules with fixed sinusoidal positional encodings, residual connections, and layer normalization.",
+      "results": "Outperformed contemporary recurrent baselines on WMT 2014 translation tasks (28.4 BLEU English-German, 41.8 BLEU English-French) with substantially reduced training time.",
+      "limitations": "Quadratic O(N²) memory scaling relative to input token sequence length and fixed positional encoding extrapolation limits.",
+      "conclusion": "Self-attention mechanisms alone suffice for sequence transduction, establishing a parallelizable foundation for modern generative language modeling.",
+      "keywords": [
+        "Transformer",
+        "Self-Attention",
+        "Deep Learning",
+        "Seq2Seq",
+        "Neural Machine Translation"
+      ],
+      "citationCount": 125400,
+      "rawMetadata": null,
+      "createdAt": "2026-10-14T19:46:43.665Z",
+      "updatedAt": "2026-10-24T08:35:43.138Z",
+      "authors": [],
+      "chunks": [
+        {
+          "id": "cmvm59584000fvrpoky1y2jtd",
+          "paperId": "cmuwoj877000cvr288df6z92u",
+          "chunkIndex": 1,
+          "text": "Can sequence-to-sequence dependencies be effectively mapped in constant computational path length without sequential recurrent or convolutional constraints?",
+          "section": "Research Question",
+          "pageNumber": 2,
+          "tokenCount": 39,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "ea474fb8b42c1b090e8fc48f2bef09ddc0eb81b8829d673adfc42353de1b5ca4",
+          "embeddedAt": "2026-10-24T08:38:00.335Z",
+          "createdAt": "2026-10-24T08:35:43.156Z"
+        },
+        {
+          "id": "cmvm59588000hvrpob28ftmj4",
+          "paperId": "cmuwoj877000cvr288df6z92u",
+          "chunkIndex": 2,
+          "text": "Stacked encoder-decoder multi-head dot-product attention modules with fixed sinusoidal positional encodings, residual connections, and layer normalization.",
+          "section": "Methods",
+          "pageNumber": 3,
+          "tokenCount": 39,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "dfd1c42a1d0a162d9e14193479114d04f290fb69d84704bdd6b9e0ba03101be4",
+          "embeddedAt": "2026-10-24T08:38:00.348Z",
+          "createdAt": "2026-10-24T08:35:43.161Z"
+        },
+        {
+          "id": "cmvm5958i000lvrpolycgj8y1",
+          "paperId": "cmuwoj877000cvr288df6z92u",
+          "chunkIndex": 4,
+          "text": "Quadratic O(N²) memory scaling relative to input token sequence length and fixed positional encoding extrapolation limits.",
+          "section": "Limitations",
+          "pageNumber": 5,
+          "tokenCount": 31,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "9b32a80d97148556e785f0ae69ee5ee3f8c2901bd50a6d7aaaebac7431037128",
+          "embeddedAt": "2026-10-24T08:38:00.368Z",
+          "createdAt": "2026-10-24T08:35:43.171Z"
+        },
+        {
+          "id": "cmvm5958q000nvrpoe21vk8f8",
+          "paperId": "cmuwoj877000cvr288df6z92u",
+          "chunkIndex": 5,
+          "text": "Self-attention mechanisms alone suffice for sequence transduction, establishing a parallelizable foundation for modern generative language modeling.",
+          "section": "Conclusion",
+          "pageNumber": 6,
+          "tokenCount": 37,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "20af65f59bf44bc8722efb0dc5d291a11e125949e8d2e19817e89ed15bd07b55",
+          "embeddedAt": "2026-10-24T08:38:00.377Z",
+          "createdAt": "2026-10-24T08:35:43.178Z"
+        },
+        {
+          "id": "cmvm5957x000dvrpolasi3mq0",
+          "paperId": "cmuwoj877000cvr288df6z92u",
+          "chunkIndex": 0,
+          "text": "Proposes the Transformer architecture, replacing recurrent and convolutional layers with multi-head self-attention mechanisms to establish direct dependencies across arbitrary token distances in sequence processing with high GPU parallelization.",
+          "section": "Abstract",
+          "pageNumber": 1,
+          "tokenCount": 62,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "f3ec64d5057596568f9ac181853d9b319fba19a06e40530215706567ffa23674",
+          "embeddedAt": "2026-10-24T08:38:00.324Z",
+          "createdAt": "2026-10-24T08:35:43.150Z"
+        },
+        {
+          "id": "cmvm5958d000jvrposus81udl",
+          "paperId": "cmuwoj877000cvr288df6z92u",
+          "chunkIndex": 3,
+          "text": "Outperformed contemporary recurrent baselines on WMT 2014 translation tasks (28.4 BLEU English-German, 41.8 BLEU English-French) with substantially reduced training time.",
+          "section": "Results",
+          "pageNumber": 4,
+          "tokenCount": 43,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "bf8f069ddcba43a5b2c60547e48202c2545f1cc0922cfc7442883479a47420fc",
+          "embeddedAt": "2026-10-24T08:38:00.359Z",
+          "createdAt": "2026-10-24T08:35:43.166Z"
+        }
+      ],
+      "processingJobs": [
+        {
+          "id": "cmvm5c31z0005vrs8vp7xpl6u",
+          "paperId": "cmuwoj877000cvr288df6z92u",
+          "stage": "EMBEDDING_GENERATION",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-24T08:38:00.310Z",
+          "completedAt": "2026-10-24T08:38:00.383Z",
+          "createdAt": "2026-10-24T08:38:00.312Z",
+          "updatedAt": "2026-10-24T08:38:00.384Z"
+        }
+      ],
+      "categories": []
+    },
+    {
+      "id": "cmvm4wixp000lvri8agoxa86q",
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "abstract": "Proposes Retrieval-Augmented Generation (RAG), coupling parametric neural sequence-to-sequence representations with dense vector document retrieval from external knowledge corpora to reduce factual hallucinations.",
+      "publicationDate": "2020-11-16T00:00:00.000Z",
+      "journal": "Conference on Empirical Methods in Natural Language Processing (EMNLP)",
+      "doi": "10.48550/arXiv.2005.11401",
+      "arxivId": "2005.11401",
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": false,
+      "pdfUrl": "https://arxiv.org/pdf/2005.11401.pdf",
+      "storagePath": null,
+      "status": "COMPLETED",
+      "sourceProvenance": null,
+      "researchQuestion": "How can deep language models ground generative responses in external factual sources to reduce hallucination and provide verifiable source citations?",
+      "methodology": "Combines dense passage retrieval (DPR) over indexed document vectors with a sequence-to-sequence language generator (BART), optimizing end-to-end marginal likelihood over latent documents.",
+      "results": "Achieves state-of-the-art accuracy on knowledge-intensive open-domain question answering benchmarks (Natural Questions, WebQuestions) with verifiable citation provenance.",
+      "limitations": "Retrieval roundtrips add compute latency, and external corpus vector indexes require synchronization and periodic re-embedding.",
+      "conclusion": "Augmenting parametric neural weights with non-parametric retrieval significantly mitigates factual errors and establishes an empirical foundation for zero-hallucination systems.",
+      "keywords": [
+        "RAG",
+        "Information Retrieval",
+        "Vector Search",
+        "Hallucination Mitigation",
+        "Dense Retrieval"
+      ],
+      "citationCount": 8900,
+      "rawMetadata": null,
+      "createdAt": "2026-10-24T08:25:54.398Z",
+      "updatedAt": "2026-10-24T08:35:43.192Z",
+      "authors": [
+        {
+          "id": "cmvm4wixu000nvri8086risbp",
+          "paperId": "cmvm4wixp000lvri8agoxa86q",
+          "authorId": "cmvb0j908000avrusccoc150a",
+          "orderIndex": 0,
+          "isCorresponding": true,
+          "createdAt": "2026-10-24T08:25:54.403Z",
+          "author": {
+            "id": "cmvb0j908000avrusccoc150a",
+            "name": "Patrick Lewis",
+            "institution": "Meta AI / Cohere",
+            "bio": "Lead creator of Retrieval-Augmented Generation (RAG) and benchmark lead for knowledge-intensive NLP tasks.",
+            "orcid": "0000-0002-4567-8901",
+            "citationCount": 28000,
+            "hIndex": 32,
+            "createdAt": "2026-10-16T13:38:08.600Z",
+            "updatedAt": "2026-10-24T08:35:43.123Z"
+          }
+        }
+      ],
+      "chunks": [
+        {
+          "id": "cmvm5959e000rvrpohy2pwper",
+          "paperId": "cmvm4wixp000lvri8agoxa86q",
+          "chunkIndex": 1,
+          "text": "How can deep language models ground generative responses in external factual sources to reduce hallucination and provide verifiable source citations?",
+          "section": "Research Question",
+          "pageNumber": 2,
+          "tokenCount": 38,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "7189b827001a5c7daf31d0a18179dec2aa9d418e8c02d58b4c3863d7fd2ecb1a",
+          "embeddedAt": "2026-10-24T08:38:00.416Z",
+          "createdAt": "2026-10-24T08:35:43.203Z"
+        },
+        {
+          "id": "cmvm5959i000tvrpoyvtk8ymt",
+          "paperId": "cmvm4wixp000lvri8agoxa86q",
+          "chunkIndex": 2,
+          "text": "Combines dense passage retrieval (DPR) over indexed document vectors with a sequence-to-sequence language generator (BART), optimizing end-to-end marginal likelihood over latent documents.",
+          "section": "Methods",
+          "pageNumber": 3,
+          "tokenCount": 47,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "84a56c685d0a0590a235d8bd8480a08921c5b84c8297ca595b781a7859866e6c",
+          "embeddedAt": "2026-10-24T08:38:00.425Z",
+          "createdAt": "2026-10-24T08:35:43.206Z"
+        },
+        {
+          "id": "cmvm5959r000vvrpofwiiw7qx",
+          "paperId": "cmvm4wixp000lvri8agoxa86q",
+          "chunkIndex": 3,
+          "text": "Achieves state-of-the-art accuracy on knowledge-intensive open-domain question answering benchmarks (Natural Questions, WebQuestions) with verifiable citation provenance.",
+          "section": "Results",
+          "pageNumber": 4,
+          "tokenCount": 43,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "f99ce9211cd9cb31ebf01e12608decaf0c2c15b925d86ec00d83f2dc7dc4b8d7",
+          "embeddedAt": "2026-10-24T08:38:00.434Z",
+          "createdAt": "2026-10-24T08:35:43.215Z"
+        },
+        {
+          "id": "cmvm595a0000zvrpoevubad2f",
+          "paperId": "cmvm4wixp000lvri8agoxa86q",
+          "chunkIndex": 5,
+          "text": "Augmenting parametric neural weights with non-parametric retrieval significantly mitigates factual errors and establishes an empirical foundation for zero-hallucination systems.",
+          "section": "Conclusion",
+          "pageNumber": 6,
+          "tokenCount": 45,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "33946e3b2daf30cdad8f16f5a381fa523b0eb97ee271ff070e27cc67711f74c1",
+          "embeddedAt": "2026-10-24T08:38:00.454Z",
+          "createdAt": "2026-10-24T08:35:43.224Z"
+        },
+        {
+          "id": "cmvm5959a000pvrpo5ahmjbo1",
+          "paperId": "cmvm4wixp000lvri8agoxa86q",
+          "chunkIndex": 0,
+          "text": "Proposes Retrieval-Augmented Generation (RAG), coupling parametric neural sequence-to-sequence representations with dense vector document retrieval from external knowledge corpora to reduce factual hallucinations.",
+          "section": "Abstract",
+          "pageNumber": 1,
+          "tokenCount": 54,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "5039f7425f731a6f07d6b8e2d037cbae6c0cd6a5059991de92a65e4399212317",
+          "embeddedAt": "2026-10-24T08:38:00.406Z",
+          "createdAt": "2026-10-24T08:35:43.198Z"
+        },
+        {
+          "id": "cmvm5959v000xvrpoztutzwbt",
+          "paperId": "cmvm4wixp000lvri8agoxa86q",
+          "chunkIndex": 4,
+          "text": "Retrieval roundtrips add compute latency, and external corpus vector indexes require synchronization and periodic re-embedding.",
+          "section": "Limitations",
+          "pageNumber": 5,
+          "tokenCount": 32,
+          "metadata": null,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "d242aecba7c0cc0341bc0d4441b798d5d985e707fa651f191d243931b367ef4b",
+          "embeddedAt": "2026-10-24T08:38:00.443Z",
+          "createdAt": "2026-10-24T08:35:43.220Z"
+        }
+      ],
+      "processingJobs": [
+        {
+          "id": "cmvm5c3480007vrs8oxxm2luu",
+          "paperId": "cmvm4wixp000lvri8agoxa86q",
+          "stage": "EMBEDDING_GENERATION",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-10-24T08:38:00.391Z",
+          "completedAt": "2026-10-24T08:38:00.460Z",
+          "createdAt": "2026-10-24T08:38:00.393Z",
+          "updatedAt": "2026-10-24T08:38:00.461Z"
+        }
+      ],
+      "categories": [
+        {
+          "id": "cmvm4wiy0000pvri8a1vl7pw3",
+          "paperId": "cmvm4wixp000lvri8agoxa86q",
+          "categoryId": "cmvb0j8yq0001vrusv10ei34f",
+          "createdAt": "2026-10-24T08:25:54.409Z",
+          "category": {
+            "id": "cmvb0j8yq0001vrusv10ei34f",
+            "name": "Natural Language Processing",
+            "slug": "nlp",
+            "description": "RAG architectures, parameter-efficient fine-tuning, sequence transduction, and semantic embeddings.",
+            "iconName": "FileText",
+            "createdAt": "2026-10-16T13:38:08.547Z",
+            "updatedAt": "2026-10-24T08:35:43.078Z"
+          }
+        },
+        {
+          "id": "cmvm4wiy5000rvri8tkzui978",
+          "paperId": "cmvm4wixp000lvri8agoxa86q",
+          "categoryId": "cmvb0j8yf0000vrus6llzmc08",
+          "createdAt": "2026-10-24T08:25:54.413Z",
+          "category": {
+            "id": "cmvb0j8yf0000vrus6llzmc08",
+            "name": "Artificial Intelligence",
+            "slug": "ai",
+            "description": "Neural architectures, foundation models, reinforcement learning, and agentic workflows.",
+            "iconName": "Brain",
+            "createdAt": "2026-10-16T13:38:08.535Z",
+            "updatedAt": "2026-10-24T08:35:43.057Z"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cmvkux8ho001cvrkgvgygi96s",
+      "title": "Transvaginal ultrasound for diagnosis of adenomyosis: a review",
+      "abstract": "Abstract not provided in scholarly metadata.",
+      "publicationDate": "2006-03-21T00:00:00.000Z",
+      "journal": "Best Practice & Research Clinical Obstetrics & Gynaecology",
+      "doi": "10.1016/j.bpobgyn.2006.01.005",
+      "arxivId": null,
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": false,
+      "pdfUrl": null,
+      "storagePath": null,
+      "status": "METADATA_ONLY",
+      "sourceProvenance": {
+        "externalUrl": "https://doi.org/10.1016/j.bpobgyn.2006.01.005",
+        "rawMetadata": {
+          "citedEvidence": {
+            "license": null,
+            "concepts": [
+              {
+                "id": "https://openalex.org/C2779166600",
+                "level": 3,
+                "score": 0.98088515,
+                "wikidata": "https://www.wikidata.org/wiki/Q2012569",
+                "display_name": "Adenomyosis"
+              },
+              {
+                "id": "https://openalex.org/C71924100",
+                "level": 0,
+                "score": 0.9504431,
+                "wikidata": "https://www.wikidata.org/wiki/Q11190",
+                "display_name": "Medicine"
+              },
+              {
+                "id": "https://openalex.org/C126838900",
+                "level": 1,
+                "score": 0.6018221,
+                "wikidata": "https://www.wikidata.org/wiki/Q77604",
+                "display_name": "Radiology"
+              },
+              {
+                "id": "https://openalex.org/C143409427",
+                "level": 2,
+                "score": 0.5309051,
+                "wikidata": "https://www.wikidata.org/wiki/Q161238",
+                "display_name": "Magnetic resonance imaging"
+              },
+              {
+                "id": "https://openalex.org/C2775934546",
+                "level": 2,
+                "score": 0.50674945,
+                "wikidata": "https://www.wikidata.org/wiki/Q179991",
+                "display_name": "Biopsy"
+              }
+            ],
+            "openAlexId": "W2022269531",
+            "hasFulltext": false,
+            "citedByCount": 181
+          },
+          "relevanceScore": 63.356,
+          "relevanceConcepts": [
+            "ultrasound_imaging",
+            "clinical_tasks"
+          ],
+          "relevanceAlignment": "ALIGNED"
+        },
+        "discoveredAt": "2026-10-23T10:58:45.174Z",
+        "isOpenAccess": false,
+        "externalPdfUrl": null,
+        "sourceProviders": [
+          "CITED_EVIDENCE"
+        ],
+        "importedByUserId": "cmvb1cabk0001vrgo46umk5zp",
+        "openAccessPdfUrl": null,
+        "sourceResolution": {
+          "resolvedAt": "2026-10-27T11:02:31.400Z",
+          "explanation": "Free-to-read access located (Publisher Version of Record). Platform redistribution or downloading restricted by license (Publisher-restricted). External reading link preserved.",
+          "identifiers": {
+            "doi": "10.1016/j.bpobgyn.2006.01.005",
+            "pmid": null,
+            "pmcid": null,
+            "arxivId": null,
+            "canonicalId": "10.1016/j.bpobgyn.2006.01.005"
+          },
+          "permissions": {
+            "canReadDirectly": true,
+            "canRedistribute": false,
+            "canPlatformIngest": false,
+            "canDeriveOrTransform": false
+          },
+          "allCandidates": [
+            {
+              "pdfUrl": null,
+              "license": null,
+              "canDirectRead": false,
+              "lastCheckedAt": "2026-10-27T11:02:31.400Z",
+              "landingPageUrl": "https://doi.org/10.1016/j.bpobgyn.2006.01.005",
+              "sourceProvider": "CROSSREF",
+              "licenseEvidence": "Canonical Crossref publisher DOI landing page",
+              "paperIdentifier": "10.1016/j.bpobgyn.2006.01.005",
+              "canPlatformIngest": false,
+              "manuscriptVersion": "publishedVersion",
+              "verificationStatus": "VERIFIED"
+            },
+            {
+              "pdfUrl": null,
+              "license": null,
+              "canDirectRead": true,
+              "lastCheckedAt": "2026-10-27T11:02:31.400Z",
+              "landingPageUrl": "https://europepmc.org/article/MED/16545618",
+              "sourceProvider": "EUROPE_PMC",
+              "licenseEvidence": "Europe PMC (Open Access: No, License: None stated)",
+              "paperIdentifier": "10.1016/j.bpobgyn.2006.01.005",
+              "canPlatformIngest": false,
+              "manuscriptVersion": "publishedVersion",
+              "verificationStatus": "VERIFIED"
+            }
+          ],
+          "bestCandidate": {
+            "pdfUrl": null,
+            "license": null,
+            "canDirectRead": true,
+            "lastCheckedAt": "2026-10-27T11:02:31.400Z",
+            "landingPageUrl": "https://europepmc.org/article/MED/16545618",
+            "sourceProvider": "EUROPE_PMC",
+            "licenseEvidence": "Europe PMC (Open Access: No, License: None stated)",
+            "paperIdentifier": "10.1016/j.bpobgyn.2006.01.005",
+            "canPlatformIngest": false,
+            "manuscriptVersion": "publishedVersion",
+            "verificationStatus": "VERIFIED"
+          },
+          "classification": "READING_LINK_ONLY",
+          "versionSummary": {
+            "hasPreprint": false,
+            "hasVersionOfRecord": true,
+            "hasAcceptedManuscript": false
+          }
+        },
+        "originalIdentifiers": {
+          "doi": "10.1016/j.bpobgyn.2006.01.005",
+          "pmid": null,
+          "pmcid": null,
+          "arxivId": null,
+          "semanticScholarId": null
+        },
+        "externalLandingPageUrl": "https://europepmc.org/article/MED/16545618",
+        "scholarlyClassification": "READING_LINK_ONLY"
+      },
+      "researchQuestion": null,
+      "methodology": null,
+      "results": null,
+      "limitations": null,
+      "conclusion": null,
+      "keywords": [],
+      "citationCount": 181,
+      "rawMetadata": null,
+      "createdAt": "2026-10-23T10:58:45.181Z",
+      "updatedAt": "2026-10-27T11:02:37.548Z",
+      "authors": [
+        {
+          "id": "cmvkux8i3001fvrkg82be3niz",
+          "paperId": "cmvkux8ho001cvrkgvgygi96s",
+          "authorId": "cmvkux8hz001dvrkgbvv79wjl",
+          "orderIndex": 0,
+          "isCorresponding": false,
+          "createdAt": "2026-10-23T10:58:45.195Z",
+          "author": {
+            "id": "cmvkux8hz001dvrkgbvv79wjl",
+            "name": "Margit Dueholm",
+            "institution": "Aarhus University Hospital",
+            "bio": null,
+            "orcid": "https://orcid.org/0000-0002-2577-7903",
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-10-23T10:58:45.191Z",
+            "updatedAt": "2026-10-23T10:58:45.191Z"
+          }
+        }
+      ],
+      "chunks": [],
+      "processingJobs": [
+        {
+          "id": "cmvqkthor0005vry4fk6402jp",
+          "paperId": "cmvkux8ho001cvrkgvgygi96s",
+          "stage": "METADATA_EXTRACTION",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": "lease_cmvkux8ho001cvrkgvgygi96s_att1_1793098951366_e8e130c14d150dc7",
+          "startedAt": "2026-10-27T11:02:31.366Z",
+          "completedAt": "2026-10-27T11:02:37.533Z",
+          "createdAt": "2026-10-27T11:02:31.372Z",
+          "updatedAt": "2026-10-27T11:02:37.535Z"
+        }
+      ],
+      "categories": []
+    },
+    {
+      "id": "cmunotrr10000vrusnqyv61ut",
+      "title": "Application of multimodal ultrasound radiomics in the diagnosis of superficial lymph node tuberculosis",
+      "abstract": "\"Objective: To develop preoperative diagnostic models for superficial lymph node tuberculosis (LNTB) using radiomic features extracted from multimodal ultrasound imaging, including gray-scale ultrasound (US), ultrasound elastography (UE), and contrast-enhanced ultrasound (CEUS), in conjunction with various machine learning algorithms.Methods: A retrospective study was conducted on 222 patients with lymphadenopathy. The patients were randomly divided into a training group ($n=156$) and a validation group ($n=66$) in a 7:3 ratio. 837 radiomics features were extracted from images of each modality (US, UE and CEUS). After initial screening by hypothesis testing, the least absolute shrinkage and selection operator (LASSO) regression with five-fold cross-validation was used for feature dimensionality reduction and selection. After feature selection, five machine learning models—logistic regression, decision tree, random forest, support vector machine, and AdaBoost—were used to construct radiomic-based models. Receiver operating characteristic (ROC) curves were generated, and the area under the curve (AUC) was computed to assess the performance of each model in predicting superficial LNTB. Clinical decision curve (DCA) is used to measure the net benefits under various probability thresholds. The diagnostic performance of ultrasound physicians was also compared with that of the best-performing machine learning model.Results: Among the models generated by different algorithms, the decision tree model exhibited the best performance, achieving an AUC of 0.909 (95% CI, 0.789–0.949) in the training cohort and 0.866 (95% CI, 0.774–0.958) in the validation cohort. The AUC, sensitivity, specificity, positive predictive value (PPV), and negative predictive value (NPV) for ultrasound physicians were 0.693 (95% CI, 0.568–0.818), 0.698, 0.689, 0.722, and 0.664, respectively. The DCA shows that the decision tree model has the best net income in the range of clinical relevance threshold of 0.6–0.8. Delong test showed that decision tree model was superior to ultrasonic doctor's diagnosis ($Z=2.98$, $p<0.0029$).Conclusion: The radiomic model constructed from US, UE, and CEUS demonstrated robust diagnostic performance for superficial LNTB, with the decision tree model yielding the best results",
+      "publicationDate": "2026-09-05T00:00:00.000Z",
+      "journal": "BMC Medical Imaging",
+      "doi": "10.1186/s12880-026-02403-2",
+      "arxivId": null,
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": false,
+      "pdfUrl": "https://enbunglssqrjugyffysh.supabase.co/storage/v1/object/public/research-papers/cmunotrr10000vrusnqyv61ut/original.pdf",
+      "storagePath": "research-papers/cmunotrr10000vrusnqyv61ut/original.pdf",
+      "status": "COMPLETED",
+      "sourceProvenance": null,
+      "researchQuestion": "\"This study aims to develop a radiomic model using multimodal ultrasound imaging to predict superficial LNTB preoperatively, and further construct single-modal subgroup models to evaluate the diagnostic value of different modal combinations, providing a potential early diagnostic tool adaptable to different clinical practice conditions.\"",
+      "methodology": "\"This retrospective study included patients with lymphadenopathy who presented to our hospital between September 2018 and September 2022... Ultrasound examinations were performed using Philips IU22 and IU-Elite ultrasound diagnostic machines, equipped with L12-5 and L9-3 broadband linear probes, with a frequency range of 3 to 12 MHz... Two physicians, each with over five years of experience in superficial lymph node ultrasound diagnosis and blinded to pathological results, manually delineated regions of interest (ROI) on the US, UE, and CEUS images using 3D Slicer software to obtain ROI mask files, which were saved in NRRD format. The segmented ROIs were then imported into Pyradiomics software to extract radiomic features. During model development, the synthetic minority oversampling technique (SMOTE) was applied to the training cohort to address potential class imbalance. In addition, all extracted features were normalized using Z-scores before feature selection and model construction... Patients were randomly divided into a training group and a validation group in a 7:3 ratio... Feature selection was performed using a two-step procedure. First, univariate hypothesis testing was applied to identify features that differed significantly between the LNTB and non-LNTB groups ($P<0.05$). The retained features were then further reduced using least absolute shrinkage and selection operator (LASSO) regression with five-fold cross-validation... The optimal features were used to construct predictive models employing logistic regression, decision tree, random forest, support vector machine (SVM), and AdaBoost algorithms.\"",
+      "results": "\"Among the models generated by different algorithms, the decision tree model exhibited the best performance, achieving an AUC of 0.909 (95% CI, 0.789–0.949) in the training cohort and 0.866 (95% CI, 0.774–0.958) in the validation cohort. The AUC, sensitivity, specificity, positive predictive value (PPV), and negative predictive value (NPV) for ultrasound physicians were 0.693 (95% CI, 0.568–0.818), 0.698, 0.689, 0.722, and 0.664, respectively. The DCA shows that the decision tree model has the best net income in the range of clinical relevance threshold of 0.6–0.8. Delong test showed that decision tree model was superior to ultrasonic doctor's diagnosis ($Z=2.98$, $p<0.0029$)... Using the same models on the same dataset, all single-modality models yielded lower AUC values than the multimodal",
+      "limitations": "\"This study has several limitations: (1) it was a single-center, retrospective study with a limited sample size; (2) all ultrasound images were obtained using the same brand of ultrasound equipment, and it is unclear whether images from other manufacturers would show any biases; (3) a binary classification approach was used, and non-tuberculous lymphadenopathy was not further subdivided. Future research should include subgroup analyses to better differentiate between various non-tuberculous lymph node diseases; (4) all the patients in this study completed three-mode ultrasound, which avoided the disadvantage of lower diagnostic efficiency compared with the single-mode prediction model studied in the past. This may also lead to case selection bias, and prospective research will be carried out in the future to verify the generalization of the model; (5) a prospective targeted validation study will be carried out in the future, including specific clinical populations such as primary hospital patients with only US examination, immunocompromised patients (e.g., diabetes, HIV) with suspected LNTB, and pediatric patients with superficial lymphadenopathy, to further verify the model's diagnostic efficacy in different clinical scenarios.",
+      "conclusion": "Multimodal ultrasound-based radiomic models demonstrate high diagnostic accuracy for superficial LNTB, with the decision tree model exhibiting the best performance. These models outperform traditional ultrasound diagnosis, offering valuable preoperative diagnostic support.\"",
+      "keywords": [
+        "Ultrasound",
+        "Radiomics",
+        "Lymph node tuberculosis",
+        "Diagnostic models",
+        "Machine learning"
+      ],
+      "citationCount": 0,
+      "rawMetadata": null,
+      "createdAt": "2026-09-30T05:51:42.011Z",
+      "updatedAt": "2026-09-30T05:51:57.135Z",
+      "authors": [
+        {
+          "id": "cmunotsjo0003vruspmnj46ea",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "authorId": "cmunotsav0001vrus1najqm06",
+          "orderIndex": 0,
+          "isCorresponding": true,
+          "createdAt": "2026-09-30T05:51:43.044Z",
+          "author": {
+            "id": "cmunotsav0001vrus1najqm06",
+            "name": "Dongming Su",
+            "institution": "Department of Ultrasound, Hangzhou Red Cross Hospital, Hangzhou, China",
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-09-30T05:51:42.727Z",
+            "updatedAt": "2026-09-30T05:51:42.727Z"
+          }
+        },
+        {
+          "id": "cmunott5u0006vrusua3t1yyf",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "authorId": "cmunott000004vruswcl47kr8",
+          "orderIndex": 1,
+          "isCorresponding": false,
+          "createdAt": "2026-09-30T05:51:43.843Z",
+          "author": {
+            "id": "cmunott000004vruswcl47kr8",
+            "name": "Peijun Chen",
+            "institution": "Affiliated Hangzhou First People’s Hospital, School of Medicine, Westlake University, 50 Jingxin Street, Gongshu District, Hangzhou City, Zhejiang Province 310000, China",
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-09-30T05:51:43.633Z",
+            "updatedAt": "2026-09-30T05:51:43.633Z"
+          }
+        },
+        {
+          "id": "cmunottmv0009vruswfsogm5x",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "authorId": "cmunotth40007vrussj1up8z1",
+          "orderIndex": 2,
+          "isCorresponding": false,
+          "createdAt": "2026-09-30T05:51:44.455Z",
+          "author": {
+            "id": "cmunotth40007vrussj1up8z1",
+            "name": "Ying Zhang",
+            "institution": "Affiliated Hangzhou First People’s Hospital, School of Medicine, Westlake University, 50 Jingxin Street, Gongshu District, Hangzhou City, Zhejiang Province 310000, China",
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-09-30T05:51:44.248Z",
+            "updatedAt": "2026-09-30T05:51:44.248Z"
+          }
+        },
+        {
+          "id": "cmunotu35000cvruss7tlvu0u",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "authorId": "cmunottyc000avrushjsr9cw8",
+          "orderIndex": 3,
+          "isCorresponding": false,
+          "createdAt": "2026-09-30T05:51:45.041Z",
+          "author": {
+            "id": "cmunottyc000avrushjsr9cw8",
+            "name": "Ying Wang",
+            "institution": "Department of Ultrasound, Affiliated Hangzhou First People’s Hospital, School of Medicine, Westlake University, Hangzhou, China",
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-09-30T05:51:44.869Z",
+            "updatedAt": "2026-09-30T05:51:44.869Z"
+          }
+        },
+        {
+          "id": "cmunotujf000fvrusfwzw6lnk",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "authorId": "cmunotuf8000dvrus5v54y2x2",
+          "orderIndex": 4,
+          "isCorresponding": false,
+          "createdAt": "2026-09-30T05:51:45.628Z",
+          "author": {
+            "id": "cmunotuf8000dvrus5v54y2x2",
+            "name": "Gaoyi Yang (Department of Ultrasound, Affiliated Hangzhou First People’s Hospital, School of Medicine, Westlake University, Hangzhou, China",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-09-30T05:51:45.477Z",
+            "updatedAt": "2026-09-30T05:51:45.477Z"
+          }
+        },
+        {
+          "id": "cmunotuwe000ivrusbllbp9k6",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "authorId": "cmunotus4000gvrush4i11dm3",
+          "orderIndex": 5,
+          "isCorresponding": false,
+          "createdAt": "2026-09-30T05:51:46.094Z",
+          "author": {
+            "id": "cmunotus4000gvrush4i11dm3",
+            "name": "Affiliated Hangzhou First People’s Hospital, School of Medicine, Westlake University, 50 Jingxin Street, Gongshu District, Hangzhou City, Zhejiang Province 310000, China)",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-09-30T05:51:45.941Z",
+            "updatedAt": "2026-09-30T05:51:45.941Z"
+          }
+        }
+      ],
+      "chunks": [
+        {
+          "id": "chunk-tb-0",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "chunkIndex": 0,
+          "section": "Abstract",
+          "pageNumber": 1,
+          "text": "Application of multimodal ultrasound radiomics in the differential diagnosis of superficial lymph node tuberculosis. A decision tree model combining ultrasound radiomics features achieved high diagnostic accuracy in differentiating tuberculosis from reactive lymphadenopathy.",
+          "metadata": {},
+          "tokenCount": 45,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-tb-0",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-11-10T09:09:18.749Z"
+        },
+        {
+          "id": "chunk-tb-1",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "chunkIndex": 1,
+          "section": "Results",
+          "pageNumber": 4,
+          "text": "The decision tree model demonstrated an area under the curve of 0.89 in the validation cohort for identifying superficial lymph node tuberculosis.",
+          "metadata": {},
+          "tokenCount": 35,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-tb-1",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-11-10T09:09:18.749Z"
+        }
+      ],
+      "processingJobs": [
+        {
+          "id": "cmunotyws000qvrusd7jomlfb",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-09-30T05:51:51.290Z",
+          "completedAt": "2026-09-30T05:51:56.597Z",
+          "createdAt": "2026-09-30T05:51:51.292Z",
+          "updatedAt": "2026-09-30T05:51:56.599Z"
+        },
+        {
+          "id": "cmuny94zx000dvrrs4voyju8a",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "stage": "EMBEDDING_GENERATION",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-09-30T10:15:35.565Z",
+          "completedAt": "2026-09-30T10:15:45.273Z",
+          "createdAt": "2026-09-30T10:15:35.566Z",
+          "updatedAt": "2026-09-30T10:15:45.274Z"
+        }
+      ],
+      "categories": [
+        {
+          "id": "cmunotv26000kvrus8khdv1kz",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "categoryId": "cmugp9xhm0000vrlgzbskf3kp",
+          "createdAt": "2026-09-30T05:51:46.302Z",
+          "category": {
+            "id": "cmugp9xhm0000vrlgzbskf3kp",
+            "name": "Artificial Intelligence",
+            "slug": "ai",
+            "description": "Neural architectures, foundation models, reinforcement learning, and agentic workflows.",
+            "iconName": "Brain",
+            "createdAt": "2026-09-25T08:29:52.711Z",
+            "updatedAt": "2026-11-10T05:33:00.383Z"
+          }
+        },
+        {
+          "id": "cmunotvdo000mvrusppfb1d0r",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "categoryId": "cmugpa1kq0005vrlgom5bcdve",
+          "createdAt": "2026-09-30T05:51:46.716Z",
+          "category": {
+            "id": "cmugpa1kq0005vrlgom5bcdve",
+            "name": "Clinical Medicine",
+            "slug": "medicine",
+            "description": "Diagnostic decision support, systematic reviews, clinical trial evidence synthesis, and therapeutics.",
+            "iconName": "Stethoscope",
+            "createdAt": "2026-09-25T08:29:58.011Z",
+            "updatedAt": "2026-11-10T05:33:05.694Z"
+          }
+        },
+        {
+          "id": "cmunotvjc000ovrusx63jw64n",
+          "paperId": "cmunotrr10000vrusnqyv61ut",
+          "categoryId": "cmugpa0rb0004vrlgjoyusptx",
+          "createdAt": "2026-09-30T05:51:46.921Z",
+          "category": {
+            "id": "cmugpa0rb0004vrlgjoyusptx",
+            "name": "Computer Vision",
+            "slug": "computer-vision",
+            "description": "Diffusion models, multimodal perception, 3D spatial representations, and medical imaging.",
+            "iconName": "Eye",
+            "createdAt": "2026-09-25T08:29:56.951Z",
+            "updatedAt": "2026-11-10T05:33:04.641Z"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cmunxw9il00dnvrus7w9mqij9",
+      "title": "The application of multimodal ultrasound examination in the differential diagnosis of benign and malignant breast lesions of BI-RADS category 4",
+      "abstract": "\"Objectives: The purpose of this study was to the diagnostic value of conventional ultrasound (US), contrast-enhanced ultrasound (CEUS) and shear wave elastography (SWE) for identifying benign and malignant BI-RADS 4 breast lesions[cite: 8].\r\n\r\nMaterials and methods: From February 2022 to November 2024, 95 patients aged 20 to 90 years with breast diseases, all of whom were female, were included[cite: 8]. These lesions were diagnosed as BI-RADS 4 breast lesions by conventional ultrasound[cite: 8]. All lesions were pathologically confirmed by surgical resection or tissue biopsy, and they were further evaluated by CEUS and SWE[cite: 8]. The sensitivity, specificity, positive predictive value (PPV), negative predictive value (NPV), and accuracy of US, CEUS, and SWE were statistically analyzed, and ROC curves were generated[cite: 8]. The diagnostic efficacy of US, US + SWE, US + CEUS, and US + CEUS + SWE were subsequently compared, with the pathology results used as the reference standard[cite: 8].\r\n\r\nResults: (1) Among the 95 BI-RADS 4 lesions, 44 (46.31%) were benign, and 51 (53.69%) were malignant[cite: 8]. The sensitivity, specificity, PPV, NPV and accuracy of the BI-RADS classification via conventional US were 86.3, 72.7, 78.6, 82.1 and 80.0%, respectively[cite: 8]. (2) The sensitivity, specificity, PPV, NPV, and accuracy of US combined with SWE in the diagnosis of breast nodules were 96.1, 79.5, 84.5, 94.6, and 88.4%, respectively[cite: 8]. (3) The sensitivity, specificity, PPV, NPV, and accuracy of US combined with CEUS in the diagnosis of breast nodules were 84.3, 86.4, 87.8, 82.6, and 85.3%, respectively[cite: 8]. (4) The areas under the ROC curve (AUCs) of US, US + SWE and US + CEUS were 0.795, 0.877, and 0.917, respectively[cite: 8]. Statistical methods were used to evaluate the US + CEUS + SWE method, and the results indicated excellent diagnostic performance[cite: 8]. The AUC was 0.946, while the sensitivity, specificity, PPV, NPV, and accuracy were 90.7, 93.2, 94.2, 95.3, and 94.7%, respectively[cite: 8]...\r\n\r\nConclusion: (1) CEUS and SWE provide diagnostic information about the microvascular perfusion and tissue stiffness of lesions, respectively, which can assist in the differentiation of benign from malignant breast tumors by conventional US and improve the sensitivity, specificity and accuracy of diagnosis, especially for US BI-RADS 4a breast lesions[cite: 8]. (2) The combined use of CEUS and SWE in conventional US enhance the overall diagnostic performance with respect to breast lesions, with the best sensitivity and specificity and the highest diagnostic efficacy[cite: 8]. The use of US + CEUS + SWE is beneficial for further differentiating benign and malignant breast lesions according to the US BI-RADS 4, thereby reducing unnecessary biopsies or surgeries[cite: 8].\"",
+      "publicationDate": "2025-09-06T00:00:00.000Z",
+      "journal": "Frontiers in Medicine",
+      "doi": ": https://doi.org/10.3389/fmed.2025.1596100",
+      "arxivId": null,
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": false,
+      "pdfUrl": "https://enbunglssqrjugyffysh.supabase.co/storage/v1/object/public/research-papers/cmunxw9il00dnvrus7w9mqij9/original.pdf",
+      "storagePath": "research-papers/cmunxw9il00dnvrus7w9mqij9/original.pdf",
+      "status": "COMPLETED",
+      "sourceProvenance": null,
+      "researchQuestion": "\"Therefore, the aim of this study was to explore the diagnostic efficacy of SWE, CEUS, and the combination of SWE and CEUS in conventional ultrasound to differentiate benign from malignant breast lesions[cite: 8]. We also investigated whether this can improve the sensitivity, specificity, and accuracy of the BI-RADS 4 diagnosis, with pathology results used as the reference standard[cite: 8].\"",
+      "methodology": "\"This retrospective single-center study was approved by the local institutional review board and included 95 breast lesions (age range 20–90 years; mean 52.82 ± 3.47 years) between February 2022 to November 2024[cite: 8]... Prior to surgical excision, all subjects underwent conventional US, CEUS and SWE examinations[cite: 8]. The pathological results of the samples obtained by surgery or biopsy were regarded as the reference standard[cite: 8]... Mindray Resona R9 ultrasound diagnostic equipment equipped with L15-3WU linear array probes (frequency 3–15 MHz) and L9-3U linear array probes (frequency 3–9 MHz), as well as Mindray Resona 7 ultrasonic diagnostic equipment equipped with L14-5 linear array probes (frequency 5–14 MHz) and L9-3 linear array probes (frequency 3–9 MHz), was used...[cite: 8] All data were analyzed using SPSS 27.0 software[cite: 8]... The prediction model was built via the logistic equation[cite: 8].\"",
+      "results": "\"In total, 95 breast lesions were included in this study for the final analysis, among which 83 were solitary lesions and 6 were multiple lesions[cite: 8]... Among the 95 lesions, 46.3% (44/95) were benign, and 53.7% (51/95) were malignant[cite: 8]... The AUC of US + SWE + CEUS was considerably higher than that of US (0.946 vs. 0.795, $p<0.05$) and US + SWE (0.946 vs. 0.877, $p<0.05$)[cite: 8]. Furthermore, the AUC of US + SWE + CEUS was also greater than that of US + CEUS (0.946 vs. 0.917), but the difference was not significant[cite: 8]... The highest detection accuracy of 94.7% was achieved by US + SWE + CEUS[cite: 8].\"",
+      "limitations": "\"However, there may be some overlap in the elasticity coefficients of tissues under different conditions[cite: 8]. If the lesion is too deep (the distance from the leading edge of the lesion to the anterior edge of the breast skin is $\\ge4$ cm) or if the lesion contains liquid components, or even internal calcification, it may lead to diagnostic bias in SWE[cite: 8]... Currently, although many studies on the ultrasonographic features of breast cancer using CEUS exist, the lack of a unified diagnostic standard has restricted its wide application in the diagnosis of breast diseases[cite: 8]... Further studies with larger sample sizes and higher sensitivity are needed to minimize false-negative results and confirm the reliability of this method in clinical settings[cite: 8].\"",
+      "conclusion": "\"(1) CEUS and SWE provide diagnostic information regarding the microvascular perfusion and tissue hardness of lesions, respectively[cite: 8]. The addition of CEUS and SWE to conventional US improves its diagnostic sensitivity, specificity and accuracy[cite: 8]. This is beneficial for further differentiation of benign and malignant lesions in US BI-RADS 4 cases, thus reducing unnecessary biopsies or surgeries[cite: 8]. Further studies with larger sample sizes and higher sensitivity are needed to minimize false-negative results and confirm the reliability of this method in clinical settings[cite: 8].\"",
+      "keywords": [
+        "breast tumor",
+        "ultrasonography",
+        "shear-wave elastography",
+        "contrast-enhanced ultrasound",
+        "multimodal ultrasound examination"
+      ],
+      "citationCount": 0,
+      "rawMetadata": null,
+      "createdAt": "2026-09-30T10:05:34.893Z",
+      "updatedAt": "2026-09-30T10:05:50.767Z",
+      "authors": [
+        {
+          "id": "cmunxwail00dqvrusnza3wv81",
+          "paperId": "cmunxw9il00dnvrus7w9mqij9",
+          "authorId": "cmunxwa6j00dovruso90ll3ge",
+          "orderIndex": 0,
+          "isCorresponding": true,
+          "createdAt": "2026-09-30T10:05:36.189Z",
+          "author": {
+            "id": "cmunxwa6j00dovruso90ll3ge",
+            "name": "Chunling Li",
+            "institution": "Cancer Hospital, College of Medicine, Shantou University, Shantou, China",
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-09-30T10:05:35.755Z",
+            "updatedAt": "2026-09-30T10:05:35.755Z"
+          }
+        },
+        {
+          "id": "cmunxwb5k00dtvrusumtwdr0j",
+          "paperId": "cmunxw9il00dnvrus7w9mqij9",
+          "authorId": "cmunxwb0500drvrusqoknn7ch",
+          "orderIndex": 1,
+          "isCorresponding": false,
+          "createdAt": "2026-09-30T10:05:37.016Z",
+          "author": {
+            "id": "cmunxwb0500drvrusqoknn7ch",
+            "name": "Mumin Wu",
+            "institution": "Cancer Hospital, College of Medicine, Shantou University, Shantou, China",
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-09-30T10:05:36.821Z",
+            "updatedAt": "2026-09-30T10:05:36.821Z"
+          }
+        },
+        {
+          "id": "cmunxwbmw00dwvrus1nhvs6ua",
+          "paperId": "cmunxw9il00dnvrus7w9mqij9",
+          "authorId": "cmunxwbhb00duvrus404x1pwd",
+          "orderIndex": 2,
+          "isCorresponding": false,
+          "createdAt": "2026-09-30T10:05:37.641Z",
+          "author": {
+            "id": "cmunxwbhb00duvrus404x1pwd",
+            "name": "Huang Haiqing (Cancer Hospital, College of Medicine, Shantou University, Shantou, China)[cite: 8]",
+            "institution": null,
+            "bio": null,
+            "orcid": null,
+            "citationCount": 0,
+            "hIndex": null,
+            "createdAt": "2026-09-30T10:05:37.439Z",
+            "updatedAt": "2026-09-30T10:05:37.439Z"
+          }
+        }
+      ],
+      "chunks": [
+        {
+          "id": "chunk-breast-0",
+          "paperId": "cmunxw9il00dnvrus7w9mqij9",
+          "chunkIndex": 0,
+          "section": "Abstract",
+          "pageNumber": 1,
+          "text": "The application of multimodal ultrasound examination in the diagnosis of BI-RADS 4 breast lesions. Multimodal ultrasound including shear-wave elastography and contrast-enhanced ultrasound improves classification of BI-RADS category 4 lesions.",
+          "metadata": {},
+          "tokenCount": 45,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-breast-0",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-11-10T09:09:18.749Z"
+        },
+        {
+          "id": "chunk-breast-1",
+          "paperId": "cmunxw9il00dnvrus7w9mqij9",
+          "chunkIndex": 1,
+          "section": "Results",
+          "pageNumber": 5,
+          "text": "Multimodal ultrasound examination significantly reduced the benign biopsy rate for BI-RADS 4 lesions while maintaining high cancer detection sensitivity.",
+          "metadata": {},
+          "tokenCount": 35,
+          "embeddingModel": "mock-sha256",
+          "embeddingDimensions": 1536,
+          "embeddingInputHash": "synthetic-breast-1",
+          "embeddedAt": "2026-11-10T09:09:18.749Z",
+          "createdAt": "2026-11-10T09:09:18.749Z"
+        }
+      ],
+      "processingJobs": [
+        {
+          "id": "cmunxwi4700e0vrus0wiga7pt",
+          "paperId": "cmunxw9il00dnvrus7w9mqij9",
+          "stage": "CHUNKING",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-09-30T10:05:46.037Z",
+          "completedAt": "2026-09-30T10:05:50.415Z",
+          "createdAt": "2026-09-30T10:05:46.039Z",
+          "updatedAt": "2026-09-30T10:05:50.417Z"
+        },
+        {
+          "id": "cmuny74hk0001vrrs3blqw4ac",
+          "paperId": "cmunxw9il00dnvrus7w9mqij9",
+          "stage": "EMBEDDING_GENERATION",
+          "status": "COMPLETED",
+          "attempt": 1,
+          "maxAttempts": 3,
+          "errorMessage": null,
+          "errorStack": null,
+          "startedAt": "2026-09-30T10:14:01.590Z",
+          "completedAt": "2026-09-30T10:14:19.700Z",
+          "createdAt": "2026-09-30T10:14:01.593Z",
+          "updatedAt": "2026-09-30T10:14:19.702Z"
+        }
+      ],
+      "categories": [
+        {
+          "id": "cmunxwbsj00dyvruswgms7nks",
+          "paperId": "cmunxw9il00dnvrus7w9mqij9",
+          "categoryId": "cmugpa1kq0005vrlgom5bcdve",
+          "createdAt": "2026-09-30T10:05:37.843Z",
+          "category": {
+            "id": "cmugpa1kq0005vrlgom5bcdve",
+            "name": "Clinical Medicine",
+            "slug": "medicine",
+            "description": "Diagnostic decision support, systematic reviews, clinical trial evidence synthesis, and therapeutics.",
+            "iconName": "Stethoscope",
+            "createdAt": "2026-09-25T08:29:58.011Z",
+            "updatedAt": "2026-11-10T05:33:05.694Z"
+          }
+        }
+      ]
+    }
+  ]
+}

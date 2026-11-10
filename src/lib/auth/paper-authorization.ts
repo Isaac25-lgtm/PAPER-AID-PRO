@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { Prisma } from "@prisma/client";
 
 /**
  * AI RESEARCH HUB — PHASE 4B
@@ -167,11 +168,35 @@ export function getPublicPaperWhereInput(): any {
       { pmcid: { not: null } },
       { semanticScholarId: { not: null } },
     ],
+    AND: [
+      {
+        OR: [
+          { sourceProvenance: { path: ["isPrivate"], equals: Prisma.AnyNull } },
+          { sourceProvenance: { path: ["isPrivate"], equals: false } },
+        ],
+      },
+      { sourceProvenance: { path: ["ownerId"], equals: Prisma.AnyNull } },
+      { sourceProvenance: { path: ["ownerUserId"], equals: Prisma.AnyNull } },
+      { sourceProvenance: { path: ["uploadedByUserId"], equals: Prisma.AnyNull } },
+      { sourceProvenance: { path: ["attachedByUserId"], equals: Prisma.AnyNull } },
+      { sourceProvenance: { path: ["userId"], equals: Prisma.AnyNull } },
+    ],
     NOT: [
       {
         AND: [
           { storagePath: { not: null } },
           { isOpenAccess: false },
+        ],
+      },
+      {
+        AND: [
+          { storagePath: { not: null } },
+          {
+            OR: [
+              { storagePath: { startsWith: "research-papers/users/" } },
+              { storagePath: { startsWith: "users/" } },
+            ],
+          },
         ],
       },
     ],

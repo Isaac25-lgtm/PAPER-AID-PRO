@@ -15,19 +15,19 @@
  * 6. Verifies atomic persistence and audit logging in isolated local PostgreSQL.
  */
 
-import "./test-setup";
+import "../test-setup";
 import { createRequire } from "module";
-import { TableEvidenceOrchestrator } from "../src/lib/tables/table-orchestrator";
+import { TableEvidenceOrchestrator } from "../../src/lib/tables/table-orchestrator";
 
 const localRequire = createRequire(import.meta.url);
 function loadTableProposalPrismaClient(): any {
-  const mod = localRequire("../prisma/generated-client");
+  const mod = localRequire("../../prisma/generated-client");
   return mod.PrismaClient;
 }
-import { PrismaTableRepository } from "../src/lib/tables/prisma-table-repository";
-import { verifyCellEvidence, TableGeometryLayout, NativeTextItem } from "../src/lib/tables/cell-verifier";
-import { isScientificNumericalMeasurement } from "../src/lib/tables/types";
-import { SpatialTableExtractor } from "../src/lib/tables/spatial-extractor";
+import { PrismaTableRepository } from "../../src/lib/tables/prisma-table-repository";
+import { verifyCellEvidence, TableGeometryLayout, NativeTextItem } from "../../src/lib/tables/cell-verifier";
+import { isScientificNumericalMeasurement } from "../../src/lib/tables/types";
+import { SpatialTableExtractor } from "../../src/lib/tables/spatial-extractor";
 import * as fs from "fs";
 import * as path from "path";
 

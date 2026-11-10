@@ -132,6 +132,8 @@ async function runTests() {
     const conceptSearch = await searchPapersHybrid({
       query: "multimodal radiomics decision tree diagnosis for superficial lymph node tuberculosis",
       limit: 3,
+      excludeFixtures: false,
+      role: "ADMIN",
     });
     assert(conceptSearch.papers.length > 0, "Conceptual search returns results");
     assert(
