@@ -25,6 +25,7 @@ export const INTEGRATION_TEST_SUITES = new Set([
   "citation-validator.test.ts",
   "cited-evidence.test.ts",
   "deep-research-integrity-audit.test.ts",
+  "doi-lookup-regression-and-enrichment.test.ts",
   "phase10-agent.test.ts",
   "phase11.1-launch-gate.test.ts",
   "open-access-doi-importer.test.ts",

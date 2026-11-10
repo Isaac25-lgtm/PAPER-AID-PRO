@@ -26,38 +26,35 @@ async function runPhase8Tests() {
 
   try {
     // Locate existing real test papers from database
-    const attentionPaper = await prisma.paper.findFirst({
-      where: {
-        OR: [
-          { id: "cmuwoj877000cvr288df6z92u" },
-          { doi: "10.48550/arXiv.1706.03762" },
-          { title: { contains: "Attention Is All You Need", mode: "insensitive" }, isOpenAccess: true },
-        ],
-      },
-      include: { chunks: { take: 5, orderBy: { chunkIndex: "asc" } } },
-    });
+    const attentionPaper =
+      (await prisma.paper.findUnique({
+        where: { id: "cmuwoj877000cvr288df6z92u" },
+        include: { chunks: { take: 5, orderBy: { chunkIndex: "asc" } } },
+      })) ||
+      (await prisma.paper.findFirst({
+        where: { doi: "10.48550/arXiv.1706.03762" },
+        include: { chunks: { take: 5, orderBy: { chunkIndex: "asc" } } },
+      }));
 
-    const alphafoldPaper = await prisma.paper.findFirst({
-      where: {
-        OR: [
-          { id: "cmvm4wiwm000cvri8nmzxo48m" },
-          { doi: "10.1038/s41586-024-07487-w" },
-          { title: { contains: "AlphaFold 3", mode: "insensitive" } },
-        ],
-      },
-      include: { chunks: { take: 5, orderBy: { chunkIndex: "asc" } } },
-    });
+    const alphafoldPaper =
+      (await prisma.paper.findUnique({
+        where: { id: "cmvm4wiwm000cvri8nmzxo48m" },
+        include: { chunks: { take: 5, orderBy: { chunkIndex: "asc" } } },
+      })) ||
+      (await prisma.paper.findFirst({
+        where: { doi: "10.1038/s41586-024-07487-w" },
+        include: { chunks: { take: 5, orderBy: { chunkIndex: "asc" } } },
+      }));
 
-    const ragPaper = await prisma.paper.findFirst({
-      where: {
-        OR: [
-          { id: "cmvm4wixp000lvri8agoxa86q" },
-          { doi: "10.48550/arXiv.2005.11401" },
-          { title: { contains: "Retrieval-Augmented Generation", mode: "insensitive" } },
-        ],
-      },
-      include: { chunks: { take: 5, orderBy: { chunkIndex: "asc" } } },
-    });
+    const ragPaper =
+      (await prisma.paper.findUnique({
+        where: { id: "cmvm4wixp000lvri8agoxa86q" },
+        include: { chunks: { take: 5, orderBy: { chunkIndex: "asc" } } },
+      })) ||
+      (await prisma.paper.findFirst({
+        where: { doi: "10.48550/arXiv.2005.11401" },
+        include: { chunks: { take: 5, orderBy: { chunkIndex: "asc" } } },
+      }));
 
     if (!attentionPaper || !alphafoldPaper || !ragPaper) {
       throw new Error("Required baseline papers (Attention, AlphaFold 3, RAG) not found in DB.");
