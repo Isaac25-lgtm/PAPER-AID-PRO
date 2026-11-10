@@ -39,6 +39,7 @@ export interface SearchPapersOptions {
   excludeFixtures?: boolean; // Defaults to true to hide admin test fixtures
   userId?: string | null;
   role?: string | null;
+  isAdminRoute?: boolean; // Admin bypass is strictly permitted ONLY if explicitly on an admin route
 }
 
 // RRF constant k (standard information retrieval setting)
@@ -107,6 +108,7 @@ export async function searchPapersHybrid(
       excludeFixtures,
       userId: options.userId,
       role: options.role,
+      isAdminRoute: options.isAdminRoute,
     });
   }
 
@@ -119,7 +121,8 @@ export async function searchPapersHybrid(
     categorySlug,
     excludeFixtures,
     options.userId,
-    options.role
+    options.role,
+    options.isAdminRoute
   );
 
   // 2. Execute Semantic Retrieval (OpenAI Embeddings + pgvector Cosine Search)
@@ -133,7 +136,8 @@ export async function searchPapersHybrid(
       categorySlug,
       excludeFixtures,
       options.userId,
-      options.role
+      options.role,
+      options.isAdminRoute
     );
   } catch (embeddingError: any) {
     console.warn(
@@ -202,7 +206,10 @@ export async function searchPapersHybrid(
       where: {
         AND: [
           { id: { in: semanticOnlyIds } },
-          paperVisibilityFilter(options.userId, { role: options.role, allowAdmin: !excludeFixtures }),
+          paperVisibilityFilter(options.userId, {
+            role: options.role,
+            isAdminRoute: options.isAdminRoute === true,
+          }),
         ],
       },
       include: {
@@ -291,11 +298,15 @@ async function fetchLexicalCandidates(
   categorySlug?: string,
   excludeFixtures: boolean = true,
   userId?: string | null,
-  role?: string | null
+  role?: string | null,
+  isAdminRoute?: boolean
 ): Promise<any[]> {
   const where: any = {
     AND: [
-      paperVisibilityFilter(userId, { role, allowAdmin: !excludeFixtures }),
+      paperVisibilityFilter(userId, {
+        role,
+        isAdminRoute: isAdminRoute === true,
+      }),
       {
         OR: [
           { title: { contains: query, mode: "insensitive" } },
@@ -366,7 +377,8 @@ async function fetchSemanticCandidates(
   categorySlug?: string,
   excludeFixtures: boolean = true,
   userId?: string | null,
-  role?: string | null
+  role?: string | null,
+  isAdminRoute?: boolean
 ): Promise<Map<string, { rank: number; snippet: MatchedEvidenceSnippet }>> {
   const vectorString = `[${queryVector.join(",")}]`;
 
@@ -398,7 +410,7 @@ async function fetchSemanticCandidates(
       WHERE c.embedding IS NOT NULL
         AND (c."embeddingModel" IS NULL OR c."embeddingModel" != 'mock-sha256')
         AND cat.slug = ${categorySlug}
-        AND ${paperVisibilitySql(userId, "p", { role, allowAdmin: !excludeFixtures })}
+        AND ${paperVisibilitySql(userId, "p", { role, isAdminRoute: isAdminRoute === true })}
       ORDER BY c.embedding <=> ${vectorString}::vector ASC
       LIMIT 50;
     `;
@@ -416,7 +428,7 @@ async function fetchSemanticCandidates(
       JOIN "papers" p ON c."paperId" = p.id
       WHERE c.embedding IS NOT NULL
         AND (c."embeddingModel" IS NULL OR c."embeddingModel" != 'mock-sha256')
-        AND ${paperVisibilitySql(userId, "p", { role, allowAdmin: !excludeFixtures })}
+        AND ${paperVisibilitySql(userId, "p", { role, isAdminRoute: isAdminRoute === true })}
       ORDER BY c.embedding <=> ${vectorString}::vector ASC
       LIMIT 50;
     `;
@@ -481,10 +493,14 @@ async function browsePapers(options: {
   excludeFixtures?: boolean;
   userId?: string | null;
   role?: string | null;
+  isAdminRoute?: boolean;
 }): Promise<HybridSearchResult> {
   const startTime = Date.now();
   const where: any = {
-    ...paperVisibilityFilter(options.userId, { role: options.role }),
+    ...paperVisibilityFilter(options.userId, {
+      role: options.role,
+      isAdminRoute: options.isAdminRoute === true,
+    }),
   };
 
   if (options.excludeFixtures !== false) {

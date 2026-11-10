@@ -224,6 +224,38 @@ async function runIsolationSuite() {
       "Path 1C: Hybrid search permits User B to find their own private paper"
     );
 
+    // Path 1D: ADMIN calling searchPapersHybrid from a user-facing context (isAdminRoute: false)
+    // with excludeFixtures: false MUST NOT bypass multi-tenant isolation to see User B's private paper
+    const searchAdminUserFacing = await searchPapersHybrid({
+      query: DISTINCTIVE_SECRET,
+      userId: adminUser.id,
+      role: adminUser.role,
+      excludeFixtures: false,
+      isAdminRoute: false,
+    });
+    assert(
+      !searchAdminUserFacing.papers.some((p) => p.paper.id === privatePaperB.id),
+      "Path 1D: ADMIN in user-facing search (isAdminRoute: false) with excludeFixtures: false cannot see User B's private paper"
+    );
+    assert(
+      !searchAdminUserFacing.papers.some((p) => p.matchedSnippet?.text.includes(DISTINCTIVE_SECRET)),
+      "Path 1E: ADMIN in user-facing search never leaks private chunk snippets from other users"
+    );
+
+    // Path 1F: ADMIN calling searchPapersHybrid explicitly from an admin route (isAdminRoute: true)
+    // CAN inspect records for platform maintenance
+    const searchAdminRoute = await searchPapersHybrid({
+      query: DISTINCTIVE_SECRET,
+      userId: adminUser.id,
+      role: adminUser.role,
+      excludeFixtures: false,
+      isAdminRoute: true,
+    });
+    assert(
+      searchAdminRoute.papers.some((p) => p.paper.id === privatePaperB.id),
+      "Path 1F: ADMIN on an explicit admin route (isAdminRoute: true) can access records for maintenance"
+    );
+
     // PATH 2: Public Paper Catalog (/papers)
     const catalogPapersUserA = await prisma.paper.findMany({
       where: {

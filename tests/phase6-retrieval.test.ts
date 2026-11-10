@@ -1,6 +1,6 @@
 import "./test-setup";
 import { prisma } from "../src/lib/prisma";
-import { generateEmbedding, generateEmbeddingsBatch, prepareChunkEmbeddingInput } from "../src/lib/ai/embeddings";
+import { generateEmbedding, generateEmbeddingsBatch, prepareChunkEmbeddingInput, isMockEmbeddingMode } from "../src/lib/ai/embeddings";
 import { embedPaperChunks, getPaperEmbeddingStats } from "../src/lib/ai/embedding-pipeline";
 import { searchPapersHybrid } from "../src/lib/search/hybrid-search";
 import { AI_CONFIG } from "../src/lib/ai/config";
@@ -130,15 +130,13 @@ async function runTests() {
     // -------------------------------------------------------------
     console.log("\n--- Test F: Conceptual Semantic Discovery ---");
     const conceptSearch = await searchPapersHybrid({
-      query: "multimodal radiomics decision tree diagnosis for superficial lymph node tuberculosis",
+      query: "retrieval augmented generation dense passage retrieval knowledge intensive",
       limit: 3,
-      excludeFixtures: false,
-      role: "ADMIN",
     });
     assert(conceptSearch.papers.length > 0, "Conceptual search returns results");
     assert(
-      conceptSearch.papers[0]?.paper.title.toLowerCase().includes("tuberculosis"),
-      "Conceptual medical query surfaces tuberculosis paper at Rank 1",
+      conceptSearch.papers[0]?.paper.title.toLowerCase().includes("retrieval-augmented generation"),
+      "Conceptual AI query surfaces RAG paper at Rank 1",
       conceptSearch.papers[0]?.paper.title
     );
     assert(
@@ -196,6 +194,37 @@ async function runTests() {
     assert(prepared.includes("Title: Paper Title"), "Prepared input includes title header");
     assert(prepared.includes("Section: Results"), "Prepared input includes section header");
     assert(prepared.includes("Content:\nChunk content text here."), "Prepared input includes unaltered content");
+
+    // -------------------------------------------------------------
+    // Test J: Production Mock Embeddings Guard
+    // -------------------------------------------------------------
+    console.log("\n--- Test J: Production Mock Embeddings Guard ---");
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevApiKey = process.env.OPENAI_API_KEY;
+    try {
+      (process.env as any).NODE_ENV = "production";
+      delete process.env.OPENAI_API_KEY;
+
+      assert(isMockEmbeddingMode() === false, "isMockEmbeddingMode returns false when NODE_ENV is production");
+
+      let threw = false;
+      let errorMsg = "";
+      try {
+        await generateEmbeddingsBatch(["Test production chunk text"]);
+      } catch (err: any) {
+        threw = true;
+        errorMsg = err.message;
+      }
+      assert(threw === true, "generateEmbeddingsBatch throws when NODE_ENV is production and OPENAI_API_KEY is missing");
+      assert(
+        errorMsg.includes("Mock embeddings are strictly prohibited in production"),
+        "Error message clearly indicates mock embeddings are prohibited in production",
+        errorMsg
+      );
+    } finally {
+      (process.env as any).NODE_ENV = prevNodeEnv;
+      process.env.OPENAI_API_KEY = prevApiKey;
+    }
 
     console.log("\n=================================================");
     console.log(`TEST SUMMARY: ${passed} PASSED, ${failed} FAILED`);

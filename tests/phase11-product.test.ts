@@ -142,8 +142,8 @@ async function runPhase11Tests() {
     const ready = isPaperReadyForAI("COMPLETED");
 
     assert(
-      (label === "Ready for AI" || label === "Ready") &&
-      (badge.label === "Ready for AI" || badge.label === "Ready") &&
+      label === "Ready for AI" &&
+      badge.label === "Ready for AI" &&
       badge.variant === "success" &&
       ready === true,
       "Test E: COMPLETED status maps to researcher-facing 'Ready for AI'",

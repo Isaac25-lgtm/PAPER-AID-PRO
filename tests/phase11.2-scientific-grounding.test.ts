@@ -60,29 +60,13 @@ async function runPhase11_2Tests() {
       include: { chunks: { take: 5, orderBy: { chunkIndex: "asc" } } },
     });
 
-    const breastPaper1: any = bp1Found || {
-      id: "cmumgtiix0000vr445cn8ry7o",
-      title: "Ultrasound-Based Breast Cancer Classification Using Image-Based Features",
-      doi: "10.1016/j.compbiomed.2022.105658",
-      journal: "Computers in Biology and Medicine",
-      citationCount: 45,
-    };
+    assert(Boolean(bp1Found), "Breast cancer classification paper (bp1Found) must exist in database");
+    assert(Boolean(bp2Found), "BI-RADS category 4 paper (bp2Found) must exist in database");
+    assert(Boolean(skinFound), "Benign skin tumors paper (skinFound) must exist in database");
 
-    const breastPaper2: any = bp2Found || {
-      id: "cmunxw9il00dnvrus7w9mqij9",
-      title: "Value of Multimodal Ultrasound in the Differential Diagnosis of Benign and Malignant BI-RADS Category 4 Breast Lesions",
-      doi: "10.3389/fonc.2025.1507718",
-      journal: "Frontiers in Oncology",
-      citationCount: 12,
-    };
-
-    const skinTumorPaper: any = skinFound || {
-      id: "cmunxiwf900blvruskrclq381",
-      title: "Deep Learning-Based Evaluation of Ultrasound Images for Benign Skin Tumors",
-      doi: "10.3390/s23177374",
-      journal: "Sensors",
-      citationCount: 8,
-    };
+    const breastPaper1 = bp1Found!;
+    const breastPaper2 = bp2Found!;
+    const skinTumorPaper = skinFound!;
 
     const breastEvidenceSet1: PaperEvidenceSet = {
       paperId: breastPaper1.id,

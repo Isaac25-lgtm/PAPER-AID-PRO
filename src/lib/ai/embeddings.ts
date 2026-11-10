@@ -76,8 +76,12 @@ export function generateDeterministicMockEmbedding(
  * Determines whether the system is in mock embedding mode.
  * Real embeddings require explicit server configuration: ENABLE_REAL_EMBEDDINGS === "true"
  * and not being in test or isolated mock storage mode.
+ * In production, mock embeddings are strictly forbidden under all circumstances.
  */
 export function isMockEmbeddingMode(): boolean {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
   return (
     process.env.USE_MOCK_STORAGE === "true" ||
     process.env.NODE_ENV === "test" ||
@@ -97,9 +101,24 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
 
   const normalizedTexts = texts.map((t) => t.replace(/\r\n/g, "\n").trim());
 
+  // Fail-closed guard: Mock embeddings are strictly prohibited in production.
+  // If NODE_ENV === "production" and OPENAI_API_KEY is missing, throw immediately.
+  if (process.env.NODE_ENV === "production") {
+    if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_API_KEY.trim()) {
+      throw new Error(
+        "[FATAL] Mock embeddings are strictly prohibited in production: OPENAI_API_KEY is missing or invalid."
+      );
+    }
+  }
+
   // Execution boundary: In isolated tests or when real embeddings are not explicitly enabled,
   // use deterministic mock vectors to guarantee zero paid API calls.
   if (isMockEmbeddingMode()) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "[FATAL] Mock embeddings are strictly prohibited in production environments."
+      );
+    }
     return normalizedTexts.map((text) =>
       generateDeterministicMockEmbedding(text, AI_CONFIG.embeddingDimensions)
     );

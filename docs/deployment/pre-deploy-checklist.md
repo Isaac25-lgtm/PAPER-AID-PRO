@@ -12,26 +12,37 @@ All migrations in `prisma/migrations` must be tracked and applied sequentially:
 |---|---|---|---|
 | 1 | `0_init` | Baseline relational schema (11 models, 5 enums) | Applied (Baselined) |
 | 2 | `20260925_add_ai_summary_citations` | Added `citations Json?` to `AISummary` | Applied |
-| 3 | `20261001_add_author_bibliometrics` | Added ORCID, h-index, and citation counts to `Author` | Applied |
-| 4 | `20261010_add_full_text_search_indexes` | Added PostgreSQL GIN full-text search indexes on `Paper` | Applied |
-| 5 | `20261015_add_ai_chat_models` | Added `AIConversation` and `AIMessage` multi-turn RAG threads | Applied |
-| 6 | `20261020_add_user_roles_and_permissions` | Added `UserRole` enum and RBAC user permissions | Applied |
-| 7 | `20261025_add_paper_chunk_pgvector` | Added `pgvector` extension and 1536-dimensional chunk embeddings | Applied |
-| 8 | `20261028_add_csl_sync_locks` | Added `csl_sync_locks` distributed lock table with `updatedAt` | Applied |
-| 9 | `20261102_add_csl_style_catalog` | Added `csl_styles` local CSL catalog cache table | Applied |
+| 3 | `20260926_add_paper_chunk_embeddings` | Added `pgvector` vector extension and 1536-dimensional chunk embeddings (`embedding Unsupported("vector(1536)")`) | Applied |
+| 4 | `20260928_add_embedding_hash_and_dimensions` | Added `embeddingDimensions`, `embeddingInputHash`, `embeddedAt` to `PaperChunk` | Applied |
+| 5 | `20260929_add_conversation_paper_id` | Added `paperId` foreign key and relation on `AIConversation` | Applied |
+| 6 | `20260930_add_scholarly_discovery_identifiers_and_metadata_only` | Added external scholarly identifiers (`arxivId`, `pmid`, `pmcid`, `semanticScholarId`, `isOpenAccess`, `sourceProvenance`) and `METADATA_ONLY` status | Applied |
+| 7 | `20261013_add_relational_collections` | Added `Collection` and `CollectionPaper` relational models | Applied |
+| 8 | `20261013_add_research_documents` | Added `ResearchDocument`, `DocumentCitation`, `DocumentNote` editor models | Applied |
+| 9 | `20261020_add_csl_catalog_persistence` | Added `CslStyle` catalog and `CslSyncLock` concurrency locks | Applied |
 | 10 | `20261104_add_document_revisions` | Added `document_revisions` table for historical versioning | **Pending Deploy** |
 
 ---
 
 ## 2. Read-Only Production Migration Status Check
 
-Before executing any migrations or deployments, run the non-mutating status check:
+Before executing any migrations or deployments, run the non-mutating status check against production.
 
+Because `scripts/safe-migrate.cjs` strictly enforces loopback safety and rejects all remote/cloud database hosts by default, production migration status must be inspected via the dedicated opt-in script:
+
+```bash
+npm run db:status:prod
+```
+
+### Safety Guards Enforced by `db:status:prod`:
+1. **Strictly READ-ONLY**: Executes only `prisma migrate status`. It cannot modify schemas, apply migrations, or write data.
+2. **Explicit Opt-in Confirmation**: Interactively prompts for the exact Supabase project reference (e.g. `enbunglssqrjugyffysh`) and refuses execution if the input does not match.
+3. **Session Connection via `DIRECT_URL`**: Connects via port 5432 session connection (since transaction poolers on port 6543 do not support advisory session locks).
+4. **Credential Redaction**: Never logs passwords, secrets, or raw connection strings to the console.
+
+To check local loopback database migration status instead, run:
 ```bash
 npm run db:status
 ```
-
-*Note*: This invokes `node scripts/safe-migrate.cjs status`, which checks applied migrations against `_prisma_migrations` without applying changes or modifying schemas.
 
 ---
 

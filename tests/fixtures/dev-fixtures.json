@@ -3881,6 +3881,134 @@
           }
         }
       ]
+    },
+    {
+      "id": "cmumgtiix0000vr445cn8ry7o",
+      "title": "Ultrasound-Based Breast Cancer Classification Using Image-Based Features",
+      "abstract": "Objective: Evaluate machine learning classification of breast lesions on ultrasound imaging using extracted radiomics features. Methods: Retrospective cohort study analyzing B-mode ultrasound images. Results: The classification models achieved an accuracy of 0.84 on ultrasound images. Conclusion: Automated feature extraction provides high diagnostic accuracy for breast cancer classification.",
+      "publicationDate": "2022-06-01T00:00:00.000Z",
+      "journal": "Computers in Biology and Medicine",
+      "doi": "10.1016/j.compbiomed.2022.105658",
+      "arxivId": null,
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": false,
+      "pdfUrl": null,
+      "storagePath": null,
+      "status": "COMPLETED",
+      "sourceProvenance": {
+        "isSystemFixture": true
+      },
+      "researchQuestion": "Can machine learning classification of breast ultrasound features achieve high diagnostic accuracy?",
+      "methodology": "Retrospective cohort study analyzing B-mode ultrasound images with automated feature extraction.",
+      "results": "The three best-performing breast lesion classification models achieved an accuracy of 0.84 on ultrasound images.",
+      "limitations": "Single-center retrospective validation.",
+      "conclusion": "Automated feature extraction provides high diagnostic accuracy for breast cancer classification.",
+      "keywords": [
+        "Breast Cancer",
+        "Ultrasound",
+        "Machine Learning"
+      ],
+      "citationCount": 45,
+      "rawMetadata": null,
+      "createdAt": "2026-09-30T10:00:00.000Z",
+      "updatedAt": "2026-09-30T10:00:00.000Z",
+      "authors": [
+        {
+          "id": "cmumgtiix_pa1",
+          "orderIndex": 0,
+          "author": {
+            "id": "cmumgtiix_a1",
+            "name": "Magnuska et al.",
+            "orcid": null,
+            "institution": "Department of Radiology",
+            "citationCount": 45,
+            "hIndex": 5
+          }
+        }
+      ],
+      "chunks": [
+        {
+          "id": "cmumgtiix0000vr445cn8ry7o_c14",
+          "paperId": "cmumgtiix0000vr445cn8ry7o",
+          "chunkIndex": 14,
+          "section": "Methods",
+          "pageNumber": 14,
+          "text": "3.4. Breast Lesion Classification Using Image-Based Features. The three best-performing breast lesion classification models achieved an accuracy of 0.84 on ultrasound images.",
+          "metadata": {},
+          "tokenCount": 35,
+          "embeddingModel": null,
+          "embeddingDimensions": null,
+          "embeddingInputHash": null
+        }
+      ],
+      "processingJobs": [],
+      "categories": []
+    },
+    {
+      "id": "cmunxiwf900blvruskrclq381",
+      "title": "Deep Learning-Based Evaluation of Ultrasound Images for Benign Skin Tumors",
+      "abstract": "Objective: To evaluate deep learning convolutional neural network algorithms for distinguishing benign skin tumors using high-resolution ultrasound imaging. Methods: Multi-center retrospective evaluation of skin lesion sonograms. Results: Deep learning achieved 0.89 sensitivity and 0.86 specificity. Conclusion: High-frequency ultrasound coupled with deep learning offers non-invasive assessment of benign cutaneous lesions.",
+      "publicationDate": "2023-08-15T00:00:00.000Z",
+      "journal": "Sensors",
+      "doi": "10.3390/s23177374",
+      "arxivId": null,
+      "pmid": null,
+      "pmcid": null,
+      "semanticScholarId": null,
+      "isOpenAccess": false,
+      "pdfUrl": null,
+      "storagePath": null,
+      "status": "COMPLETED",
+      "sourceProvenance": {
+        "isSystemFixture": true
+      },
+      "researchQuestion": "Can deep learning algorithms distinguish benign skin tumors on high-frequency ultrasound?",
+      "methodology": "Convolutional neural networks trained on high-resolution sonographic images of benign cutaneous lesions.",
+      "results": "Deep learning models evaluated high-frequency ultrasound images of benign skin tumors, achieving 0.89 sensitivity and 0.86 specificity.",
+      "limitations": "Limited representation of rare histological subtypes.",
+      "conclusion": "High-frequency ultrasound coupled with deep learning provides robust non-invasive diagnosis of benign skin tumors.",
+      "keywords": [
+        "Skin Tumors",
+        "Deep Learning",
+        "High-Frequency Ultrasound"
+      ],
+      "citationCount": 8,
+      "rawMetadata": null,
+      "createdAt": "2026-09-30T10:00:00.000Z",
+      "updatedAt": "2026-09-30T10:00:00.000Z",
+      "authors": [
+        {
+          "id": "cmunxiwf9_pa1",
+          "orderIndex": 0,
+          "author": {
+            "id": "cmunxiwf9_a1",
+            "name": "Kim et al.",
+            "orcid": null,
+            "institution": "Department of Dermatology",
+            "citationCount": 8,
+            "hIndex": 3
+          }
+        }
+      ],
+      "chunks": [
+        {
+          "id": "cmunxiwf900blvruskrclq381_c1",
+          "paperId": "cmunxiwf900blvruskrclq381",
+          "chunkIndex": 0,
+          "section": "Results",
+          "pageNumber": 5,
+          "text": "Deep learning models evaluated high-frequency ultrasound images of benign skin tumors, achieving high diagnostic accuracy across epidermal cysts and seborrheic keratosis.",
+          "metadata": {},
+          "tokenCount": 30,
+          "embeddingModel": null,
+          "embeddingDimensions": null,
+          "embeddingInputHash": null
+        }
+      ],
+      "processingJobs": [],
+      "categories": []
     }
   ]
 }

@@ -21,6 +21,7 @@
     "db:migrate": "node scripts/safe-migrate.cjs dev",
     "db:deploy": "node scripts/safe-migrate.cjs deploy",
     "db:status": "node scripts/safe-migrate.cjs status",
+    "db:status:prod": "node scripts/prod-migrate-status.cjs",
     "db:push": "node scripts/safe-migrate.cjs push",
     "db:studio": "node scripts/safe-migrate.cjs studio",
     "db:run": "node scripts/run-isolated-db.cjs",
