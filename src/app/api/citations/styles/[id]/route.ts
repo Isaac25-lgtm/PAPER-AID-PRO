@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStyleXml, sanitizeStyleId } from "@/lib/citations/csl/style-registry";
+import { getStyleXml, sanitizeStyleId, isKnownIndexedStyleId } from "@/lib/citations/csl/style-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +9,12 @@ export async function GET(
 ) {
   try {
     const styleId = sanitizeStyleId(params.id);
+    if (!isKnownIndexedStyleId(styleId)) {
+      return NextResponse.json(
+        { success: false, error: `Unknown CSL style ID '${styleId}'.` },
+        { status: 404 }
+      );
+    }
     const { searchParams } = new URL(req.url);
     const revisionSha = searchParams.get("revision") || undefined;
     const style = await getStyleXml(styleId, revisionSha);

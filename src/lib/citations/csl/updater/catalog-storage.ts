@@ -428,13 +428,14 @@ export class PrismaCslCatalogAdapter implements ICslStorageAdapter {
       const expiresAt = new Date(now.getTime() + ttlMs);
 
       const rowsUpdated = await (prisma as any).$executeRaw`
-        INSERT INTO "csl_sync_locks" ("id", "isLocked", "lockedBy", "lockedAt", "expiresAt")
-        VALUES ('singleton', true, ${workerId}, ${now}, ${expiresAt})
+        INSERT INTO "csl_sync_locks" ("id", "isLocked", "lockedBy", "lockedAt", "expiresAt", "updatedAt")
+        VALUES ('singleton', true, ${workerId}, ${now}, ${expiresAt}, ${now})
         ON CONFLICT ("id") DO UPDATE
         SET "isLocked" = true,
             "lockedBy" = ${workerId},
             "lockedAt" = ${now},
-            "expiresAt" = ${expiresAt}
+            "expiresAt" = ${expiresAt},
+            "updatedAt" = ${now}
         WHERE "csl_sync_locks"."isLocked" = false OR "csl_sync_locks"."expiresAt" < ${now}
       `;
 
@@ -446,9 +447,10 @@ export class PrismaCslCatalogAdapter implements ICslStorageAdapter {
 
   async releaseLock(workerId: string): Promise<void> {
     try {
+      const now = new Date();
       await (prisma as any).$executeRaw`
         UPDATE "csl_sync_locks"
-        SET "isLocked" = false, "lockedBy" = NULL, "lockedAt" = NULL, "expiresAt" = NULL
+        SET "isLocked" = false, "lockedBy" = NULL, "lockedAt" = NULL, "expiresAt" = NULL, "updatedAt" = ${now}
         WHERE "id" = 'singleton' AND "lockedBy" = ${workerId}
       `;
     } catch {
@@ -493,12 +495,31 @@ export class CslCatalogManager {
    * Initializes the catalog with the baseline bundled & static styles index if not yet initialized.
    */
   static async initializeBaselineCatalog(): Promise<CslCatalogRevision> {
+    const baselineSha = "v1.0.2-baseline-catalog";
     const active = await this.adapter.getActiveRevision();
-    if (active) return active;
+    if (active) {
+      // Ensure core bundled styles are always present for the baseline revision
+      for (const [id, def] of Object.entries(BUNDLED_STYLES)) {
+        const existingStyle = await this.adapter.getStyle(id, baselineSha);
+        if (!existingStyle || !existingStyle.xml) {
+          await this.adapter.saveStyle({
+            styleId: id,
+            revisionSha: baselineSha,
+            title: def.title,
+            isDependent: false,
+            format: def.format,
+            checksum: `bundled-baseline-${id}`,
+            xml: def.xml,
+            sourceUrl: `bundled://${id}`,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+      return active;
+    }
 
     const { getStylesIndex } = await import("../style-registry");
     const staticIndex = getStylesIndex();
-    const baselineSha = "v1.0.2-baseline-catalog";
 
     let independentCount = 0;
     let dependentCount = 0;
@@ -533,7 +554,7 @@ export class CslCatalogManager {
         title: def.title,
         isDependent: false,
         format: def.format,
-        checksum: "bundled-baseline",
+        checksum: `bundled-baseline-${id}`,
         xml: def.xml,
         sourceUrl: `bundled://${id}`,
         updatedAt: new Date().toISOString(),

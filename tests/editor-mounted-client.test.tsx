@@ -447,12 +447,16 @@ describe("Research Editor Mounted Client & Component Acceptance", () => {
 
     const prevWindow = (globalThis as any).window;
     const prevDocument = (globalThis as any).document;
-    const prevNavigator = (globalThis as any).navigator;
+    const prevNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
     const prevSelf = (globalThis as any).self;
 
     (globalThis as any).window = mockDomWindow;
     (globalThis as any).document = mockDomDocument;
-    (globalThis as any).navigator = mockNavigator;
+    Object.defineProperty(globalThis, "navigator", {
+      value: mockNavigator,
+      configurable: true,
+      writable: true,
+    });
     (globalThis as any).self = mockDomWindow;
     (globalThis as any).Node = MockNode;
     (globalThis as any).Element = MockElement;
@@ -523,7 +527,11 @@ describe("Research Editor Mounted Client & Component Acceptance", () => {
     } finally {
       (globalThis as any).window = prevWindow;
       (globalThis as any).document = prevDocument;
-      (globalThis as any).navigator = prevNavigator;
+      if (prevNavigatorDescriptor) {
+        Object.defineProperty(globalThis, "navigator", prevNavigatorDescriptor);
+      } else {
+        delete (globalThis as any).navigator;
+      }
       (globalThis as any).self = prevSelf;
     }
   });

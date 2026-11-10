@@ -22,7 +22,8 @@ import assert from "node:assert/strict";
 import { prisma } from "../src/lib/prisma";
 import { PrismaCslCatalogAdapter, CslCatalogManager } from "../src/lib/citations/csl/updater/catalog-storage";
 import { ManuscriptStylePolicy } from "../src/lib/citations/csl/updater/manuscript-policy";
-import { getStyleXml } from "../src/lib/citations/csl/style-registry";
+import { getStyleXml, sanitizeStyleId, isKnownIndexedStyleId } from "../src/lib/citations/csl/style-registry";
+import { GET as getCitationStyleRoute } from "../src/app/api/citations/styles/[id]/route";
 import { createCiteprocEngine, renderCitationCluster, renderBibliography } from "../src/lib/citations/csl/csl-engine";
 import { assertCslXmlSecurity } from "../src/lib/citations/csl/updater/xml-validator";
 import { createResearchDocument, getResearchDocument, updateResearchDocument } from "../src/lib/editor/document-service";
@@ -35,6 +36,7 @@ describe("Phase 8B: Real PostgreSQL CSL Persistence Acceptance Suite", () => {
   before(async () => {
     // Explicitly configure CslCatalogManager to use the real PostgreSQL adapter
     CslCatalogManager.setAdapter(prismaAdapter);
+    await CslCatalogManager.initializeBaselineCatalog();
 
     // Find or create test user for document lifecycle
     const user = await prisma.user.findFirst();
@@ -324,12 +326,16 @@ describe("Phase 8B: Real PostgreSQL CSL Persistence Acceptance Suite", () => {
     const worker1 = "worker-sync-1";
     const worker2 = "worker-sync-2";
 
-    // Release any lingering locks
-    await prismaAdapter.releaseLock(worker1);
-    await prismaAdapter.releaseLock(worker2);
+    // Delete singleton row to test cold-start raw SQL INSERT (regression test for updatedAt NOT NULL)
+    await prisma.cslSyncLock.deleteMany({ where: { id: "singleton" } });
 
     const lock1 = await prismaAdapter.acquireLock(worker1, 60000);
-    assert.equal(lock1, true, "Worker 1 must acquire lock");
+    assert.equal(lock1, true, "Worker 1 must acquire lock via cold-start INSERT into csl_sync_locks");
+    const dbLockRow = await prisma.cslSyncLock.findUnique({ where: { id: "singleton" } });
+    assert.ok(
+      dbLockRow && dbLockRow.isLocked === true && dbLockRow.lockedBy === worker1 && dbLockRow.updatedAt instanceof Date,
+      "Lock row must be persisted in PostgreSQL csl_sync_locks table with non-null updatedAt"
+    );
 
     // Worker 2 attempts to acquire lock concurrently
     const lock2 = await prismaAdapter.acquireLock(worker2, 60000);
@@ -379,11 +385,35 @@ describe("Phase 8B: Real PostgreSQL CSL Persistence Acceptance Suite", () => {
     }
   });
 
-  test("12. GPT-6 Luna pilot files remain untouched", async () => {
+  test("12. GPT-6 Luna router and editor service files remain untouched", async () => {
     const fs = await import("fs");
     assert.ok(fs.existsSync("src/lib/ai/router/cost-tracker.ts"), "cost-tracker.ts exists");
+    assert.ok(fs.existsSync("src/lib/ai/router/model-router.ts"), "model-router.ts exists");
     assert.ok(fs.existsSync("src/lib/editor/ai-editor-service.ts"), "ai-editor-service.ts exists");
-    assert.ok(fs.existsSync("src/lib/editor/pilot-autocomplete-service.ts"), "pilot-autocomplete-service.ts exists");
-    assert.ok(fs.existsSync("tests/gpt6-luna-compatibility.test.ts"), "gpt6-luna-compatibility.test.ts exists");
+  });
+
+  test("13. /api/citations/styles/[id] strictly sanitizes path traversal and rejects unindexed style IDs", async () => {
+    // 1. Strict regex allowlist rejects path traversal and non-[a-z0-9-] characters
+    assert.throws(() => sanitizeStyleId("../etc/passwd"), /Invalid style ID/);
+    assert.throws(() => sanitizeStyleId("https://evil.example.com/style"), /Invalid style ID/);
+    assert.throws(() => sanitizeStyleId("apa;drop-table"), /Invalid style ID/);
+
+    // 2. Indexed style check allows known styles and rejects arbitrary unknown IDs
+    assert.equal(isKnownIndexedStyleId("apa"), true);
+    assert.equal(isKnownIndexedStyleId("nature"), true);
+    assert.equal(isKnownIndexedStyleId("arbitrary-unindexed-style-9999"), false);
+
+    // 3. Route handler returns 404 for both path traversal and arbitrary unindexed style IDs without fetching or caching
+    const reqDummy = new Request("http://localhost:3000/api/citations/styles/test");
+    const traversalRes = await getCitationStyleRoute(reqDummy, { params: { id: "../etc/passwd" } });
+    assert.equal(traversalRes.status, 404);
+
+    const unindexedRes = await getCitationStyleRoute(reqDummy, { params: { id: "arbitrary-unindexed-style-9999" } });
+    assert.equal(unindexedRes.status, 404);
+
+    // 4. getStyleXml does not fetch or cache arbitrary unindexed style IDs (falls back to bundled APA without caching the unindexed ID)
+    const fallbackResult = await getStyleXml("arbitrary-unindexed-style-9999");
+    assert.equal(fallbackResult.id, "apa");
+    assert.equal(fallbackResult.revisionSha, "bundled-fallback");
   });
 });

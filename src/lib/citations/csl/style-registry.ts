@@ -17,6 +17,7 @@ for (const [id, def] of Object.entries(BUNDLED_STYLES)) {
 
 // Load styles index lazily on server
 let stylesIndexCache: CslStyleMetadata[] | null = null;
+let knownStyleIdsSet: Set<string> | null = null;
 
 export function getStylesIndex(): CslStyleMetadata[] {
   if (stylesIndexCache) return stylesIndexCache;
@@ -40,6 +41,21 @@ export function getStylesIndex(): CslStyleMetadata[] {
     dependent: false,
     prominent: true,
   }));
+}
+
+/**
+ * Checks whether a style ID exists in the bundled styles or official styles-index.json allowlist.
+ */
+export function isKnownIndexedStyleId(styleId: string): boolean {
+  if ((BUNDLED_STYLES as any)[styleId]) return true;
+  if (!knownStyleIdsSet) {
+    const index = getStylesIndex();
+    knownStyleIdsSet = new Set(index.map((s) => s.id.toLowerCase()));
+    for (const id of Object.keys(BUNDLED_STYLES)) {
+      knownStyleIdsSet.add(id.toLowerCase());
+    }
+  }
+  return knownStyleIdsSet.has(styleId.toLowerCase());
 }
 
 /**
@@ -106,14 +122,14 @@ export function searchStyles(query: {
 }
 
 /**
- * Validates style ID to prevent path traversal or SSRF.
+ * Validates style ID against strict [a-z0-9-]+ allowlist pattern to prevent path traversal or SSRF.
  */
 export function sanitizeStyleId(rawId: string): string {
-  const clean = (rawId || "").toLowerCase().trim().replace(/[^a-z0-9-_]/g, "");
-  if (!clean) {
+  const trimmed = (rawId || "").toLowerCase().trim();
+  if (!trimmed || !/^[a-z0-9-]+$/.test(trimmed)) {
     throw new Error("Invalid style ID.");
   }
-  return clean;
+  return trimmed;
 }
 
 /**
@@ -121,11 +137,11 @@ export function sanitizeStyleId(rawId: string): string {
  */
 export function sanitizeRevisionSha(rawRev?: string): string | undefined {
   if (!rawRev) return undefined;
-  const clean = rawRev.trim().replace(/[^a-zA-Z0-9._-]/g, "");
-  if (!clean || clean.includes("..")) {
+  const trimmed = rawRev.trim();
+  if (!trimmed || trimmed.includes("..") || !/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
     throw new Error("Invalid revision identifier.");
   }
-  return clean;
+  return trimmed;
 }
 
 /**
@@ -241,27 +257,31 @@ export async function getStyleXml(
   }
 
   // 4. Fetch from official GitHub repository pinned to branch v1.0.2 or specific commit SHA
+  // Only fetch/cache if the style ID is in the bundled or indexed styles allowlist
+  const isAllowedIndexedStyle = isKnownIndexedStyleId(cleanId);
   const branchOrSha = revisionSha || "v1.0.2";
   let rawXml = "";
   let isDependent = false;
   let resolvedParentId: string | undefined = undefined;
 
-  try {
-    const independentUrl = `https://raw.githubusercontent.com/citation-style-language/styles/${branchOrSha}/${cleanId}.csl`;
-    let res = await fetch(independentUrl, { next: { revalidate: 86400 } });
+  if (isAllowedIndexedStyle) {
+    try {
+      const independentUrl = `https://raw.githubusercontent.com/citation-style-language/styles/${branchOrSha}/${cleanId}.csl`;
+      let res = await fetch(independentUrl, { next: { revalidate: 86400 } });
 
-    if (res.ok) {
-      rawXml = await res.text();
-    } else {
-      const dependentUrl = `https://raw.githubusercontent.com/citation-style-language/styles/${branchOrSha}/dependent/${cleanId}.csl`;
-      res = await fetch(dependentUrl, { next: { revalidate: 86400 } });
       if (res.ok) {
         rawXml = await res.text();
-        isDependent = true;
+      } else {
+        const dependentUrl = `https://raw.githubusercontent.com/citation-style-language/styles/${branchOrSha}/dependent/${cleanId}.csl`;
+        res = await fetch(dependentUrl, { next: { revalidate: 86400 } });
+        if (res.ok) {
+          rawXml = await res.text();
+          isDependent = true;
+        }
       }
+    } catch (fetchErr: any) {
+      // Network failure
     }
-  } catch (fetchErr: any) {
-    // Network failure
   }
 
   // 5. If fetch failed or yielded invalid XML:
