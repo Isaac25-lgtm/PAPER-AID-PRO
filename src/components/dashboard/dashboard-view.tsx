@@ -315,7 +315,7 @@ export function DashboardView({
             <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search 300M+ global scholarly papers on PubMed, Crossref, and Semantic Scholar..."
+              placeholder="Search global scholarly papers across PubMed, Crossref, and Semantic Scholar..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-slate-50/50"

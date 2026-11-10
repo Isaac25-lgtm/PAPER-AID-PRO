@@ -70,7 +70,7 @@ export function Footer() {
             </h4>
             <ul className="space-y-2.5">
               <li>
-                <Link href="/saved" className="hover:text-white transition-colors">
+                <Link href="/library" className="hover:text-white transition-colors">
                   My Library
                 </Link>
               </li>

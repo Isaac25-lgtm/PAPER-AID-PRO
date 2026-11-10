@@ -93,7 +93,7 @@ export default async function HomePage({
       description:
         "Upload or select any manuscript for grounded AI inquiry. Inspect exact page numbers, paragraph quotes, and verified citations.",
       actionText: "Try Chat with PDF",
-      href: "/tools/chat-pdf",
+      href: "/research",
       isProtected: false,
       badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
     },

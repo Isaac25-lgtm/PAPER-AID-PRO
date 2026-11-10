@@ -33,7 +33,7 @@ export function HeroSearch() {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search 300M+ global research papers across PubMed, Crossref & Semantic Scholar..."
+          placeholder="Search global research papers across PubMed, Crossref & Semantic Scholar..."
           className="w-full py-4 px-3 text-xs sm:text-sm text-slate-900 focus:outline-hidden placeholder:text-slate-400"
         />
         <div className="pr-2 flex items-center gap-2">

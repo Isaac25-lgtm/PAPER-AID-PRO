@@ -62,10 +62,10 @@ export function ScholarMcpSection() {
 
             <div className="flex flex-wrap items-center justify-center lg:justify-start gap-4 pt-4">
               <Button asChild className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">
-                <Link href="/pricing">Get API &amp; MCP Access</Link>
+                <Link href="/discover">Explore Literature Discovery</Link>
               </Button>
               <Button asChild variant="outline" className="border-slate-700 text-slate-200 hover:bg-slate-900">
-                <Link href="/tools">View Protocol Docs</Link>
+                <Link href="/research">Open Research Workspace</Link>
               </Button>
             </div>
           </div>

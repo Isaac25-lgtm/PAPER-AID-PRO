@@ -178,11 +178,11 @@ export default function CitationGeneratorPage() {
       {/* Top Header */}
       <div className="space-y-1">
         <Link
-          href="/tools"
+          href="/discover"
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-indigo-600 transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Tools Suite
+          Back to Literature Discovery
         </Link>
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2">
           <Quote className="h-6 w-6 text-indigo-600" />
@@ -444,31 +444,6 @@ export default function CitationGeneratorPage() {
             <span>{formattedResult.verificationNotice}</span>
           </div>
         )}
-
-        {/* Reference Manager Export Options */}
-        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-600">
-          <span>Export reference to external tools:</span>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleCopy}
-              className="px-3 py-1.5 rounded-md bg-white border border-slate-200 hover:bg-slate-100 font-semibold cursor-pointer"
-            >
-              Export RIS
-            </button>
-            <button
-              onClick={handleCopy}
-              className="px-3 py-1.5 rounded-md bg-white border border-slate-200 hover:bg-slate-100 font-semibold cursor-pointer"
-            >
-              Sync to Zotero
-            </button>
-            <button
-              onClick={handleCopy}
-              className="px-3 py-1.5 rounded-md bg-white border border-slate-200 hover:bg-slate-100 font-semibold cursor-pointer"
-            >
-              Sync to Mendeley
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

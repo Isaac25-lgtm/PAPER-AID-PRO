@@ -48,11 +48,10 @@ export function ToolsShowcase() {
   const [searchQuery, setSearchQuery] = React.useState<string>("");
 
   const categories = [
-    { id: "all", label: "All Tools (14+)" },
+    { id: "all", label: "All Tools" },
     { id: "research", label: "Research & Review" },
-    { id: "writing", label: "Writing & Publishing" },
+    { id: "writing", label: "Academic Writing" },
     { id: "citations", label: "Citations & References" },
-    { id: "analytics", label: "Data & MCP" },
   ];
 
   const filteredTools = siteConfig.academicTools.filter((tool: AcademicTool) => {
@@ -166,10 +165,10 @@ export function ToolsShowcase() {
         {/* Bottom Banner */}
         <div className="text-center pt-4">
           <Link
-            href="/tools"
+            href="/discover"
             className="inline-flex items-center gap-2 text-sm font-bold text-slate-700 hover:text-indigo-600 transition-colors"
           >
-            <span>Explore all features, tutorials, and academic documentation</span>
+            <span>Explore literature discovery and research workspaces</span>
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>

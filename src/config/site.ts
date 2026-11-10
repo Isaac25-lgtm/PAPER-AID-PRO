@@ -9,34 +9,16 @@ export interface AcademicTool {
   id: string;
   title: string;
   description: string;
-  category: "research" | "writing" | "citations" | "analytics";
+  category: "research" | "writing" | "citations";
   href: string;
   badge?: string;
   iconName: string;
 }
 
-export interface PricingPlan {
-  id: string;
-  name: string;
-  description: string;
-  monthlyPrice: number;
-  annualPrice: number;
-  creditsPerMonth: number;
-  popular?: boolean;
-  ctaText: string;
-  features: string[];
-  creditBreakdown: {
-    searches: string;
-    pdfChats: string;
-    thesisGeneration: string;
-    dataAnalysis: string;
-  };
-}
-
 export interface FAQItem {
   question: string;
   answer: string;
-  category: "integrity" | "features" | "pricing" | "api";
+  category: "integrity" | "discovery" | "library";
 }
 
 export const siteConfig = {
@@ -64,234 +46,55 @@ export const siteConfig = {
   ] as NavItem[],
 
   academicTools: [
-    // 1. Research & Review
     {
-      id: "deep-reasoning",
-      title: "Deep Reasoning",
-      description: "Literature analysis with source-grounded academic evidence.",
+      id: "find-articles",
+      title: "Literature Discovery",
+      description: "Search scientific research papers, authors, preprints, and citation records across federated scholarly databases.",
       category: "research",
-      href: "/conversations",
-      badge: "Roadmap",
-      iconName: "Brain",
+      href: "/discover",
+      iconName: "Compass",
     },
     {
-      id: "chat-pdf",
-      title: "PDF Chat & Evidence",
-      description: "Ask deep research questions across multi-page papers with exact paragraph & page citations.",
+      id: "paper-catalog",
+      title: "Indexed Paper Catalog",
+      description: "Browse ingested manuscripts with extracted sections, evidence-grounded AI summaries, and original PDF access.",
       category: "research",
       href: "/papers",
-      badge: "Roadmap",
       iconName: "FileText",
     },
     {
       id: "systematic-review",
-      title: "Structured Synthesis",
-      description: "Literature synthesis across multiple papers with verifiable evidence anchors.",
+      title: "Multi-Paper Research & Synthesis",
+      description: "Literature synthesis and grounded Q&A across multiple papers with verifiable page and section evidence anchors.",
       category: "research",
       href: "/research",
-      badge: "Beta",
       iconName: "SearchCheck",
-    },
-    {
-      id: "find-articles",
-      title: "Find Articles & Corpus",
-      description: "Search scientific research papers, authors, preprints, and citation records.",
-      category: "research",
-      href: "/papers",
-      iconName: "Compass",
-    },
-
-    // 2. Writing & Publishing
-    {
-      id: "thesis-to-manuscript",
-      title: "Thesis to Manuscript",
-      description: "Transform research dissertations into peer-reviewed journal formats with figures preserved.",
-      category: "writing",
-      href: "/papers",
-      badge: "Roadmap",
-      iconName: "BookOpenCheck",
-    },
-    {
-      id: "ai-thesis",
-      title: "AI Thesis & Proposal Studio",
-      description: "Draft comprehensive research proposals, literature chapters, and methodology frameworks.",
-      category: "writing",
-      href: "/papers",
-      badge: "Roadmap",
-      iconName: "GraduationCap",
     },
     {
       id: "ai-editor",
       title: "Academic AI Editor",
-      description: "Compose research papers with inline ghost-text autocomplete, verified literature citations, and private multi-model routing.",
+      description: "Compose research papers with autosave, verified passage citations linked to source chunks, and scholarly revision exports.",
       category: "writing",
       href: "/editor",
-      badge: "Beta",
       iconName: "PenTool",
     },
     {
-      id: "manuscript-reviewer",
-      title: "Manuscript Reviewer",
-      description: "Simulate rigorous double-blind peer review with feedback on methodology and claims.",
-      category: "writing",
-      href: "/papers",
-      badge: "Roadmap",
-      iconName: "CheckCircle2",
+      id: "my-library",
+      title: "My Library & Collections",
+      description: "Organize saved papers into collections, import by DOI/PMID/PMCID, and manage private uploaded manuscripts.",
+      category: "research",
+      href: "/library",
+      iconName: "BookOpenCheck",
     },
-    {
-      id: "ai-humanizer",
-      title: "Academic Paraphraser",
-      description: "Ensure organic, scholarly flow while preserving nuanced scientific meaning.",
-      category: "writing",
-      href: "/papers",
-      badge: "Roadmap",
-      iconName: "Sparkles",
-    },
-
-    // 3. Citations & References
     {
       id: "citation-generator",
-      title: "Citation Generator",
-      description: "Formatting in APA 7th, MLA 9th, Chicago, IEEE, Harvard, and export to BibTeX.",
+      title: "Citation Generator & Verifier",
+      description: "Format citations in APA 7th, MLA 9th, Chicago, IEEE, and BibTeX, and verify references against authoritative registries.",
       category: "citations",
-      href: "/papers",
-      badge: "Roadmap",
+      href: "/tools/citation-generator",
       iconName: "Quote",
     },
-    {
-      id: "zotero-mendeley-sync",
-      title: "Reference Manager Sync",
-      description: "Integration with Zotero, Mendeley, and EndNote libraries.",
-      category: "citations",
-      href: "/saved",
-      badge: "Roadmap",
-      iconName: "FolderSync",
-    },
-
-    // 4. Data & Analytics
-    {
-      id: "data-analysis",
-      title: "Smart Data Analysis",
-      description: "Upload research datasets for automated hypothesis testing and publication charts.",
-      category: "analytics",
-      href: "/papers",
-      badge: "Roadmap",
-      iconName: "BarChart3",
-    },
-    {
-      id: "form-builder",
-      title: "Research Form Builder",
-      description: "Design structured research surveys and collect academic data.",
-      category: "analytics",
-      href: "/papers",
-      badge: "Roadmap",
-      iconName: "ClipboardList",
-    },
-    {
-      id: "scholar-mcp",
-      title: "Scholar MCP Server",
-      description: "Connect research literature directly into IDEs and agent workflows via MCP.",
-      category: "analytics",
-      href: "/papers",
-      badge: "Roadmap",
-      iconName: "Cpu",
-    },
   ] as AcademicTool[],
-
-  pricingPlans: [
-    {
-      id: "free",
-      name: "Explorer",
-      description: "Essential discovery for students and curious independent researchers.",
-      monthlyPrice: 0,
-      annualPrice: 0,
-      creditsPerMonth: 100,
-      ctaText: "Start Exploring Free",
-      features: [
-        "100 AI research credits / month",
-        "Search scientific paper catalog",
-        "Access original PDF manuscripts",
-        "Grounded AI summaries & citations",
-        "Personal My Library bookmarks",
-        "Community support",
-      ],
-      creditBreakdown: {
-        searches: "Catalog queries",
-        pdfChats: "Manuscript analysis",
-        thesisGeneration: "Not included",
-        dataAnalysis: "Basic preview",
-      },
-    },
-    {
-      id: "scholar",
-      name: "Scholar",
-      description: "For active PhD candidates, graduate students, and independent academics.",
-      monthlyPrice: 10,
-      annualPrice: 8,
-      creditsPerMonth: 500,
-      ctaText: "Upgrade to Scholar",
-      features: [
-        "500 AI research credits / month",
-        "Full literature search & discovery",
-        "Evidence-grounded paper understanding",
-        "Original PDF reading & extraction",
-        "Advanced My Library collections",
-        "Standard email support",
-      ],
-      creditBreakdown: {
-        searches: "Catalog queries",
-        pdfChats: "Expanded paper analysis",
-        thesisGeneration: "Draft chapters (Roadmap)",
-        dataAnalysis: "Standard datasets (Roadmap)",
-      },
-    },
-    {
-      id: "pro",
-      name: "Pro Researcher",
-      description: "The complete suite for professors, postdocs, and R&D research teams.",
-      monthlyPrice: 25,
-      annualPrice: 19,
-      creditsPerMonth: 1500,
-      popular: true,
-      ctaText: "Get Pro Access",
-      features: [
-        "1,500 AI research credits / month",
-        "Priority paper processing",
-        "Full evidence provenance & chunk viewer",
-        "Unlimited saved papers & library tags",
-        "Priority compute queue",
-        "24/7 Priority academic support",
-      ],
-      creditBreakdown: {
-        searches: "Unlimited queries",
-        pdfChats: "High-volume analysis",
-        thesisGeneration: "Priority exports (Roadmap)",
-        dataAnalysis: "Full analysis (Roadmap)",
-      },
-    },
-    {
-      id: "lab",
-      name: "Lab & Institution",
-      description: "High-volume compute, multi-seat licenses, and programmatic access.",
-      monthlyPrice: 85,
-      annualPrice: 68,
-      creditsPerMonth: 12000,
-      ctaText: "Empower Your Lab",
-      features: [
-        "12,000 AI research credits / month",
-        "Multi-seat team workspace (up to 5 team members)",
-        "Batch manuscript ingestion",
-        "Centralized administrative billing",
-        "Dedicated account manager & SLA guarantee",
-      ],
-      creditBreakdown: {
-        searches: "Unlimited queries",
-        pdfChats: "Parallel batch processing",
-        thesisGeneration: "Custom exports (Roadmap)",
-        dataAnalysis: "Institutional pipelines",
-      },
-    },
-  ] as PricingPlan[],
 
   academicFaqs: [
     {
