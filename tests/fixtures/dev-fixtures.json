@@ -2432,7 +2432,7 @@
           "chunkIndex": 32,
           "section": "Results",
           "pageNumber": 6,
-          "text": "Original Article\n\n431\n\nTable 3 Diagnostic accuracy of multivariable ultrasound models for the detection of adenomyosis in women that underwent transvaginal ultrasound examination and subsequent hysterectomy within 6months (n=345), using histopathologically confirmed adenomyosis as the reference standard\n\nData in parentheses are 95%CI. *Includes myometrial cysts, echogenic subendometrial lines and hyperechogenic islands. †Includes asymmetrical myometrial wall thickening, globular uterus, translesional vascularity, fan-shaped shadowing, irregular endometrial-myometrial junctional zone and interrupted endometrial-myometrial junctional zone. ‡Includes heterogeneous myometrium and the question mark sign. §Includes all direct and indirect ultrasound features. κ, Cohen's kappa coefficient; NPV, negative predictive value; PPV, positive predictive value.",
+          "text": "Table 3\n\n**table**\n\n| Model | Sensitivity (%) | Specificity (%) | PPV (%) | NPV (%) | Accuracy (%) |\n| --- | --- | --- | --- | --- | --- |\n| Direct ultrasound signs* | 60.0 (51.8-67.8) | 93.7 (89.2-96.7) | 88.0 (79.9-93.3) | 74.4 (69.8-78.5) | 78.8 (74.2-82.8) |\n| Direct + Indirect signs§ | 77.4 (69.9-83.5) | 81.6 (75.4-86.5) | 76.5 (69.7-82.2) | 82.4 (77.1-86.6) | 79.7 (75.1-83.6) |\n\nData in parentheses are 95%CI. *Includes myometrial cysts, echogenic subendometrial lines and hyperechogenic islands.",
           "metadata": null,
           "tokenCount": 214,
           "embeddingModel": "mock-sha256",

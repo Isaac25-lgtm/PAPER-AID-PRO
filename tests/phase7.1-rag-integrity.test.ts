@@ -27,12 +27,24 @@ async function runPhase71Tests() {
   try {
     // 1. Locate test papers
     const attentionPaper = await prisma.paper.findFirst({
-      where: { title: { contains: "Attention Is All You Need", mode: "insensitive" } },
+      where: {
+        OR: [
+          { id: "cmuwoj877000cvr288df6z92u" },
+          { doi: "10.48550/arXiv.1706.03762" },
+          { title: { contains: "Attention Is All You Need", mode: "insensitive" }, isOpenAccess: true },
+        ],
+      },
       include: { chunks: true },
     });
 
     const alphafoldPaper = await prisma.paper.findFirst({
-      where: { title: { contains: "AlphaFold 3", mode: "insensitive" } },
+      where: {
+        OR: [
+          { id: "cmvm4wiwm000cvri8nmzxo48m" },
+          { doi: "10.1038/s41586-024-07487-w" },
+          { title: { contains: "AlphaFold 3", mode: "insensitive" } },
+        ],
+      },
       include: { chunks: true },
     });
 

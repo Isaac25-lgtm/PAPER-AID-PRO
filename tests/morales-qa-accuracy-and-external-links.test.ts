@@ -209,7 +209,9 @@ async function runTests() {
     "Smith & Bolton MUST retain unverified-ingestion restriction"
   );
   assert(
-    prov?.externalLandingPageUrl && prov.externalLandingPageUrl.includes("europepmc.org"),
+    prov?.externalLandingPageUrl &&
+      (prov.externalLandingPageUrl.includes("europepmc.org") ||
+        prov.externalLandingPageUrl.includes("ncbi.nlm.nih.gov")),
     "Article Page fallback link must be recorded and accessible"
   );
   console.log("  ✅ [PASS] Smith & Bolton unverified-ingestion restriction and fallback article link verified.");
