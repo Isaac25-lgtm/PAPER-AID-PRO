@@ -14,22 +14,9 @@
  * This script runs completely offline and deterministically with zero remote dependencies.
  */
 
+import "./test-setup";
 import * as fs from "fs";
 import * as path from "path";
-
-// Mock server-only for standalone tsx script execution
-try {
-  const serverOnlyPath = require.resolve("server-only");
-  (require.cache as any)[serverOnlyPath] = {
-    id: serverOnlyPath,
-    filename: serverOnlyPath,
-    loaded: true,
-    exports: {},
-  };
-} catch {
-  // ignore
-}
-
 import { PrismaClient } from "@prisma/client";
 import { generateDeterministicMockEmbedding, prepareChunkEmbeddingInput } from "../src/lib/ai/embeddings";
 import { AI_CONFIG } from "../src/lib/ai/config";

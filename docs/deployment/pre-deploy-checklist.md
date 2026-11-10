@@ -95,3 +95,4 @@ npm run db:status
 - [ ] Verify `/editor` mounts cleanly and allows document editing.
 - [ ] Verify `/api/citations/sync` returns HTTP 401 for unauthenticated calls and functions for admins.
 - [ ] Verify user private documents and private papers are strictly inaccessible to other users.
+
