@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     require_email_verified: bool = True
     # Comma-separated emails that are promoted to ADMIN on first sign-in (bootstrap only).
     admin_emails: str = ""
+    # Invite-only mode: comma-separated emails allowed to use signed-in features (admins always allowed).
+    # Empty = open to anyone who signs up.
+    allowed_emails: str = ""
 
     # --- HTTP -----------------------------------------------------------------------------------------
     cors_origins: str = ""  # comma-separated; empty = same-origin only (Firebase Hosting rewrite)
@@ -91,6 +94,14 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.env == "production"
+
+    @property
+    def allowed_email_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.allowed_emails.split(",") if e.strip()}
+
+    def is_email_allowed(self, email: str) -> bool:
+        allowed = self.allowed_email_set
+        return not allowed or email.lower() in allowed or email.lower() in self.admin_email_set
 
     @property
     def admin_email_set(self) -> set[str]:

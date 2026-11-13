@@ -27,6 +27,11 @@ class Unauthenticated(AppError):
     code = "UNAUTHENTICATED"
 
 
+class NotInvited(AppError):
+    status_code = 403
+    code = "NOT_INVITED"
+
+
 class EmailNotVerified(AppError):
     status_code = 403
     code = "EMAIL_NOT_VERIFIED"

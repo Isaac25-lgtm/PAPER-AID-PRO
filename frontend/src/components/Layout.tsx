@@ -130,7 +130,7 @@ export function Container({ children, className }: { children: ReactNode; classN
 
 /** Route guard: signed in AND email verified (the API enforces the same rule). */
 export function RequireAuth({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
-  const { user, firebaseUser, loading, resendVerification, refresh } = useAuth();
+  const { user, firebaseUser, loading, notInvited, resendVerification, refresh, signOut } = useAuth();
   const location = useLocation();
   const [sent, setSent] = useState(false);
   if (loading) return <Spinner />;
@@ -146,6 +146,20 @@ export function RequireAuth({ children, admin = false }: { children: ReactNode; 
             </Button>
             <Button size="sm" variant="secondary" disabled={sent} onClick={() => void resendVerification().then(() => setSent(true))}>
               {sent ? "Email sent" : "Resend email"}
+            </Button>
+          </div>
+        </Alert>
+      </Container>
+    );
+  }
+  if (notInvited) {
+    return (
+      <Container className="max-w-xl">
+        <Alert kind="info" title="PaperAid Pro is in a private test">
+          <strong>{firebaseUser.email}</strong> isn’t on the tester list yet. Ask the project owner to add you.
+          <div className="mt-3">
+            <Button size="sm" variant="secondary" onClick={() => void signOut()}>
+              Sign out
             </Button>
           </div>
         </Alert>

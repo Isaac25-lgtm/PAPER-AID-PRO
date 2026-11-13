@@ -13,7 +13,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { api, setTokenGetter } from "./api";
+import { api, ApiError, setTokenGetter } from "./api";
 import { auth } from "./firebase";
 import type { User } from "./types";
 
@@ -21,6 +21,7 @@ interface AuthState {
   firebaseUser: FirebaseUser | null;
   user: User | null;
   loading: boolean;
+  notInvited: boolean;
   signIn(email: string, password: string): Promise<void>;
   signUp(name: string, email: string, password: string): Promise<void>;
   signInWithGoogle(): Promise<void>;
@@ -57,16 +58,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notInvited, setNotInvited] = useState(false);
 
   const loadProfile = useCallback(async () => {
+    setNotInvited(false);
     if (!auth.currentUser) {
       setUser(null);
       return;
     }
     try {
       setUser(await api.get<User>("/me"));
-    } catch {
+    } catch (error) {
       setUser(null);
+      if (error instanceof ApiError && error.code === "NOT_INVITED") setNotInvited(true);
     }
   }, []);
 
@@ -85,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       firebaseUser,
       user,
       loading,
+      notInvited,
       async signIn(email, password) {
         await signInWithEmailAndPassword(auth, email.trim(), password);
       },
@@ -119,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loadProfile();
       },
     }),
-    [firebaseUser, user, loading, loadProfile, queryClient],
+    [firebaseUser, user, loading, notInvited, loadProfile, queryClient],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

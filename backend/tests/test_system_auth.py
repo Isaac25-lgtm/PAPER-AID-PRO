@@ -1,6 +1,6 @@
 """System endpoints, error contract, security headers and authentication/authorization."""
 
-from tests.conftest import ADMIN, ALICE, UNVERIFIED
+from tests.conftest import ADMIN, ALICE, UNVERIFIED, auth
 
 
 async def test_health_and_ready(client):
@@ -73,3 +73,16 @@ async def test_openapi_published(client):
     spec = (await client.get("/api/v1/openapi.json")).json()
     assert "/api/v1/papers/import" in spec["paths"]
     assert not any(path.startswith("/internal") for path in spec["paths"])
+
+
+async def test_invite_only_mode_blocks_uninvited_users(client, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "allowed_emails", "alice@example.edu, cousin@example.edu")
+    assert (await client.get("/api/v1/library", headers=ALICE)).status_code == 200
+    outsider = auth("mallory", "mallory@example.edu")
+    blocked = await client.get("/api/v1/library", headers=outsider)
+    assert blocked.status_code == 403 and blocked.json()["error"]["code"] == "NOT_INVITED"
+    assert (await client.get("/api/v1/me", headers=outsider)).status_code == 403
+    assert (await client.get("/api/v1/me", headers=ADMIN)).status_code == 200, "admins are always allowed"
+    assert (await client.get("/api/v1/discovery/search", params={"q": "x"})).status_code != 403, "public stays public"

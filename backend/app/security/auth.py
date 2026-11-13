@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.models import User, UserRole
 from app.db.session import get_db
-from app.errors import EmailNotVerified, Forbidden, Unauthenticated
+from app.errors import EmailNotVerified, Forbidden, NotInvited, Unauthenticated
 
 log = logging.getLogger(__name__)
 
@@ -157,6 +157,8 @@ async def get_optional_user(request: Request, db: Annotated[AsyncSession, Depend
 async def get_current_user(user: Annotated[User | None, Depends(get_optional_user)]) -> User:
     if user is None:
         raise Unauthenticated("Sign in to continue.")
+    if not get_settings().is_email_allowed(user.email) and user.role != UserRole.ADMIN:
+        raise NotInvited("PaperAid Pro is in a private test. Your email is not on the tester list yet.")
     return user
 
 
