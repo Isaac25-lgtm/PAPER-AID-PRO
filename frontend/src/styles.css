@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root { color-scheme: light; }
+  html { font-feature-settings: "cv11", "ss01"; }
+}
+
+/* Rich-text editor (TipTap / ProseMirror) */
+.ProseMirror { outline: none; min-height: 60vh; font-family: Georgia, Cambria, "Times New Roman", serif; font-size: 17px; line-height: 1.75; color: #0f172a; }
+.ProseMirror h1 { font-size: 1.75rem; font-weight: 700; margin: 1.6rem 0 0.6rem; }
+.ProseMirror h2 { font-size: 1.4rem; font-weight: 700; margin: 1.4rem 0 0.5rem; }
+.ProseMirror h3 { font-size: 1.15rem; font-weight: 700; margin: 1.2rem 0 0.4rem; }
+.ProseMirror p { margin: 0 0 0.9rem; }
+.ProseMirror ul { list-style: disc; padding-left: 1.5rem; margin-bottom: 0.9rem; }
+.ProseMirror ol { list-style: decimal; padding-left: 1.5rem; margin-bottom: 0.9rem; }
+.ProseMirror blockquote { border-left: 3px solid #cbd5e1; padding-left: 1rem; color: #475569; margin: 0 0 0.9rem; }
+.ProseMirror a { color: #1d4ed8; text-decoration: underline; }
+.ProseMirror table { border-collapse: collapse; width: 100%; margin: 0 0 1rem; table-layout: fixed; }
+.ProseMirror td, .ProseMirror th { border: 1px solid #cbd5e1; padding: 0.4rem 0.6rem; vertical-align: top; }
+.ProseMirror th { background: #f1f5f9; font-weight: 600; }
+.ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: #94a3b8; float: left; height: 0; pointer-events: none; }
+.citation-chip { background: #dbeafe; color: #1e40af; border-radius: 4px; padding: 0 3px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85em; cursor: default; white-space: nowrap; }
+.citation-chip.ProseMirror-selectednode { outline: 2px solid #3b82f6; }

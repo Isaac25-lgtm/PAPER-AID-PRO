@@ -1,0 +1,61 @@
+# Deployment & operations
+
+Google Cloud / Firebase project: **`paperaid`** (owned by the main Google account), region **europe-west4**.
+
+| Resource | Name |
+|---|---|
+| Frontend | Firebase Hosting site `paperaid` → https://paperaid.web.app |
+| API | Cloud Run service `paperaid-api` (europe-west4), runs as `paperaid-api@paperaid.iam.gserviceaccount.com` |
+| Migrations | Cloud Run job `paperaid-migrate` (same image, runs `alembic upgrade head`) |
+| Database | Cloud SQL `paperaid-db` (PostgreSQL 16, db-f1-micro, daily backups ×7, deletion protection), DB `paperaid`, user `paperaid_app` |
+| Files | Bucket `gs://paperaid-papers-307658066472` (private, uniform access, public-access prevention) |
+| Jobs | Cloud Tasks queue `paper-processing` (europe-west1; 3 attempts, 30s–10min backoff), OIDC as `paperaid-tasks@…` |
+| Secrets | Secret Manager `paperaid-database-url` (+ AI keys when added) |
+| Budget | “PaperAid Pro - Silver monthly” alert on the billing account |
+
+## Deploy the API
+
+```bash
+cd backend
+gcloud run deploy paperaid-api --project paperaid --region europe-west4 --source . \
+  --service-account paperaid-api@paperaid.iam.gserviceaccount.com \
+  --add-cloudsql-instances paperaid:europe-west4:paperaid-db \
+  --set-secrets DATABASE_URL=paperaid-database-url:latest \
+  --env-vars-file run-env.yaml          # see the current values: gcloud run services describe paperaid-api
+# then apply migrations with the image that was just deployed:
+IMAGE=$(gcloud run services describe paperaid-api --region europe-west4 --format='value(spec.template.spec.containers[0].image)')
+gcloud run jobs update paperaid-migrate --region europe-west4 --image "$IMAGE" && \
+gcloud run jobs execute paperaid-migrate --region europe-west4 --wait
+```
+
+Run migrations **before** shipping code that depends on new columns (expand → deploy → contract).
+
+## Deploy the frontend
+
+```bash
+cd frontend && npm ci && npm run build && cd .. && firebase deploy --only hosting --project paperaid
+```
+
+## Turning on AI (when keys are available)
+
+```bash
+printf '%s' "sk-ant-..." | gcloud secrets create anthropic-api-key --data-file=- --project paperaid
+gcloud run services update paperaid-api --region europe-west4 \
+  --update-secrets ANTHROPIC_API_KEY=anthropic-api-key:latest \
+  --update-env-vars AI_PROVIDER=anthropic            # default model: claude-opus-5-5; override with AI_MODEL
+# Optional semantic search (embeddings, 1536-dim):
+#   --update-secrets OPENAI_API_KEY=openai-api-key:latest --update-env-vars EMBEDDING_PROVIDER=openai
+```
+
+OpenAI / Gemini work the same way (`AI_PROVIDER=openai|gemini`, and `AI_MODEL` is required for them).
+Existing full-text papers are embedded the next time they are processed (“Retry” on the admin Jobs list).
+
+## Routine operations
+
+- **Logs:** Cloud Logging → resource `cloud_run_revision` / service `paperaid-api` (JSON logs with `request_id`).
+- **Make someone admin:** Admin page → Users → role, or add their email to `ADMIN_EMAILS`.
+- **Failed full-text jobs:** Admin page → Processing jobs → Retry.
+- **Backups:** automatic daily; restore with `gcloud sql backups restore`.
+- **Scale up the DB:** `gcloud sql instances patch paperaid-db --tier db-g1-small` (brief restart).
+- **Rollback API:** `gcloud run services update-traffic paperaid-api --to-revisions REVISION=100 --region europe-west4`.
+- **Rollback frontend:** Firebase console → Hosting → release history → Rollback.

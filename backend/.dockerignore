@@ -1,0 +1,12 @@
+.venv
+.pgdata
+.storage
+.env
+.env.*
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+tests
+install.log
+app/services/citations/engine/node_modules

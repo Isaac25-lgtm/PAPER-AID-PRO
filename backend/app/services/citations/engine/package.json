@@ -1,0 +1,6 @@
+{
+  "name": "paperaid-citeproc-engine",
+  "private": true,
+  "description": "Pinned citeproc-js runner used by the Python API for CSL formatting",
+  "dependencies": { "citeproc": "2.4.63" }
+}
