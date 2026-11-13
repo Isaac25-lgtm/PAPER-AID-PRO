@@ -1,7 +1,6 @@
 # PaperAid Pro (Silver) — v2 handoff
 
-Status as of 13 Nov 2026. Branch `platform-v2` on GitHub (CI green). `main` still holds the old Next.js code
-until the branch is merged.
+Status as of 14 Nov 2026. v2 is on `main` (CI green). The original Next.js code is preserved at tag `legacy-v1`.
 
 ## What changed and why
 
@@ -39,7 +38,6 @@ returned **fabricated output**. v2 is a rebuild with a separated, tested Python 
    Default model when Anthropic is configured: `claude-opus-5-5` (override with `AI_MODEL`).
 3. **Semantic Scholar API key (free)** — anonymous access is frequently rate-limited (HTTP 429); search still works
    from the other four sources. Add as secret + `SEMANTIC_SCHOLAR_API_KEY`.
-4. **Merge** `platform-v2` into `main` once you are happy.
 
 ## Known limitations (deliberate, documented)
 

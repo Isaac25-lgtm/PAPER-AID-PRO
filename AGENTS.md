@@ -13,8 +13,8 @@ Read `README.md` and `docs/ARCHITECTURE.md` first; `docs/AUDIT_BRIEF.md` holds t
 - `frontend/` — React 18 + Vite + TypeScript SPA (TanStack Query, React Router 7, TipTap, Tailwind).
   API client `src/lib/api.ts`; auth `src/lib/auth.tsx` (Firebase Auth); pages `src/pages/*`.
 - `firebase.json` — Firebase Hosting config (CSP and security headers). `.github/workflows/ci.yml` — CI.
-- `main` branch = the ORIGINAL Next.js/Prisma/Supabase app (reference for feature parity).
-  `platform-v2` = the rebuild.
+- `main` = the v2 rebuild (this code). The ORIGINAL Next.js/Prisma/Supabase app is preserved at tag
+  `legacy-v1` (reference for feature parity: `git checkout legacy-v1` or `git show legacy-v1:<path>`).
 
 ## Commands
 

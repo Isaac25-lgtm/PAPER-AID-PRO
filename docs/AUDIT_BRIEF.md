@@ -1,4 +1,4 @@
-# Audit brief — PaperAid Pro v2 (`platform-v2`)
+# Audit brief — PaperAid Pro v2 (`main`)
 
 **Audience:** an independent coding agent (e.g. Codex) asked to audit the rebuild. Read `AGENTS.md` first.
 **Deliverable:** a findings report (format at the end). Do **not** modify production resources. Code fixes are
@@ -6,7 +6,7 @@ welcome as a separate branch/PR after the report, one finding per commit, with t
 
 ## 1. Background
 
-The original app (still on `main`) was a Next.js 14 monolith: TypeScript server code mixed with UI, Prisma +
+The original app (preserved at tag `legacy-v1`) was a Next.js 14 monolith: TypeScript server code mixed with UI, Prisma +
 Supabase (Postgres + Storage), NextAuth credentials auth. A review found, among other problems:
 
 - **Fabricated output:** the "AI Research Snapshot" returned a fixed medical-imaging paragraph for every query,
@@ -37,7 +37,7 @@ and parity with the original's genuine features.
 
 Tests: 104 backend (real Postgres + pgvector), 5 live, 17 frontend. CI: `.github/workflows/ci.yml`.
 
-## 3. Change log (`git log main..platform-v2`)
+## 3. Change log (`git log legacy-v1..main`)
 
 1. Rebuild: separated backend/frontend, removal of fabricated features, new infra, tests, CI.
 2. Lockfile compatibility for npm 10/11.
@@ -55,9 +55,9 @@ Missing or reduced in v2: signed-in **dashboard** + onboarding checklist; **auth
 real grounded evidence-table extractor); **table extraction** (Docling sidecar removed); CitedEvidence
 "scholar tools"/MCP proxy (third-party, needs an API key).
 
-Please do a **parity audit**: walk every page, server action and API route on `main` (`src/app/**`, `src/lib/**`)
+Please do a **parity audit**: walk every page, server action and API route in `legacy-v1` (`src/app/**`, `src/lib/**`)
 and list each genuine capability as present / partial / missing in v2, with the v2 file that implements it.
-Flag anything on `main` that is fabricated so it is not restored as-is.
+Flag anything in `legacy-v1` that is fabricated so it is not restored as-is.
 
 ## 5. Deliberate decisions (flag only if you think they are wrong, with reasons)
 
@@ -99,5 +99,5 @@ Evidence: code excerpt or a failing test you wrote
 Fix: specific change (and test to add)
 ```
 
-End with: a parity table (capability | main | v2 status | v2 file), a list of verified-OK areas you checked,
+End with: a parity table (capability | legacy-v1 | v2 status | v2 file), a list of verified-OK areas you checked,
 and the exact commands you ran with their results (tests, lint, `npm audit`, `pip-audit` if available).
