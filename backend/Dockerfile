@@ -25,6 +25,7 @@ RUN pip install -r requirements.txt
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
+COPY scripts ./scripts
 COPY --from=citeproc /engine/node_modules ./app/services/citations/engine/node_modules
 
 RUN useradd --system --uid 10001 --home /srv appuser && chown -R appuser /srv

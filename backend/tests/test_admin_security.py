@@ -144,3 +144,32 @@ async def test_embeddings_are_stored_and_used_for_retrieval(client):
         )
     ).json()
     assert hits and "absenteeism" in hits[0]["text"].lower()
+
+
+async def test_delete_user_script_removes_account_and_owned_data(client):
+    import importlib.util
+    from pathlib import Path
+
+    from app.db.models import Document, LibraryItem, Paper, User
+
+    upload = (
+        await client.post(
+            "/api/v1/papers/upload",
+            headers=ALICE,
+            files={"file": ("s.pdf", make_pdf(STUDY_SECTIONS), "application/pdf")},
+        )
+    ).json()
+    await client.post("/api/v1/documents", json={"title": "Draft"}, headers=ALICE)
+    spec = importlib.util.spec_from_file_location(
+        "delete_user", Path(__file__).parent.parent / "scripts" / "delete_user.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert await module.run("alice@example.edu", purge_public=True, confirmed=False) == 0  # dry run deletes nothing
+    async with get_sessionmaker()() as db:
+        assert (await db.execute(select(User).where(User.email == "alice@example.edu"))).scalar_one_or_none()
+    assert await module.run("alice@example.edu", purge_public=True, confirmed=True) == 0
+    async with get_sessionmaker()() as db:
+        for model in (User, Document, LibraryItem):
+            assert (await db.execute(select(model))).first() is None
+        assert await db.get(Paper, upload["id"]) is None
