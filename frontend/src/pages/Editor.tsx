@@ -21,6 +21,7 @@ import { Alert, Badge, Button, Input, Modal, Select, Spinner } from "@/component
 import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
 import { CitationNode, LABEL_META } from "@/lib/citationNode";
 import { relativeTime, sanitizeHtml } from "@/lib/format";
+import { normalizeSuggestion } from "@/lib/templates";
 import type { Citation, JSONContent, LibraryItem, Paper, RenderedCitations, ResearchDocument, Revision } from "@/lib/types";
 
 type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error";
@@ -165,7 +166,7 @@ function AIAssistModal({ editor, documentId, open, onClose }: { editor: Editor; 
           <Button
             size="sm"
             onClick={() => {
-              editor.chain().focus().insertContentAt(selection ? { from: editor.state.selection.from, to: editor.state.selection.to } : editor.state.selection.from, result.text).run();
+              editor.chain().focus().insertContentAt(selection ? { from: editor.state.selection.from, to: editor.state.selection.to } : editor.state.selection.from, selection ? result.text : normalizeSuggestion(preceding, result.text)).run();
               onClose();
             }}
           >

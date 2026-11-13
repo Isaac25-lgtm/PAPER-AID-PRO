@@ -5,55 +5,76 @@ import { Link, useNavigate } from "react-router";
 
 import { Container } from "@/components/Layout";
 import { useStyles } from "@/components/papers";
-import { Alert, Button, EmptyState, Input, Label, Modal, PageHeader, Select, Spinner } from "@/components/ui";
+import { Alert, Button, EmptyState, Input, Label, Modal, PageHeader, Select, Spinner, Textarea } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { DOC_TYPES, relativeTime } from "@/lib/format";
-import type { DocumentSummary, ResearchDocument } from "@/lib/types";
+import { DOC_TYPE_LABELS, STUDY_DESIGNS, defaultHeadings, defaultObjectives, guidedContent } from "@/lib/templates";
+import type { DocumentSummary, DocumentType, ResearchDocument } from "@/lib/types";
 
-const TEMPLATES: Record<string, string[]> = {
-  draft: [],
-  manuscript: ["Introduction", "Methods", "Results", "Discussion", "Conclusion"],
-  proposal: ["Background", "Problem statement", "Objectives", "Methodology", "Expected outcomes", "Timeline"],
-  literature_review: ["Introduction", "Search strategy", "Thematic review", "Gaps in the literature", "Conclusion"],
-  thesis: ["Abstract", "Introduction", "Literature review", "Methodology", "Results", "Discussion", "Conclusion"],
-  report: ["Executive summary", "Background", "Findings", "Recommendations"],
-};
-
-function templateContent(type: string) {
-  const headings = TEMPLATES[type] ?? [];
-  if (!headings.length) return undefined;
-  return {
-    type: "doc",
-    content: headings.flatMap((h) => [
-      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: h }] },
-      { type: "paragraph" },
-    ]),
-  };
-}
+const NL = String.fromCharCode(10);
 
 function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   const styles = useStyles();
-  const [title, setTitle] = useState("");
-  const [docType, setDocType] = useState("manuscript");
+  const [step, setStep] = useState<1 | 2>(1);
+  const [topic, setTopic] = useState("");
+  const [docType, setDocType] = useState<DocumentType>("manuscript");
+  const [design, setDesign] = useState("");
   const [style, setStyle] = useState("apa");
+  const [general, setGeneral] = useState("");
+  const [specific, setSpecific] = useState("");
+  const [headings, setHeadings] = useState("");
+
+  const prepareOutline = () => {
+    const objectives = defaultObjectives(topic, docType, design);
+    setGeneral(docType === "draft" ? "" : objectives.general);
+    setSpecific(docType === "draft" ? "" : objectives.specific.join(NL));
+    setHeadings(defaultHeadings(docType, design).join(NL));
+    setStep(2);
+  };
   const create = useMutation({
-    mutationFn: () => api.post<ResearchDocument>("/documents", { title: title || "Untitled document", doc_type: docType, csl_style: style, content: templateContent(docType) }),
+    mutationFn: () =>
+      api.post<ResearchDocument>("/documents", {
+        title: topic.trim() || "Untitled document",
+        doc_type: docType,
+        csl_style: style,
+        content: guidedContent({
+          topic,
+          docType,
+          design,
+          generalObjective: general,
+          specificObjectives: specific.split(NL),
+          headings: headings.split(NL),
+        }),
+      }),
     onSuccess: (doc) => navigate(`/documents/${doc.id}`),
   });
+  const close = () => {
+    setStep(1);
+    onClose();
+  };
   return (
-    <Modal open={open} onClose={onClose} title="New document">
-      <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); create.mutate(); }}>
-        <div>
-          <Label htmlFor="title">Title</Label>
-          <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={300} placeholder="Untitled document" />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
+    <Modal open={open} onClose={close} title={step === 1 ? "New document" : "Objectives & outline"} wide>
+      {step === 1 ? (
+        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); prepareOutline(); }}>
           <div>
-            <Label htmlFor="type">Type (adds a section outline)</Label>
-            <Select id="type" value={docType} onChange={(e) => setDocType(e.target.value)}>
-              {DOC_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </Select>
+            <Label htmlFor="topic">Title / research topic</Label>
+            <Input id="topic" value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={300} placeholder="e.g. School-based malaria prevention in rural Uganda" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="type">Document type</Label>
+              <Select id="type" value={docType} onChange={(e) => { setDocType(e.target.value as DocumentType); setDesign(""); }}>
+                {(Object.keys(DOC_TYPE_LABELS) as DocumentType[]).map((t) => <option key={t} value={t}>{DOC_TYPE_LABELS[t]}</option>)}
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="design">Study design</Label>
+              <Select id="design" value={design} onChange={(e) => setDesign(e.target.value)} disabled={!STUDY_DESIGNS[docType].length}>
+                <option value="">{STUDY_DESIGNS[docType].length ? "General (no specific design)" : "Not applicable"}</option>
+                {STUDY_DESIGNS[docType].map((d) => <option key={d} value={d}>{d}</option>)}
+              </Select>
+            </div>
           </div>
           <div>
             <Label htmlFor="style">Citation style</Label>
@@ -61,10 +82,37 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
               {(styles.data ?? [{ id: "apa", title: "APA 7th edition" }]).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
             </Select>
           </div>
+          <div className="flex justify-end">
+            <Button type="submit">Next: objectives & outline</Button>
+          </div>
+        </form>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">Suggested for a {DOC_TYPE_LABELS[docType].toLowerCase()}{design ? ` (${design})` : ""}. Edit anything — each line becomes a section with writing guidance.</p>
+          {docType !== "draft" && (
+            <>
+              <div>
+                <Label htmlFor="general">General objective</Label>
+                <Textarea id="general" rows={2} value={general} onChange={(e) => setGeneral(e.target.value)} />
+              </div>
+              <div>
+                <Label htmlFor="specific">Specific objectives (one per line)</Label>
+                <Textarea id="specific" rows={4} value={specific} onChange={(e) => setSpecific(e.target.value)} />
+              </div>
+            </>
+          )}
+          <div>
+            <Label htmlFor="headings">Sections (one per line{docType === "draft" ? "; leave empty for a blank page" : ""})</Label>
+            <Textarea id="headings" rows={8} value={headings} onChange={(e) => setHeadings(e.target.value)} />
+            <p className="mt-1 text-xs text-slate-500">The reference list is generated automatically from your citations — no References section needed.</p>
+          </div>
+          {create.error && <Alert kind="error">{errorMessage(create.error)}</Alert>}
+          <div className="flex justify-between">
+            <Button variant="secondary" onClick={() => setStep(1)}>Back</Button>
+            <Button loading={create.isPending} onClick={() => create.mutate()}>Create document</Button>
+          </div>
         </div>
-        {create.error && <Alert kind="error">{errorMessage(create.error)}</Alert>}
-        <Button type="submit" loading={create.isPending}>Create</Button>
-      </form>
+      )}
     </Modal>
   );
 }
