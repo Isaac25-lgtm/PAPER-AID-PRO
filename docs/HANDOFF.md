@@ -32,8 +32,7 @@ returned **fabricated output**. v2 is a rebuild with a separated, tested Python 
 
 ## Remaining (only these)
 
-1. **Enable sign-in (one-time, Firebase console)** — Authentication → Get started → Email/Password → Enable.
-   Optional: enable Google, then set `VITE_ENABLE_GOOGLE_SIGNIN=true` in `frontend/.env.production` and redeploy hosting.
+1. ~~Enable sign-in~~ — done: Email/Password and Google enabled; access is invite-only via `ALLOWED_EMAILS`.
 2. **AI keys** — see DEPLOYMENT.md “Turning on AI”. Until then every AI feature shows an honest “not switched on yet”.
    Default model when Anthropic is configured: `claude-opus-5-5` (override with `AI_MODEL`).
 3. **Semantic Scholar API key (free)** — anonymous access is frequently rate-limited (HTTP 429); search still works
