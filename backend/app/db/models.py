@@ -285,10 +285,22 @@ class ProcessingJob(Base):
     error: Mapped[str | None] = mapped_column(Text)
     requested_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # A running job holds a lease; a worker that dies stops renewing it and the job becomes reclaimable.
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
 
-    __table_args__ = (Index("ix_processing_jobs_paper", "paper_id"), Index("ix_processing_jobs_status", "status"))
+    __table_args__ = (
+        Index("ix_processing_jobs_paper", "paper_id"),
+        Index("ix_processing_jobs_status", "status"),
+        # At most one active (queued/running) job per paper, enforced atomically by the database.
+        Index(
+            "uq_processing_jobs_active_paper",
+            "paper_id",
+            unique=True,
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
+    )
 
 
 # ------------------------------------------------------------------------------------------------ library
@@ -419,6 +431,10 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     citations: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     model: Mapped[str | None] = mapped_column(String(100))
+    insufficient_evidence: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
+    gaps: Mapped[str] = mapped_column(Text, default="", server_default=text("''"), nullable=False)
     created_at: Mapped[datetime] = _created()
 
     __table_args__ = (Index("ix_messages_conversation", "conversation_id", "created_at"),)
@@ -431,6 +447,18 @@ class RateLimitBucket(Base):
     key: Mapped[str] = mapped_column(String(200), primary_key=True)
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
     count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class StorageDeletion(Base):
+    """Durable to-do list of stored objects to delete. Written in the same transaction that removes (or never
+    commits) the owning row, so a failed object delete is retried later instead of leaving an orphaned PDF."""
+
+    __tablename__ = "storage_deletions"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created()
 
 
 class AuditEvent(Base):

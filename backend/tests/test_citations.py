@@ -73,7 +73,8 @@ async def test_format_endpoint_by_identifier_and_paper(client, registries):
         )
     ).json()
     assert body["unresolved"] == ["10.9999/unknown"]
-    assert [e["in_text"] for e in body["entries"]] == ["(Namaganda et al., 2021)"] * 2
+    # The paper id and its DOI name the same work: formatted once (no spurious 2021a/2021b).
+    assert [e["in_text"] for e in body["entries"]] == ["(Namaganda et al., 2021)"]
     bad = await client.post("/api/v1/citations/format", json={"identifiers": [fx.DOI], "style": "nope"})
     assert bad.status_code == 422
 

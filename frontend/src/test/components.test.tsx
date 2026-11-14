@@ -9,7 +9,7 @@ import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
 import { ApiError } from "@/lib/api";
 import type { GroundedAnswer } from "@/lib/types";
 
-const authState = { user: null as null | { id: string; role: string }, firebaseUser: null as null | { emailVerified: boolean; email: string }, loading: false, notInvited: false };
+const authState = { user: null as null | { id: string; role: string }, firebaseUser: null as null | { emailVerified: boolean; email: string }, loading: false, notInvited: false, accountConflict: false };
 vi.mock("@/lib/auth", () => ({
   useAuth: () => ({ ...authState, signOut: vi.fn(), resendVerification: vi.fn(), refresh: vi.fn() }),
 }));

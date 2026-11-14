@@ -167,7 +167,8 @@ export interface Citation {
 
 export interface RenderedCitations {
   style: string;
-  clusters: { citation_ids: string[]; text: string }[];
+  /** One entry per citation node, in document order. `text` is null when every cited source is gone. */
+  clusters: { citation_ids: string[]; text: string | null; missing_ids: string[] }[];
   bibliography: string[];
 }
 
@@ -198,7 +199,13 @@ export interface VerifyResult {
   reference: string;
   verdict: "verified" | "likely_match" | "mismatch" | "not_found" | "error";
   explanation: string;
-  checks?: { title_similarity: number; year_matches: boolean | null; first_author_matches: boolean | null };
+  checks?: {
+    title_similarity: number;
+    year_matches: boolean | null;
+    first_author_matches: boolean | null;
+    /** Per-field outcome: "matched" | "does not match" | "not checked" (title also "partial"). */
+    fields?: Record<string, string>;
+  };
   match: { title: string; authors: string[]; year: number | null; journal: string | null; doi: string | null } | null;
 }
 
@@ -239,6 +246,8 @@ export interface Message {
   content: string;
   citations: AnswerCitation[];
   model: string | null;
+  insufficient_evidence: boolean;
+  gaps: string;
   created_at: string;
 }
 
@@ -253,13 +262,16 @@ export interface SummaryPoint {
 
 export interface PaperSummary {
   content: {
-    overview: string;
-    research_question: SummaryPoint;
-    methods: SummaryPoint;
+    /** Verified overview sentences (each passed the same checks as Q&A claims). */
+    overview: SummaryPoint[];
+    research_question: SummaryPoint | null;
+    methods: SummaryPoint | null;
     key_findings: SummaryPoint[];
     limitations: SummaryPoint[];
     based_on: "full_text" | "abstract";
     insufficient_evidence: boolean;
+    /** e.g. "2 statements were removed because the cited sources did not support them." */
+    removed_note: string;
   };
   model: string;
   created_at: string;

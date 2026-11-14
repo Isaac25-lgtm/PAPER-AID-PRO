@@ -10,24 +10,31 @@ import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
   ArrowLeft, Bold, BookMarked, Bot, Heading2, Heading3, History, Italic, List, ListOrdered, Quote, Redo2, Sparkles,
-  Table as TableIcon, Underline as UnderlineIcon, Undo2,
+  Table as TableIcon, Underline as UnderlineIcon, Undo2, X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router";
 
 import { AIError } from "@/components/GroundedAnswerView";
+import { HelpButton, SectionGuide } from "@/components/Guidance";
 import { useStyles } from "@/components/papers";
 import { Alert, Badge, Button, Input, Modal, Select, Spinner } from "@/components/ui";
 import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
 import { CitationNode, LABEL_META } from "@/lib/citationNode";
 import { relativeTime, sanitizeHtml } from "@/lib/format";
+import { SaveQueue, type Fields } from "@/lib/saveQueue";
 import { normalizeSuggestion } from "@/lib/templates";
 import type { Citation, JSONContent, LibraryItem, Paper, RenderedCitations, ResearchDocument, Revision } from "@/lib/types";
 
 type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error";
 
 function applyCitationLabels(editor: Editor, rendered: RenderedCitations) {
-  const labels = new Map(rendered.clusters.map((c) => [c.citation_ids.join(","), c.text]));
+  const labels = new Map(
+    rendered.clusters.map((c) => [
+      c.citation_ids.join(","),
+      c.text ? (c.missing_ids.length ? `${c.text} [missing source]` : c.text) : "[missing source]",
+    ]),
+  );
   const tr = editor.state.tr;
   let changed = false;
   editor.state.doc.descendants((node, pos) => {
@@ -107,12 +114,29 @@ function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; 
   );
 }
 
-function RevisionsPanel({ documentId, onRestored }: { documentId: string; onRestored: (doc: ResearchDocument) => void }) {
+function RevisionsPanel({
+  documentId,
+  prepare,
+  onRestored,
+}: {
+  documentId: string;
+  /** Saves (or, with consent, discards) pending edits; resolves to the version to restore from, or null to cancel. */
+  prepare: () => Promise<number | null>;
+  onRestored: (doc: ResearchDocument) => void;
+}) {
   const revisions = useQuery({ queryKey: ["revisions", documentId], queryFn: () => api.get<Revision[]>(`/documents/${documentId}/revisions`) });
-  const restore = useMutation({ mutationFn: (id: string) => api.post<ResearchDocument>(`/documents/${documentId}/revisions/${id}/restore`), onSuccess: onRestored });
+  const restore = useMutation({
+    mutationFn: async (id: string) => {
+      const baseVersion = await prepare();
+      if (baseVersion === null) return null;
+      return api.post<ResearchDocument>(`/documents/${documentId}/revisions/${id}/restore`, { base_version: baseVersion });
+    },
+    onSuccess: (doc) => doc && onRestored(doc),
+  });
   if (revisions.isLoading) return <Spinner />;
   return (
     <ul className="space-y-2">
+      {restore.error && <li><Alert kind="error">{errorMessage(restore.error)}</Alert></li>}
       {revisions.data?.map((r) => (
         <li key={r.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 p-2.5 text-sm">
           <div>
@@ -186,12 +210,41 @@ export default function EditorPage() {
   const [title, setTitle] = useState("");
   const [style, setStyle] = useState("apa");
   const [saveState, setSaveState] = useState<SaveState>("saved");
-  const [panel, setPanel] = useState<"sources" | "history" | null>("sources");
+  // The side panel is open by default only where there is room for it next to the page.
+  const [panel, setPanel] = useState<"sources" | "history" | null>(() =>
+    typeof window.matchMedia === "function" && !window.matchMedia("(min-width: 1024px)").matches ? null : "sources",
+  );
+  const [exportError, setExportError] = useState<string | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [rendered, setRendered] = useState<RenderedCitations | null>(null);
   const versionRef = useRef<number>(1);
   const timer = useRef<number | undefined>(undefined);
-  const pending = useRef<{ title?: string; csl_style?: string; content?: JSONContent }>({});
+  const retryTimer = useRef<number | undefined>(undefined);
+  const scheduleRef = useRef<() => void>(() => undefined);
+  const sendRef = useRef<(fields: Fields) => Promise<void>>(async () => undefined);
+  // One serial queue per editor: saves never overlap, failures keep their edits, conflicts stop autosave.
+  const queue = useRef<SaveQueue | null>(null);
+  if (queue.current === null) {
+    queue.current = new SaveQueue(
+      (fields) => sendRef.current(fields),
+      (error) => error instanceof ApiError && error.status === 409,
+      {
+        onStart: () => setSaveState("saving"),
+        onSaved: (hasMore) => {
+          setSaveState(hasMore ? "dirty" : "saved");
+          if (hasMore) scheduleRef.current(); // edits made while the request was in flight
+        },
+        onError: (_error, conflict) => {
+          setSaveState(conflict ? "conflict" : "error");
+          if (!conflict) {
+            window.clearTimeout(retryTimer.current);
+            retryTimer.current = window.setTimeout(() => scheduleRef.current(), 10_000);
+          }
+        },
+      },
+    );
+  }
+  const saves = queue.current;
 
   const editor = useEditor({
     extensions: [
@@ -208,8 +261,8 @@ export default function EditorPage() {
     content: "",
     onUpdate: ({ editor: ed, transaction }) => {
       if (transaction.getMeta(LABEL_META)) return;
-      pending.current.content = ed.getJSON() as JSONContent;
-      scheduleSave();
+      saves.update({ content: ed.getJSON() as JSONContent });
+      scheduleRef.current();
     },
   });
 
@@ -224,29 +277,25 @@ export default function EditorPage() {
     }
   }, [editor, id]);
 
-  const flush = useCallback(async () => {
+  sendRef.current = async (fields) => {
+    const saved = await api.patch<ResearchDocument>(`/documents/${id}`, { base_version: versionRef.current, ...fields });
+    versionRef.current = saved.version;
+    queryClient.setQueryData(["document", id], saved);
+    void refreshCitations();
+  };
+
+  /** Save now (behind any running save). Resolves true only if the server has every edit. */
+  const flush = useCallback((): Promise<boolean> => {
     window.clearTimeout(timer.current);
-    const body = pending.current;
-    if (!Object.keys(body).length) return;
-    pending.current = {};
-    setSaveState("saving");
-    try {
-      const saved = await api.patch<ResearchDocument>(`/documents/${id}`, { base_version: versionRef.current, ...body });
-      versionRef.current = saved.version;
-      setSaveState(Object.keys(pending.current).length ? "dirty" : "saved");
-      queryClient.setQueryData(["document", id], saved);
-      void refreshCitations();
-    } catch (error) {
-      pending.current = { ...body, ...pending.current };
-      setSaveState(error instanceof ApiError && error.status === 409 ? "conflict" : "error");
-    }
-  }, [id, queryClient, refreshCitations]);
+    return saves.flush();
+  }, [saves]);
 
   const scheduleSave = useCallback(() => {
-    setSaveState("dirty");
+    setSaveState((state) => (state === "conflict" ? state : "dirty"));
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => void flush(), 1200);
   }, [flush]);
+  scheduleRef.current = scheduleSave;
 
   // Load the document once (later refetches must not clobber local edits).
   const loaded = useRef(false);
@@ -260,24 +309,27 @@ export default function EditorPage() {
     void refreshCitations();
   }, [editor, docQuery.data, refreshCitations]);
 
-  // Save on tab close / navigation.
+  // Save on tab close / navigation; warn while anything is unsaved OR still being sent.
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => {
-      if (Object.keys(pending.current).length) {
+      if (saves.dirty || saves.inFlight) {
         void flush();
         event.preventDefault();
+        event.returnValue = "";
       }
     };
     window.addEventListener("beforeunload", handler);
     return () => {
       window.removeEventListener("beforeunload", handler);
+      window.clearTimeout(retryTimer.current);
       void flush();
     };
-  }, [flush]);
+  }, [flush, saves]);
 
   const reloadLatest = async () => {
     const latest = await api.get<ResearchDocument>(`/documents/${id}`);
-    pending.current = {};
+    saves.discard();
+    saves.resolveConflict();
     versionRef.current = latest.version;
     setTitle(latest.title);
     setStyle(latest.csl_style);
@@ -288,8 +340,34 @@ export default function EditorPage() {
   const keepMine = async () => {
     const latest = await api.get<ResearchDocument>(`/documents/${id}`);
     versionRef.current = latest.version;
-    pending.current = { content: editor?.getJSON() as JSONContent, title, csl_style: style };
+    saves.update({ content: editor?.getJSON() as JSONContent, title, csl_style: style });
+    saves.resolveConflict();
     await flush();
+  };
+
+  /** Before a restore: save pending edits, or discard them only with explicit consent. */
+  const prepareRestore = async (): Promise<number | null> => {
+    if (await flush()) return versionRef.current;
+    if (saves.conflicted) {
+      window.alert("Resolve the editing conflict shown above before restoring a version.");
+      return null;
+    }
+    if (!window.confirm("Your latest changes could not be saved. Restore anyway and discard them?")) return null;
+    saves.discard();
+    return versionRef.current;
+  };
+
+  const exportAs = async (format: string) => {
+    setExportError(null);
+    if (!(await flush())) {
+      setExportError("Your latest changes are not saved yet, so the export would be out of date. Resolve the save problem, then export again.");
+      return;
+    }
+    try {
+      await downloadFile(`/documents/${id}/export`, `${title || "document"}.${format}`, { format });
+    } catch (error) {
+      setExportError(errorMessage(error));
+    }
   };
 
   if (docQuery.isLoading || !editor) return <Spinner label="Opening document" />;
@@ -304,24 +382,22 @@ export default function EditorPage() {
           value={title}
           maxLength={300}
           aria-label="Document title"
-          onChange={(e) => { setTitle(e.target.value); pending.current.title = e.target.value; scheduleSave(); }}
+          onChange={(e) => { setTitle(e.target.value); saves.update({ title: e.target.value }); scheduleSave(); }}
           className="min-w-0 flex-1 truncate rounded px-2 py-1 text-lg font-semibold text-slate-900 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-200"
         />
         <Badge tone={status[saveState][1]}>{status[saveState][0]}</Badge>
-        <Select className="hidden w-52 py-1.5 md:block" value={style} aria-label="Citation style" onChange={(e) => { setStyle(e.target.value); pending.current.csl_style = e.target.value; void flush(); }}>
+        <HelpButton section="editor" label="How to write here" className="hidden sm:flex" />
+        <Select className="w-28 py-1.5 sm:w-52" value={style} aria-label="Citation style" onChange={(e) => { setStyle(e.target.value); saves.update({ csl_style: e.target.value }); void flush(); }}>
           {(styles.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
         </Select>
-        <Button size="sm" variant={panel === "sources" ? "primary" : "secondary"} onClick={() => setPanel(panel === "sources" ? null : "sources")}><BookMarked className="h-4 w-4" /> Sources</Button>
-        <Button size="sm" variant={panel === "history" ? "primary" : "secondary"} onClick={() => setPanel(panel === "history" ? null : "history")}><History className="h-4 w-4" /></Button>
+        <Button size="sm" variant={panel === "sources" ? "primary" : "secondary"} onClick={() => setPanel(panel === "sources" ? null : "sources")} aria-label="Sources"><BookMarked className="h-4 w-4" /> <span className="hidden sm:inline">Sources</span></Button>
+        <Button size="sm" variant={panel === "history" ? "primary" : "secondary"} onClick={() => setPanel(panel === "history" ? null : "history")} aria-label="Version history"><History className="h-4 w-4" /></Button>
         <Select
-          className="w-32 py-1.5"
+          className="w-24 py-1.5 sm:w-32"
           value=""
           aria-label="Export"
-          onChange={async (e) => {
-            const format = e.target.value;
-            if (!format) return;
-            await flush();
-            await downloadFile(`/documents/${id}/export`, `${title || "document"}.${format}`, { format });
+          onChange={(e) => {
+            if (e.target.value) void exportAs(e.target.value);
           }}
         >
           <option value="">Export…</option>
@@ -329,6 +405,11 @@ export default function EditorPage() {
           <option value="pdf">PDF</option>
         </Select>
       </header>
+      {exportError && (
+        <div className="mx-auto max-w-4xl px-4 pt-4">
+          <Alert kind="error" title="Export not started">{exportError}</Alert>
+        </div>
+      )}
       {saveState === "conflict" && (
         <div className="mx-auto max-w-4xl px-4 pt-4">
           <Alert kind="error" title="This document was edited in another tab or device">
@@ -343,7 +424,8 @@ export default function EditorPage() {
       <div className="flex">
         <div className="min-w-0 flex-1">
           <Toolbar editor={editor} onAI={() => setAiOpen(true)} />
-          <div className="mx-auto my-6 max-w-[820px] rounded-lg bg-white px-12 py-10 shadow-sm">
+          <SectionGuide section="editor" className="mx-3 mb-0 mt-4 max-w-[820px] sm:mx-auto" />
+          <div className="mx-auto my-4 max-w-[820px] rounded-lg bg-white px-5 py-6 shadow-sm sm:my-6 sm:px-12 sm:py-10">
             <EditorContent editor={editor} />
             {rendered && rendered.bibliography.length > 0 && (
               <section className="mt-10 border-t border-slate-200 pt-6">
@@ -359,16 +441,25 @@ export default function EditorPage() {
           </div>
         </div>
         {panel && (
-          <aside className="sticky top-14 h-[calc(100vh-3.5rem)] w-80 shrink-0 overflow-y-auto border-l border-slate-200 bg-white p-4">
-            <h2 className="mb-3 font-semibold text-slate-900">{panel === "sources" ? "Cite from your library" : "Version history"}</h2>
+          <div className="fixed inset-0 z-30 bg-slate-900/30 lg:hidden" aria-hidden onClick={() => setPanel(null)} />
+        )}
+        {panel && (
+          <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-sm overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-xl lg:sticky lg:top-14 lg:z-auto lg:h-[calc(100vh-3.5rem)] lg:w-80 lg:max-w-none lg:shrink-0 lg:shadow-none">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-semibold text-slate-900">{panel === "sources" ? "Cite from your library" : "Version history"}</h2>
+              <button type="button" className="rounded p-1 text-slate-500 hover:bg-slate-100 lg:hidden" aria-label="Close panel" onClick={() => setPanel(null)}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
             {panel === "sources" ? (
               <SourcesPanel documentId={id} editor={editor} onInserted={() => void flush()} />
             ) : (
               <RevisionsPanel
                 documentId={id}
+                prepare={prepareRestore}
                 onRestored={(doc) => {
                   versionRef.current = doc.version;
-                  pending.current = {};
+                  saves.discard();
                   setTitle(doc.title);
                   editor.commands.setContent(doc.content, { emitUpdate: false });
                   setSaveState("saved");

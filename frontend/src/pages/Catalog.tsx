@@ -3,6 +3,7 @@ import { BookOpen } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
+import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
 import { PaperCard } from "@/components/papers";
 import { Alert, Button, EmptyState, Input, PageHeader, Select, Spinner } from "@/components/ui";
@@ -32,6 +33,7 @@ export default function CatalogPage() {
   return (
     <Container>
       <PageHeader title="Catalog" subtitle="Every paper imported into PaperAid Pro, plus your private uploads." />
+      <SectionGuide section="catalog" />
       <form className="mb-6 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); update({ q: draft.trim() || null, page: null, sort: null }); }}>
         <Input className="min-w-64 flex-1" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Search titles, journals and abstracts" aria-label="Search catalog" />
         <Select className="w-44" value={sort} onChange={(e) => update({ sort: e.target.value, page: null })} aria-label="Sort">

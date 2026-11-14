@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import quote
@@ -24,7 +25,14 @@ from app.errors import NotFound, UpstreamError
 class ObjectStorage(Protocol):
     async def put(self, key: str, data: bytes, content_type: str) -> None: ...
     async def get(self, key: str) -> bytes: ...
+    async def open_stream(self, key: str) -> AsyncIterator[bytes]:
+        """Resolve the object (raising NotFound before any byte is sent) and return a chunk iterator."""
+        ...
+
     async def delete(self, key: str) -> None: ...
+
+
+CHUNK_SIZE = 64 * 1024
 
 
 def _safe_key(key: str) -> str:
@@ -54,6 +62,21 @@ class LocalStorage:
         if not path.exists():
             raise NotFound("File not found in storage.")
         return await asyncio.to_thread(path.read_bytes)
+
+    async def open_stream(self, key: str) -> AsyncIterator[bytes]:
+        path = self._path(key)
+        if not path.exists():
+            raise NotFound("File not found in storage.")
+        handle = await asyncio.to_thread(path.open, "rb")
+
+        async def body() -> AsyncIterator[bytes]:
+            try:
+                while chunk := await asyncio.to_thread(handle.read, CHUNK_SIZE):
+                    yield chunk
+            finally:
+                await asyncio.to_thread(handle.close)
+
+        return body()
 
     async def delete(self, key: str) -> None:
         path = self._path(key)
@@ -95,6 +118,32 @@ class GCSStorage:
         if response.status_code >= 300:
             raise UpstreamError(f"Storage download failed (HTTP {response.status_code}).")
         return response.content
+
+    async def open_stream(self, key: str) -> AsyncIterator[bytes]:
+        name = quote(_safe_key(key), safe="")
+        url = f"https://storage.googleapis.com/storage/v1/b/{self.bucket}/o/{name}"
+        headers = {"Authorization": f"Bearer {await self._token()}"}
+        client = httpx.AsyncClient(timeout=120)
+        response = await client.send(
+            client.build_request("GET", url, params={"alt": "media"}, headers=headers), stream=True
+        )
+        if response.status_code >= 300:
+            status = response.status_code
+            await response.aclose()
+            await client.aclose()
+            if status == 404:
+                raise NotFound("File not found in storage.")
+            raise UpstreamError(f"Storage download failed (HTTP {status}).")
+
+        async def body() -> AsyncIterator[bytes]:
+            try:
+                async for chunk in response.aiter_bytes(CHUNK_SIZE):
+                    yield chunk
+            finally:  # also runs when the client disconnects mid-download
+                await response.aclose()
+                await client.aclose()
+
+        return body()
 
     async def delete(self, key: str) -> None:
         name = quote(_safe_key(key), safe="")

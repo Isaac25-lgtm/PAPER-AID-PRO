@@ -33,11 +33,15 @@ process.stdin.on("end", () => {
       citations = rebuilt.map((r) => r[2]);
     }
     let bibliography = [];
+    let bibliographyIds = [];
     if (req.bibliography) {
       const bib = engine.makeBibliography();
-      if (bib) bibliography = bib[1].map((s) => s.trim());
+      if (bib) {
+        bibliography = bib[1].map((s) => s.trim());
+        bibliographyIds = (bib[0].entry_ids || []).map((ids) => String(ids[0]));
+      }
     }
-    process.stdout.write(JSON.stringify({ citations, bibliography }));
+    process.stdout.write(JSON.stringify({ citations, bibliography, bibliography_ids: bibliographyIds }));
   } catch (err) {
     process.stdout.write(JSON.stringify({ error: String(err && err.message ? err.message : err) }));
     process.exitCode = 1;

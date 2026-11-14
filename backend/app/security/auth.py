@@ -19,12 +19,13 @@ import requests
 from fastapi import Depends, Request
 from google.oauth2 import id_token as google_id_token
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.models import User, UserRole
+from app.db.models import AuditEvent, User, UserRole
 from app.db.session import get_db
-from app.errors import EmailNotVerified, Forbidden, NotInvited, Unauthenticated
+from app.errors import AccountConflict, EmailNotVerified, Forbidden, NotInvited, Unauthenticated
 
 log = logging.getLogger(__name__)
 
@@ -98,16 +99,35 @@ def _bearer_token(request: Request) -> str | None:
     return None
 
 
+async def _role_was_set_by_admin(db: AsyncSession, user: User) -> bool:
+    return (
+        await db.execute(
+            select(AuditEvent.id)
+            .where(
+                AuditEvent.action == "user.role_changed",
+                AuditEvent.target_type == "user",
+                AuditEvent.target_id == str(user.id),
+            )
+            .limit(1)
+        )
+    ).first() is not None
+
+
 async def _upsert_user(db: AsyncSession, claims: TokenClaims) -> User:
+    """The Firebase UID is the durable account key. An email is never used to take over an existing account."""
     settings = get_settings()
     user = (await db.execute(select(User).where(User.firebase_uid == claims.uid))).scalar_one_or_none()
     now = datetime.now(UTC)
     if user is None:
-        # An account created with the same email under a different provider keeps its row.
-        user = (await db.execute(select(User).where(User.email == claims.email))).scalar_one_or_none()
-        if user is not None:
-            user.firebase_uid = claims.uid
-    if user is None:
+        holder = (await db.execute(select(User).where(User.email == claims.email))).scalar_one_or_none()
+        if holder is not None:
+            # A different Firebase identity with this email (e.g. a deleted and re-created Firebase account).
+            # Linking must be an explicit, verified operator action (scripts/relink_user.py), never implicit.
+            log.warning("auth.identity_conflict", extra={"user_id": str(holder.id)})
+            raise AccountConflict(
+                "This email is already linked to a different sign-in. Sign in the way you originally did, "
+                "or ask the administrator to re-link your account."
+            )
         user = User(
             firebase_uid=claims.uid,
             email=claims.email,
@@ -120,19 +140,35 @@ async def _upsert_user(db: AsyncSession, claims: TokenClaims) -> User:
             last_seen_at=now,
         )
         db.add(user)
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError as exc:  # concurrent first requests for the same identity
+            await db.rollback()
+            user = (await db.execute(select(User).where(User.firebase_uid == claims.uid))).scalar_one_or_none()
+            if user is None:
+                raise AccountConflict("This email is already linked to a different sign-in.") from exc
+            return user
         await db.refresh(user)
         log.info("user.created", extra={"user_id": str(user.id)})
         return user
 
     changed = False
     if user.email != claims.email:
+        taken = (await db.execute(select(User.id).where(User.email == claims.email, User.id != user.id))).first()
+        if taken:
+            raise AccountConflict("Your new email address is already used by another account.")
         user.email, changed = claims.email, True
     if user.email_verified != claims.email_verified:
         user.email_verified, changed = claims.email_verified, True
     if claims.picture and user.avatar_url != claims.picture:
         user.avatar_url, changed = claims.picture, True
-    if claims.email in settings.admin_email_set and claims.email_verified and user.role != UserRole.ADMIN:
+    # ADMIN_EMAILS bootstraps the role; once an admin has changed this user's role, that decision stands.
+    if (
+        claims.email in settings.admin_email_set
+        and claims.email_verified
+        and user.role != UserRole.ADMIN
+        and not await _role_was_set_by_admin(db, user)
+    ):
         user.role, changed = UserRole.ADMIN, True
     if user.last_seen_at is None or now - user.last_seen_at > timedelta(minutes=10):
         user.last_seen_at, changed = now, True
@@ -141,7 +177,8 @@ async def _upsert_user(db: AsyncSession, claims: TokenClaims) -> User:
     return user
 
 
-async def get_optional_user(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> User | None:
+async def get_token_user(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> User | None:
+    """The signed-in identity, if any (no access policy applied yet)."""
     token = _bearer_token(request)
     if token is None:
         return None
@@ -154,16 +191,32 @@ async def get_optional_user(request: Request, db: Annotated[AsyncSession, Depend
     return user
 
 
-async def get_current_user(user: Annotated[User | None, Depends(get_optional_user)]) -> User:
+def _is_invited(user: User) -> bool:
+    return user.role == UserRole.ADMIN or get_settings().is_email_allowed(user.email)
+
+
+def _is_verified(user: User) -> bool:
+    return user.email_verified or not get_settings().require_email_verified
+
+
+async def get_optional_user(user: Annotated[User | None, Depends(get_token_user)]) -> User | None:
+    """Principal for public endpoints. Only an invited, verified account widens what is visible (its own
+    private papers); anyone else is served exactly as an anonymous visitor."""
+    if user is None or not _is_invited(user) or not _is_verified(user):
+        return None
+    return user
+
+
+async def get_current_user(user: Annotated[User | None, Depends(get_token_user)]) -> User:
     if user is None:
         raise Unauthenticated("Sign in to continue.")
-    if not get_settings().is_email_allowed(user.email) and user.role != UserRole.ADMIN:
+    if not _is_invited(user):
         raise NotInvited("PaperAid Pro is in a private test. Your email is not on the tester list yet.")
     return user
 
 
 async def get_verified_user(user: Annotated[User, Depends(get_current_user)]) -> User:
-    if get_settings().require_email_verified and not user.email_verified:
+    if not _is_verified(user):
         raise EmailNotVerified("Verify your email address to use this feature.")
     return user
 

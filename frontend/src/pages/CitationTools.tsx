@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Check, CheckCircle2, Copy, HelpCircle, ShieldAlert, XCircle } from "lucide-react";
 import { useState } from "react";
 
+import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
 import { useStyles } from "@/components/papers";
 import { Alert, Badge, Button, Card, PageHeader, Select, Textarea } from "@/components/ui";
@@ -101,6 +102,11 @@ function Verifier() {
                     {r.checks && ` · title match ${Math.round(r.checks.title_similarity * 100)}%`}
                   </p>
                 )}
+                {r.checks?.fields && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {Object.entries(r.checks.fields).map(([field, state]) => `${field.replace("_", " ")}: ${state}`).join(" · ")}
+                  </p>
+                )}
               </li>
             );
           })}
@@ -114,6 +120,7 @@ export default function CitationToolsPage() {
   return (
     <Container>
       <PageHeader title="Citation tools" subtitle="Format references in 10 styles and check reference lists against Crossref. No sign-in required." />
+      <SectionGuide section="citations" />
       <div className="grid gap-6 lg:grid-cols-2">
         <Generator />
         <Verifier />

@@ -35,7 +35,7 @@ and parity with the original's genuine features.
 | AI | Provider-neutral adapters (Anthropic SDK / OpenAI / Gemini REST); grounded answers validated in `services/ai/grounding.py`; **no provider configured yet** |
 | Frontend | React SPA on Firebase Hosting; calls the Cloud Run URL directly (CORS allow-list) |
 
-Tests: 104 backend (real Postgres + pgvector), 5 live, 17 frontend. CI: `.github/workflows/ci.yml`.
+Tests: 144 backend (real Postgres + pgvector), 5 live, 28 frontend. Audit fixes: docs/AUDIT_RESPONSE.md. CI: `.github/workflows/ci.yml`.
 
 ## 3. Change log (`git log legacy-v1..main`)
 

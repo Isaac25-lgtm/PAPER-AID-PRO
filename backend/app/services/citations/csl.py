@@ -10,7 +10,7 @@ import asyncio
 import json
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -69,6 +69,7 @@ def _node() -> str:
 class Formatted:
     citations: list[str]
     bibliography: list[str]
+    bibliography_ids: list[str] = field(default_factory=list)  # item id of each bibliography entry (CSL order)
 
 
 async def format_citations(
@@ -110,4 +111,8 @@ async def format_citations(
         raise UpstreamError("The citation engine returned an invalid response.") from exc
     if "error" in result:
         raise UpstreamError(f"Citation formatting failed: {result['error']}")
-    return Formatted(citations=result.get("citations", []), bibliography=result.get("bibliography", []))
+    return Formatted(
+        citations=result.get("citations", []),
+        bibliography=result.get("bibliography", []),
+        bibliography_ids=result.get("bibliography_ids", []),
+    )

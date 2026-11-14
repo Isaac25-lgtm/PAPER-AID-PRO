@@ -9,6 +9,7 @@ from fastapi import APIRouter, Response
 from sqlalchemy import select
 
 from app.api.deps import DB
+from app.api.downloads import content_disposition
 from app.db.models import Document, DocumentCitation, DocumentRevision, DocumentSource, PaperChunk
 from app.errors import NotFound, ValidationFailed
 from app.schemas import (
@@ -19,6 +20,7 @@ from app.schemas import (
     DocumentSummaryOut,
     DocumentUpdate,
     PaperOut,
+    RestoreRequest,
     RevisionOut,
     RevisionSummaryOut,
 )
@@ -60,7 +62,7 @@ async def get_document(document_id: uuid.UUID, db: DB, user: VerifiedUser) -> Do
 async def save_document(document_id: uuid.UUID, body: DocumentUpdate, db: DB, user: VerifiedUser) -> DocumentOut:
     """Autosave. `base_version` must equal the current version, otherwise 409 (edited in another tab/device)."""
     _check_style(body.csl_style)
-    doc = await svc.get_owned_document(db, document_id, user)
+    doc = await svc.get_owned_document(db, document_id, user, lock=True)
     doc = await svc.save_document(
         db,
         doc,
@@ -172,9 +174,13 @@ async def get_revision(document_id: uuid.UUID, revision_id: uuid.UUID, db: DB, u
 
 
 @router.post("/{document_id}/revisions/{revision_id}/restore", response_model=DocumentOut)
-async def restore_revision(document_id: uuid.UUID, revision_id: uuid.UUID, db: DB, user: VerifiedUser) -> DocumentOut:
-    doc = await svc.get_owned_document(db, document_id, user)
-    return DocumentOut.model_validate(await svc.restore_revision(db, doc, user, revision_id))
+async def restore_revision(
+    document_id: uuid.UUID, revision_id: uuid.UUID, db: DB, user: VerifiedUser, body: RestoreRequest | None = None
+) -> DocumentOut:
+    """Restore a revision. Send `base_version` so a restore never silently overwrites newer edits (409 instead)."""
+    doc = await svc.get_owned_document(db, document_id, user, lock=True)
+    base_version = body.base_version if body else None
+    return DocumentOut.model_validate(await svc.restore_revision(db, doc, user, revision_id, base_version=base_version))
 
 
 # -------------------------------------------------------------------------------------------------- export
@@ -184,7 +190,6 @@ async def export_document(
 ) -> Response:
     doc = await svc.get_owned_document(db, document_id, user)
     rendered = await svc.render_citations(db, doc, user, output="text")
-    safe = "".join(ch for ch in doc.title[:80] if ch.isalnum() or ch in " -_").strip() or "document"
     if format == "docx":
         body = to_docx(doc.title, doc.content, rendered)
         media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -192,5 +197,7 @@ async def export_document(
         body = to_pdf(doc.title, doc.content, rendered)
         media = "application/pdf"
     return Response(
-        content=body, media_type=media, headers={"Content-Disposition": f'attachment; filename="{safe}.{format}"'}
+        content=body,
+        media_type=media,
+        headers={"Content-Disposition": content_disposition(f"{doc.title[:120] or 'document'}.{format}")},
     )

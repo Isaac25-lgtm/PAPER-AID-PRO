@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+from pathlib import Path
+
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from fastapi import APIRouter
 from sqlalchemy import text
 
 from app.api.deps import DB, AppSettings
+from app.errors import AppError
 from app.schemas import AIStatus, UserOut, UserUpdate
 from app.security.auth import CurrentUser
 from app.services.ai.providers import ANTHROPIC_DEFAULT_MODEL
@@ -19,11 +25,33 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+class SchemaNotReady(AppError):
+    status_code = 503
+    code = "SCHEMA_NOT_READY"
+
+
+@lru_cache(maxsize=1)
+def expected_schema_revision() -> str:
+    root = Path(__file__).resolve().parents[3]  # backend/
+    config = Config()
+    config.set_main_option("script_location", str(root / "alembic"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    if head is None:
+        raise RuntimeError("No Alembic head revision found")
+    return head
+
+
 @router.get("/ready", tags=["system"])
 async def ready(db: DB) -> dict[str, str]:
-    """Readiness: the database is reachable."""
-    await db.execute(text("select 1"))
-    return {"status": "ready"}
+    """Readiness: the database is reachable AND migrated to the revision this code expects.
+    Use it as the release gate before routing traffic to a new revision."""
+    current = (await db.execute(text("select version_num from alembic_version"))).scalar_one_or_none()
+    expected = expected_schema_revision()
+    if current != expected:
+        raise SchemaNotReady(
+            "The database schema does not match this release.", details={"database": current, "expected": expected}
+        )
+    return {"status": "ready", "schema": current}
 
 
 @router.get("/me", response_model=UserOut, tags=["account"])

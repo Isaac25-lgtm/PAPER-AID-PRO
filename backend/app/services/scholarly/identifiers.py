@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import unquote
@@ -77,10 +78,13 @@ def parse_identifier(raw: str) -> Identifier | None:
 
 
 _WS = re.compile(r"\s+")
-_NON_ALNUM = re.compile(r"[^a-z0-9 ]+")
+_NON_WORD = re.compile(r"[\W_]+")
 
 
 def normalize_title(title: str | None) -> str:
+    """Case/diacritic/punctuation-insensitive form that keeps letters of every script (Chinese, Arabic, ...)."""
     if not title:
         return ""
-    return _WS.sub(" ", _NON_ALNUM.sub(" ", title.lower())).strip()
+    decomposed = unicodedata.normalize("NFKD", title.casefold())
+    without_marks = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return _WS.sub(" ", _NON_WORD.sub(" ", without_marks)).strip()

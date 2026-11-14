@@ -7,16 +7,18 @@ References/acknowledgement sections are excluded from evidence.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, literal_column, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Paper, PaperChunk
+from app.db.models import PaperChunk
 from app.services.ai.providers import get_embedder
 from app.services.pdf import NON_EVIDENCE_SECTIONS
 
+log = logging.getLogger(__name__)
 RRF_K = 60
 
 
@@ -81,7 +83,13 @@ async def search_evidence(
     candidates = max(limit * 4, 24)
     fused: dict[uuid.UUID, float] = {}
     chunks: dict[uuid.UUID, PaperChunk] = {}
-    for result in (await _fts(db, query, paper_ids, candidates), await _vector(db, query, paper_ids, candidates)):
+    keyword = await _fts(db, query, paper_ids, candidates)
+    try:
+        semantic = await _vector(db, query, paper_ids, candidates)
+    except Exception:  # embedding provider down/rate-limited: keyword retrieval still answers the question
+        log.warning("search.vector_unavailable", exc_info=True)
+        semantic = []
+    for result in (keyword, semantic):
         for rank, chunk in enumerate(result):
             chunks[chunk.id] = chunk
             fused[chunk.id] = fused.get(chunk.id, 0.0) + 1.0 / (RRF_K + rank + 1)
@@ -116,14 +124,3 @@ async def leading_chunks(db: AsyncSession, paper_id: uuid.UUID, limit: int) -> l
         Evidence(c.id, c.paper_id, c.text, c.section, c.page_start, c.page_end, 0.0)
         for c in (await db.execute(stmt)).scalars()
     ]
-
-
-async def search_catalog_ids(db: AsyncSession, query: str, visible_clause: object, limit: int) -> list[uuid.UUID]:
-    tsquery = func.websearch_to_tsquery("english", query)
-    stmt = (
-        select(Paper.id)
-        .where(visible_clause, Paper.search_vector.op("@@")(tsquery))  # type: ignore[arg-type]
-        .order_by(func.ts_rank_cd(Paper.search_vector, tsquery).desc(), literal_column("1"))
-        .limit(limit)
-    )
-    return list((await db.execute(stmt)).scalars())

@@ -98,7 +98,9 @@ async def test_citations_bibliography_and_style_switch(client, registries):
         json={"base_version": 1, "content": doc_with_citation(citation["id"])},
     )
     rendered = (await client.get(f"/api/v1/documents/{doc['id']}/rendered-citations", headers=ALICE)).json()
-    assert rendered["clusters"] == [{"citation_ids": [citation["id"]], "text": "(Namaganda et al., 2021, p. 4)"}]
+    assert rendered["clusters"] == [
+        {"citation_ids": [citation["id"]], "text": "(Namaganda et al., 2021, p. 4)", "missing_ids": []}
+    ]
     assert len(rendered["bibliography"]) == 1 and "Malaria Journal" in rendered["bibliography"][0]
     ieee = (
         await client.get(f"/api/v1/documents/{doc['id']}/rendered-citations", params={"style": "ieee"}, headers=ALICE)

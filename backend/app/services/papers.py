@@ -17,16 +17,16 @@ from app.db.models import (
     PaperStatus,
     PaperVisibility,
     User,
-    UserRole,
 )
 from app.errors import NotFound
 from app.services.scholarly.models import ScholarlyWork
 
 
 def visible_papers_clause(user: User | None) -> Any:
-    """SQL predicate: public papers, plus the user's own private uploads (admins see everything)."""
-    if user is not None and user.role == UserRole.ADMIN:
-        return True
+    """SQL predicate: public papers, plus the user's own private uploads.
+
+    Administrators get no exception here: private uploads are served only to their owner on every user-facing
+    route (catalog, PDF, passages, citations, research). Moderation uses the audited /admin endpoints."""
     if user is None:
         return Paper.visibility == PaperVisibility.PUBLIC
     return or_(Paper.visibility == PaperVisibility.PUBLIC, Paper.owner_id == user.id)
@@ -35,11 +35,12 @@ def visible_papers_clause(user: User | None) -> Any:
 def can_view(paper: Paper, user: User | None) -> bool:
     if paper.visibility == PaperVisibility.PUBLIC:
         return True
-    return user is not None and (user.role == UserRole.ADMIN or paper.owner_id == user.id)
+    return user is not None and paper.owner_id == user.id
 
 
 def can_manage(paper: Paper, user: User) -> bool:
-    return user.role == UserRole.ADMIN or (paper.owner_id is not None and paper.owner_id == user.id)
+    """Owner-only. (Admins remove papers through DELETE /admin/papers/{id}, which is audited.)"""
+    return paper.owner_id is not None and paper.owner_id == user.id
 
 
 def with_authors(stmt: Select[Any]) -> Select[Any]:
@@ -171,7 +172,9 @@ async def upsert_public_paper(db: AsyncSession, work: ScholarlyWork, *, created_
     return await get_paper_for_user(db, paper.id, None)
 
 
-async def create_private_paper(db: AsyncSession, *, owner: User, work: ScholarlyWork, source: PaperSource) -> Paper:
+async def create_private_paper(
+    db: AsyncSession, *, owner: User, work: ScholarlyWork, source: PaperSource, commit: bool = True
+) -> Paper:
     paper = Paper(
         title=work.title,
         visibility=PaperVisibility.PRIVATE,
@@ -186,6 +189,8 @@ async def create_private_paper(db: AsyncSession, *, owner: User, work: Scholarly
     await db.flush()
     for position, author in enumerate(await _author_rows(db, work)):
         db.add(PaperAuthor(paper_id=paper.id, author_id=author.id, position=position))
+    if not commit:
+        return paper
     await db.commit()
     return await get_paper_for_user(db, paper.id, owner)
 

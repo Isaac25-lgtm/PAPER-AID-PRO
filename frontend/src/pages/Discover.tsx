@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
+import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
 import { PaperMeta } from "@/components/papers";
 import { Alert, Badge, Button, Card, EmptyState, Input, PageHeader, Spinner } from "@/components/ui";
@@ -95,6 +96,7 @@ export default function DiscoverPage() {
   return (
     <Container>
       <PageHeader title="Discover literature" subtitle="One search across OpenAlex, Crossref, PubMed, Semantic Scholar and arXiv." />
+      <SectionGuide section="discover" />
       <form
         className="mb-6 flex flex-wrap gap-2"
         onSubmit={(event) => {

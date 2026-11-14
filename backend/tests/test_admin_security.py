@@ -146,7 +146,7 @@ async def test_embeddings_are_stored_and_used_for_retrieval(client):
     assert hits and "absenteeism" in hits[0]["text"].lower()
 
 
-async def test_delete_user_script_removes_account_and_owned_data(client):
+async def test_delete_user_script_removes_account_and_owned_data(client, identity_admin):
     import importlib.util
     from pathlib import Path
 
@@ -166,9 +166,11 @@ async def test_delete_user_script_removes_account_and_owned_data(client):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert await module.run("alice@example.edu", purge_public=True, confirmed=False) == 0  # dry run deletes nothing
+    assert identity_admin.deleted == []
     async with get_sessionmaker()() as db:
         assert (await db.execute(select(User).where(User.email == "alice@example.edu"))).scalar_one_or_none()
     assert await module.run("alice@example.edu", purge_public=True, confirmed=True) == 0
+    assert identity_admin.deleted == ["alice"]  # the sign-in identity is closed too
     async with get_sessionmaker()() as db:
         for model in (User, Document, LibraryItem):
             assert (await db.execute(select(model))).first() is None

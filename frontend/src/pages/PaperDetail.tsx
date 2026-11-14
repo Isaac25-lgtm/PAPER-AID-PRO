@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
 import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
+import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
 import { AddToLibraryButton, CiteModal, DoiLink, PaperMeta, StatusBadge } from "@/components/papers";
 import { Alert, Badge, Button, Card, Input, Spinner, Textarea } from "@/components/ui";
@@ -159,10 +160,12 @@ function AISummary({ paper }: { paper: Paper }) {
       {!data && !generate.error && <p className="mt-2 text-sm text-slate-500">No summary yet.{paper.status !== "ready" && " Summaries are more accurate once full text is available."}</p>}
       {data && (
         <div className="mt-3 space-y-3">
-          <p className="font-serif text-slate-800">{data.content.overview.replace(/\s*\[E\d+\]/g, "")}</p>
+          {data.content.overview.length > 0 && (
+            <ul className="space-y-1 font-serif text-slate-800">{data.content.overview.map((p, i) => <SummaryPointView key={i} point={p} />)}</ul>
+          )}
           <ul className="space-y-1.5">
-            <SummaryPointView label="Question" point={data.content.research_question} />
-            <SummaryPointView label="Methods" point={data.content.methods} />
+            {data.content.research_question && <SummaryPointView label="Question" point={data.content.research_question} />}
+            {data.content.methods && <SummaryPointView label="Methods" point={data.content.methods} />}
           </ul>
           <div>
             <h3 className="text-sm font-semibold text-slate-900">Key findings</h3>
@@ -174,6 +177,7 @@ function AISummary({ paper }: { paper: Paper }) {
               <ul className="mt-1 list-disc space-y-1 pl-5">{data.content.limitations.map((p, i) => <SummaryPointView key={i} point={p} />)}</ul>
             </div>
           )}
+          {data.content.removed_note && <p className="text-xs text-amber-700">{data.content.removed_note}</p>}
           <p className="text-xs text-slate-500">{data.label} Based on the {data.content.based_on === "full_text" ? "full text" : "abstract only"} · {data.model}</p>
         </div>
       )}
@@ -212,6 +216,7 @@ export default function PaperDetailPage() {
   const p = paper.data!;
   return (
     <Container className="max-w-5xl">
+      <SectionGuide section="paper" />
       <div className="flex flex-wrap items-center gap-2">
         <StatusBadge status={p.status} />
         {p.visibility === "private" && <Badge tone="violet">Private upload</Badge>}

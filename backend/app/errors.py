@@ -37,6 +37,11 @@ class EmailNotVerified(AppError):
     code = "EMAIL_NOT_VERIFIED"
 
 
+class AccountConflict(AppError):
+    status_code = 409
+    code = "ACCOUNT_CONFLICT"
+
+
 class Forbidden(AppError):
     status_code = 403
     code = "FORBIDDEN"

@@ -243,6 +243,10 @@ class DocumentUpdate(BaseModel):
     checkpoint: bool = False
 
 
+class RestoreRequest(BaseModel):
+    base_version: int | None = Field(default=None, ge=1)
+
+
 class DocumentSummaryOut(Model):
     id: uuid.UUID
     title: str
@@ -299,7 +303,7 @@ class StyleOut(BaseModel):
 
 
 class FormatRequest(BaseModel):
-    paper_ids: list[uuid.UUID] = Field(default_factory=list, max_length=500)
+    paper_ids: list[uuid.UUID] = Field(default_factory=list, max_length=200)
     identifiers: list[str] = Field(default_factory=list, max_length=50)
     style: str = "apa"
     output: Literal["html", "text"] = "html"
@@ -355,6 +359,8 @@ class MessageOut(Model):
     content: str
     citations: list[dict[str, Any]]
     model: str | None
+    insufficient_evidence: bool = False
+    gaps: str = ""
     created_at: datetime
 
 
@@ -405,6 +411,12 @@ class StatsOut(BaseModel):
     jobs_failed_24h: int
     jobs_queued: int
     ai_enabled: bool
+
+
+class MaintenanceOut(BaseModel):
+    storage_objects_deleted: int
+    rate_buckets_purged: int
+    jobs_reclaimed: int
 
 
 class SearchFilters(BaseModel):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -48,9 +50,25 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     import app.services.processing  # noqa: F401  registers the inline job runner
 
     log.info("app.started", extra={"env": settings.env, "ai_enabled": settings.ai_enabled})
+    housekeeping = asyncio.create_task(_startup_maintenance()) if settings.maintenance_on_startup else None
     yield
+    if housekeeping is not None:
+        housekeeping.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await housekeeping
     await close_http_client()
     await dispose_engine()
+
+
+async def _startup_maintenance() -> None:
+    """Storage cleanup / bucket purge / stuck-job recovery, a little after start so it never delays serving."""
+    from app.services.maintenance import run_maintenance
+
+    await asyncio.sleep(30)
+    try:
+        await run_maintenance()
+    except Exception:
+        log.warning("maintenance.failed", exc_info=True)
 
 
 def create_app() -> FastAPI:

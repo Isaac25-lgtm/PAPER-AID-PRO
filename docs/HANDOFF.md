@@ -23,10 +23,12 @@ returned **fabricated output**. v2 is a rebuild with a separated, tested Python 
 
 ## Verified
 
-- **Backend:** 102 automated tests on real PostgreSQL + pgvector (auth/roles, visibility isolation, SSRF guards,
+- **Backend:** 144 automated tests on real PostgreSQL + pgvector (auth/roles, visibility isolation, SSRF guards,
   rate limits, PDF pipeline, search, library/collections, BibTeX/RIS, documents/conflicts/revisions/export,
   all 10 citation styles, reference verification, AI grounding/validation) + 5 live tests against the real APIs.
-- **Frontend:** 16 tests, strict TypeScript, production build.
+- **Frontend:** 28 tests, strict TypeScript, production build.
+- **Guidance:** welcome tour, 'How to use' guide on every section, Help centre, signed-in dashboard with getting-started checklist.
+- **External audit:** all 28 findings fixed with regression tests — see docs/AUDIT_RESPONSE.md.
 - **Production smoke tests:** health/readiness, live federated search, citation formatting, reference checks,
   auth enforcement, CORS allow-list, security headers, hidden internal endpoint.
 

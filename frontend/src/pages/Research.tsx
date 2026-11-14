@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
+import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
 import { Alert, Badge, Button, Card, EmptyState, Input, PageHeader, Spinner, Textarea } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
@@ -14,7 +15,8 @@ export default function ResearchPage() {
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const conversationId = params.get("c");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // null = untouched (a reopened thread uses its own papers); a Set, even an empty one, is the user's explicit choice.
+  const [selected, setSelected] = useState<Set<string> | null>(null);
   const [question, setQuestion] = useState("");
   const [filter, setFilter] = useState("");
 
@@ -25,7 +27,7 @@ export default function ResearchPage() {
     queryFn: () => api.get<Conversation>(`/research/conversations/${conversationId}`),
     enabled: Boolean(conversationId),
   });
-  const effectiveSelection = conversation.data && selected.size === 0 ? new Set(conversation.data.paper_ids) : selected;
+  const effectiveSelection = selected ?? new Set(conversation.data?.paper_ids ?? []);
 
   const ask = useMutation({
     mutationFn: () =>
@@ -58,9 +60,10 @@ export default function ResearchPage() {
   return (
     <Container>
       <PageHeader title="Research assistant" subtitle="Ask a question across papers you choose. Every claim is linked to the passage or abstract it came from." />
+      <SectionGuide section="research" />
       <div className="grid gap-6 lg:grid-cols-[260px_1fr_300px]">
         <aside>
-          <Button size="sm" variant="secondary" className="mb-3 w-full" onClick={() => { setParams({}); setSelected(new Set()); }}>
+          <Button size="sm" variant="secondary" className="mb-3 w-full" onClick={() => { setParams({}); setSelected(null); }}>
             <Plus className="h-4 w-4" /> New question
           </Button>
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">History</p>
@@ -68,11 +71,11 @@ export default function ResearchPage() {
           <ul className="space-y-1">
             {conversations.data?.map((c) => (
               <li key={c.id} className="group flex items-center">
-                <button onClick={() => { setSelected(new Set()); setParams({ c: c.id }); }} className={`flex-1 rounded-lg px-2 py-1.5 text-left text-sm ${conversationId === c.id ? "bg-brand-50 text-brand-800" : "text-slate-700 hover:bg-slate-100"}`}>
+                <button onClick={() => { setSelected(null); setParams({ c: c.id }); }} className={`flex-1 rounded-lg px-2 py-1.5 text-left text-sm ${conversationId === c.id ? "bg-brand-50 text-brand-800" : "text-slate-700 hover:bg-slate-100"}`}>
                   <span className="line-clamp-2">{c.title}</span>
                   <span className="text-xs text-slate-400">{relativeTime(c.updated_at)}</span>
                 </button>
-                <button className="hidden p-1 text-slate-400 hover:text-red-600 group-hover:block" aria-label="Delete conversation" onClick={() => remove.mutate(c.id)}><Trash2 className="h-3.5 w-3.5" /></button>
+                <button className="p-1 text-slate-400 opacity-100 hover:text-red-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" aria-label="Delete conversation" onClick={() => remove.mutate(c.id)}><Trash2 className="h-3.5 w-3.5" /></button>
               </li>
             ))}
           </ul>
@@ -85,7 +88,7 @@ export default function ResearchPage() {
               <div key={m.id} className="flex justify-end"><div className="max-w-[85%] rounded-2xl bg-brand-700 px-4 py-2 text-white">{m.content}</div></div>
             ) : (
               <Card key={m.id} className="p-5">
-                <GroundedAnswerView answer={{ answer: m.content, citations: m.citations, model: m.model, insufficient_evidence: false, gaps: "" }} />
+                <GroundedAnswerView answer={{ answer: m.content, citations: m.citations, model: m.model, insufficient_evidence: m.insufficient_evidence, gaps: m.gaps }} />
               </Card>
             ),
           )}

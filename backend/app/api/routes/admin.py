@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -22,10 +23,10 @@ from app.db.models import (
     UserRole,
 )
 from app.errors import NotFound, ValidationFailed
-from app.schemas import AdminUserOut, AdminUserUpdate, JobOut, StatsOut
+from app.schemas import AdminUserOut, AdminUserUpdate, JobOut, MaintenanceOut, StatsOut
 from app.security.auth import AdminUser
 from app.services import processing
-from app.services.storage import get_storage
+from app.services.maintenance import delete_now_or_later, run_maintenance, schedule_deletion
 from app.services.tasks import verify_task_request
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -105,6 +106,7 @@ async def jobs(
     status: Annotated[str | None, Query(pattern="^(queued|running|succeeded|failed)$")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[JobOut]:
+    await processing.reclaim_abandoned_jobs(db)  # surface stuck jobs as failed (and therefore retryable)
     stmt = select(ProcessingJob).order_by(ProcessingJob.created_at.desc()).limit(limit)
     if status:
         stmt = stmt.where(ProcessingJob.status == JobStatus(status))
@@ -131,20 +133,32 @@ async def delete_paper(paper_id: uuid.UUID, db: DB, admin: AdminUser) -> Respons
         raise NotFound("Paper not found.")
     storage_path = paper.storage_path
     await _audit(db, admin, "paper.deleted", "paper", str(paper.id), title=paper.title[:200])
+    await schedule_deletion(db, storage_path)
     await db.delete(paper)
     await db.commit()
-    if storage_path:
-        await get_storage().delete(storage_path)
+    await delete_now_or_later(db, storage_path)
     return Response(status_code=204)
+
+
+@router.post("/maintenance", response_model=MaintenanceOut)
+async def maintenance(db: DB, admin: AdminUser) -> MaintenanceOut:
+    """Retry pending storage deletions, purge expired rate-limit buckets and reclaim abandoned jobs."""
+    report = await run_maintenance()
+    await _audit(db, admin, "maintenance.run", "system", "maintenance", **asdict(report))
+    await db.commit()
+    return MaintenanceOut(**asdict(report))
 
 
 @internal.post("/tasks/run-job", status_code=204)
 async def run_job(body: dict[str, str], authorization: Annotated[str | None, Header()] = None) -> Response:
-    """Cloud Tasks delivery endpoint (OIDC-authenticated; not part of the public API)."""
+    """Cloud Tasks delivery endpoint (OIDC-authenticated; not part of the public API).
+
+    204 = finished (succeeded or failed for good). 503 = transient failure: Cloud Tasks redelivers with backoff;
+    the worker caps attempts itself, so a job can never retry forever."""
     verify_task_request(authorization)
     try:
         job_id = uuid.UUID(body.get("job_id", ""))
     except ValueError as exc:
         raise ValidationFailed("Invalid job id.") from exc
-    await processing.run_job(job_id)
-    return Response(status_code=204)
+    outcome = await processing.run_job(job_id)
+    return Response(status_code=503 if outcome == processing.Outcome.RETRY else 204)

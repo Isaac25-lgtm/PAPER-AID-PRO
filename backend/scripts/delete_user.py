@@ -1,11 +1,16 @@
-"""Delete a user and all of their data (account-deletion requests, test cleanup).
+"""Close an account: delete the user, all of their data AND their Firebase sign-in identity.
 
-Removes: the user row and everything owned by it (library, collections, documents + revisions + citations,
-conversations, private uploads and their stored PDFs). With --purge-created-public, public papers that this user
-imported and that no other user has saved are removed too (with their stored PDFs).
+Removes: the Firebase Authentication account (which also ends every signed-in session, so the profile cannot be
+re-created by an open tab), the user row and everything owned by it (library, collections, documents + revisions
++ citations, conversations, private uploads) and their stored PDFs. With --purge-created-public, public papers
+that this user imported and that no other user has saved are removed too.
+
+Stored PDFs are recorded in `storage_deletions` in the SAME transaction as the row deletes, so a storage failure
+is retried by maintenance instead of leaving an orphaned file. Every step is idempotent: re-running the script
+after a partial failure completes the job.
 
 Run on Cloud Run as a one-off job (see docs/DEPLOYMENT.md), or locally with DATABASE_URL set:
-    python scripts/delete_user.py someone@example.com [--purge-created-public] [--yes]
+    python scripts/delete_user.py someone@example.com [--purge-created-public] [--keep-firebase] [--yes]
 """
 
 from __future__ import annotations
@@ -21,10 +26,11 @@ from sqlalchemy import delete, exists, select
 
 from app.db.models import LibraryItem, Paper, PaperVisibility, User
 from app.db.session import dispose_engine, get_sessionmaker
-from app.services.storage import get_storage
+from app.services.identity import delete_firebase_account
+from app.services.maintenance import process_deletions, schedule_deletion
 
 
-async def run(email: str, purge_public: bool, confirmed: bool) -> int:
+async def run(email: str, purge_public: bool, confirmed: bool, *, delete_identity: bool = True) -> int:
     async with get_sessionmaker()() as db:
         user = (await db.execute(select(User).where(User.email == email.lower().strip()))).scalar_one_or_none()
         if user is None:
@@ -47,15 +53,20 @@ async def run(email: str, purge_public: bool, confirmed: bool) -> int:
         if not confirmed:
             print("Dry run. Re-run with --yes to delete.")
             return 0
+        # 1. Identity first: once it is gone no token can re-create the profile while we delete data.
+        if delete_identity:
+            existed = await delete_firebase_account(user.firebase_uid)
+            print("Firebase account deleted." if existed else "Firebase account was already deleted.")
+        # 2. Data + durable storage-deletion records in one transaction.
         paths = [p.storage_path for p in [*private, *public] if p.storage_path]
+        await schedule_deletion(db, *paths)
         if public:
             await db.execute(delete(Paper).where(Paper.id.in_([p.id for p in public])))
         await db.execute(delete(User).where(User.id == user.id))  # cascades to owned rows
         await db.commit()
-    storage = get_storage()
-    for path in paths:
-        await storage.delete(path)
-    print(f"Deleted user, {len(private) + len(public)} papers and {len(paths)} stored PDFs.")
+        # 3. Objects (anything that fails stays recorded and is retried by maintenance).
+        removed = await process_deletions(db, limit=max(len(paths), 1) + 100)
+    print(f"Deleted user and {len(private) + len(public)} papers; {removed} stored PDFs removed now.")
     return 0
 
 
@@ -63,6 +74,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("email")
     parser.add_argument("--purge-created-public", action="store_true")
+    parser.add_argument("--keep-firebase", action="store_true", help="leave the Firebase sign-in account in place")
     parser.add_argument("--yes", action="store_true", help="actually delete (default is a dry run)")
     args = parser.parse_args()
     if sys.platform == "win32":
@@ -70,7 +82,7 @@ def main() -> None:
 
     async def _main() -> int:
         try:
-            return await run(args.email, args.purge_created_public, args.yes)
+            return await run(args.email, args.purge_created_public, args.yes, delete_identity=not args.keep_firebase)
         finally:
             await dispose_engine()
 

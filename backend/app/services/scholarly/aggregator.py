@@ -25,18 +25,37 @@ _STOP = {"the", "a", "an", "of", "and", "or", "in", "on", "for", "to", "with", "
 _TOKEN = re.compile(r"[a-z0-9]+")
 
 
-def _dedupe_key(work: ScholarlyWork) -> list[str]:
-    keys = []
-    if work.doi:
-        keys.append(f"doi:{work.doi}")
-    if work.pmid:
-        keys.append(f"pmid:{work.pmid}")
-    if work.arxiv_id:
-        keys.append(f"arxiv:{work.arxiv_id}")
+_STRONG_IDS = ("doi", "pmid", "arxiv_id")
+MIN_TITLE_KEY_LENGTH = 20  # short generic titles ("Editorial", "Introduction") never merge on title alone
+
+
+def _strong_keys(work: ScholarlyWork) -> list[str]:
+    return [f"{field}:{getattr(work, field)}" for field in _STRONG_IDS if getattr(work, field)]
+
+
+def _title_key(work: ScholarlyWork) -> str | None:
     title = normalize_title(work.title)
-    if title:
-        keys.append(f"title:{title}:{work.year or ''}")
-    return keys
+    if len(title) < MIN_TITLE_KEY_LENGTH or not work.year:
+        return None
+    return f"title:{title}:{work.year}"
+
+
+def _conflicts(a: ScholarlyWork, b: ScholarlyWork) -> bool:
+    """Two records are different publications if any persistent identifier they both carry disagrees."""
+    return any(getattr(a, f) and getattr(b, f) and getattr(a, f) != getattr(b, f) for f in _STRONG_IDS)
+
+
+def _first_author_family(work: ScholarlyWork) -> str:
+    if not work.authors:
+        return ""
+    author = work.authors[0]
+    return normalize_title(author.family or author.name.split(" ")[-1])
+
+
+def _same_by_title(a: ScholarlyWork, b: ScholarlyWork) -> bool:
+    """A weak (title + year) match additionally needs agreeing first authors when both list authors."""
+    fa, fb = _first_author_family(a), _first_author_family(b)
+    return not (fa and fb and fa != fb)
 
 
 def merge_works(primary: ScholarlyWork, other: ScholarlyWork) -> ScholarlyWork:
@@ -64,14 +83,28 @@ def merge_works(primary: ScholarlyWork, other: ScholarlyWork) -> ScholarlyWork:
 
 
 def merge_and_dedupe(result_lists: Sequence[list[ScholarlyWork]]) -> tuple[list[ScholarlyWork], dict[int, float]]:
-    """Returns merged works and their fused reciprocal-rank score (keyed by list index)."""
+    """Returns merged works and their fused reciprocal-rank score (keyed by list index).
+
+    Strong identifiers (DOI, PMID, arXiv) decide identity. Title + year is only a fallback, never merges records
+    whose identifiers conflict, and requires agreeing first authors."""
     merged: list[ScholarlyWork] = []
     scores: dict[int, float] = {}
-    index_by_key: dict[str, int] = {}
+    by_strong: dict[str, int] = {}
+    by_title: dict[str, list[int]] = {}
     for works in result_lists:
         for rank, work in enumerate(works):
-            keys = _dedupe_key(work)
-            existing = next((index_by_key[k] for k in keys if k in index_by_key), None)
+            existing = next((by_strong[k] for k in _strong_keys(work) if k in by_strong), None)
+            if existing is not None and _conflicts(merged[existing], work):
+                existing = None
+            if existing is None and (title_key := _title_key(work)):
+                existing = next(
+                    (
+                        i
+                        for i in by_title.get(title_key, [])
+                        if not _conflicts(merged[i], work) and _same_by_title(merged[i], work)
+                    ),
+                    None,
+                )
             if existing is None:
                 merged.append(work)
                 existing = len(merged) - 1
@@ -79,8 +112,11 @@ def merge_and_dedupe(result_lists: Sequence[list[ScholarlyWork]]) -> tuple[list[
             else:
                 merged[existing] = merge_works(merged[existing], work)
             scores[existing] += 1.0 / (RRF_K + rank + 1)
-            for key in _dedupe_key(merged[existing]):
-                index_by_key[key] = existing
+            for key in _strong_keys(merged[existing]):
+                by_strong.setdefault(key, existing)
+            if title_key := _title_key(merged[existing]):
+                if existing not in by_title.setdefault(title_key, []):
+                    by_title[title_key].append(existing)
     return merged, scores
 
 
@@ -130,8 +166,9 @@ async def federated_search(
     open_access_only: bool = False,
 ) -> tuple[list[ScholarlyWork], list[ProviderStatus]]:
     per_provider = max(10, min(limit, 40))
+    selected = [p for p in dict.fromkeys(providers) if p in PROVIDERS]  # each provider at most once
     outcomes = await asyncio.gather(
-        *(_run_provider(p, query, per_provider, year_from, year_to, open_access_only) for p in providers)
+        *(_run_provider(p, query, per_provider, year_from, year_to, open_access_only) for p in selected)
     )
     statuses = [status for status, _ in outcomes]
     merged, fused = merge_and_dedupe([works for _, works in outcomes])

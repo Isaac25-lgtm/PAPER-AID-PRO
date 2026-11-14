@@ -13,16 +13,20 @@ from app.db.models import Paper, PaperChunk, PaperStatus, PaperSummary
 from app.errors import AIOutputInvalid, ValidationFailed
 from app.services.ai.grounding import (
     GROUNDING_RULES,
+    INSUFFICIENT_MESSAGE,
     EvidenceItem,
     GroundedAnswer,
+    check_claims,
     citation_payload,
+    removal_note,
     render_evidence,
     validate_grounded,
+    verify_support,
 )
 from app.services.ai.providers import get_embedder, get_llm
 from app.services.search import leading_chunks, search_evidence
 
-SUMMARY_PROMPT_VERSION = "2026-11-v1"
+SUMMARY_PROMPT_VERSION = "2026-11-v2"  # v2: claim-level quotes + verified overview
 EMBED_BATCH = 64
 
 
@@ -108,26 +112,41 @@ async def gather_evidence(
     return items
 
 
-async def grounded_answer(question: str, items: list[EvidenceItem], *, task: str, feature: str) -> dict[str, Any]:
+async def grounded_answer(
+    db: AsyncSession,
+    question: str,
+    items: list[EvidenceItem],
+    *,
+    task: str,
+    feature: str,
+    history: list[tuple[str, str]] | None = None,
+) -> dict[str, Any]:
     if not items:
         return {
-            "answer": "None of the selected papers contain text that addresses this question. Add papers "
-            "with full text or abstracts and try again.",
+            "answer": INSUFFICIENT_MESSAGE,
             "insufficient_evidence": True,
-            "gaps": "No evidence available.",
+            "gaps": "None of the selected papers has full text or an abstract to draw on.",
             "citations": [],
             "model": None,
         }
     llm = get_llm(feature)
+    await db.commit()  # release the DB connection for the duration of the model calls
     system = f"You are a careful research assistant for academic researchers. Task: {task}\n\n{GROUNDING_RULES}"
-    prompt = f"{render_evidence(items)}\n\n<question>{question}</question>"
+    context = ""
+    if history:
+        turns = "\n".join(f"<turn><question>{q[:500]}</question><answer>{a[:1200]}</answer></turn>" for q, a in history)
+        context = (
+            "<conversation_so_far>\nEarlier turns, ONLY to resolve references such as 'those studies' in the new "
+            f"question. They are not evidence; never cite them.\n{turns}\n</conversation_so_far>\n\n"
+        )
+    prompt = f"{render_evidence(items)}\n\n{context}<question>{question}</question>"
     result, model = await llm.generate_json(system=system, prompt=prompt, schema=GroundedAnswer, max_tokens=8000)
-    result = validate_grounded(result, items)
+    checked = await validate_grounded(result, items, llm)
     return {
-        "answer": result.answer,
-        "insufficient_evidence": result.insufficient_evidence,
-        "gaps": result.gaps,
-        "citations": citation_payload(result.answer, items),
+        "answer": checked["answer"],
+        "insufficient_evidence": checked["insufficient_evidence"],
+        "gaps": checked["gaps"],
+        "citations": citation_payload(checked["claims"], items),
         "model": model,
     }
 
@@ -136,6 +155,7 @@ async def grounded_answer(question: str, items: list[EvidenceItem], *, task: str
 async def ask_paper(db: AsyncSession, paper: Paper, question: str) -> dict[str, Any]:
     items = await gather_evidence(db, question, [paper], limit=10)
     return await grounded_answer(
+        db,
         question,
         items,
         feature="Paper Q&A",
@@ -143,14 +163,20 @@ async def ask_paper(db: AsyncSession, paper: Paper, question: str) -> dict[str, 
     )
 
 
-async def research_synthesis(db: AsyncSession, papers: list[Paper], question: str) -> dict[str, Any]:
+async def research_synthesis(
+    db: AsyncSession, papers: list[Paper], question: str, *, history: list[tuple[str, str]] | None = None
+) -> dict[str, Any]:
     if not papers:
         raise ValidationFailed("Select at least one paper.")
-    items = await gather_evidence(db, question, papers, limit=16)
+    # A follow-up ("what about adverse events in those trials?") retrieves with the previous question too.
+    retrieval_query = f"{history[-1][0]} {question}" if history else question
+    items = await gather_evidence(db, retrieval_query, papers, limit=16)
     return await grounded_answer(
+        db,
         question,
         items,
         feature="Research synthesis",
+        history=history,
         task=(
             "Synthesise what these papers say about the question. Compare and contrast findings across "
             "papers, note agreement and disagreement, and name methodological differences when the evidence "
@@ -159,7 +185,7 @@ async def research_synthesis(db: AsyncSession, papers: list[Paper], question: st
     )
 
 
-async def discovery_snapshot(papers: list[Paper], query: str) -> dict[str, Any]:
+async def discovery_snapshot(db: AsyncSession, papers: list[Paper], query: str) -> dict[str, Any]:
     items = _abstract_evidence(papers[:10])
     if len(items) < 2:
         return {
@@ -170,6 +196,7 @@ async def discovery_snapshot(papers: list[Paper], query: str) -> dict[str, Any]:
             "model": None,
         }
     return await grounded_answer(
+        db,
         query,
         items,
         feature="Research overview",
@@ -181,12 +208,13 @@ async def discovery_snapshot(papers: list[Paper], query: str) -> dict[str, Any]:
 
 
 class SummaryPoint(BaseModel):
-    text: str
-    evidence_ids: list[str]
+    text: str = Field(description="One sentence. No [E#] markers inside the text.")
+    evidence_ids: list[str] = Field(description="Ids of the evidence blocks that directly support it.")
+    quotes: list[str] = Field(description="1-3 short passages copied WORD FOR WORD from the cited evidence.")
 
 
 class PaperSummaryOut(BaseModel):
-    overview: str = Field(description="2-3 sentence plain-language overview with inline [E#] markers.")
+    overview: list[SummaryPoint] = Field(description="2-3 plain-language sentences giving an overview.")
     research_question: SummaryPoint
     methods: SummaryPoint
     key_findings: list[SummaryPoint]
@@ -223,9 +251,10 @@ async def summarize_paper(db: AsyncSession, paper: Paper, *, force: bool = False
     if not items:
         raise ValidationFailed("This paper has no abstract or full text to summarise yet.")
     llm = get_llm("Paper summaries")
+    await db.commit()  # release the DB connection for the duration of the model calls
     system = (
-        "You summarise academic papers for researchers. Every point must cite the evidence ids it comes from."
-        f"\n\n{GROUNDING_RULES}"
+        "You summarise academic papers for researchers. Every point must cite the evidence ids it comes from "
+        f"and quote the supporting words exactly.\n\n{GROUNDING_RULES}"
     )
     out, model = await llm.generate_json(
         system=system,
@@ -233,36 +262,56 @@ async def summarize_paper(db: AsyncSession, paper: Paper, *, force: bool = False
         schema=PaperSummaryOut,
         max_tokens=6000,
     )
-    valid = {i.key for i in items}
-    points = [out.research_question, out.methods, *out.key_findings, *out.limitations]
-    if not out.insufficient_evidence and any(not p.evidence_ids or set(p.evidence_ids) - valid for p in points):
-        raise AIOutputInvalid("The AI summary cited evidence that does not exist and was discarded.")
+    # Every displayed point, the overview included, goes through the same claim checks as Q&A answers.
+    sections: list[tuple[str, list[SummaryPoint]]] = [
+        ("overview", out.overview),
+        ("research_question", [out.research_question]),
+        ("methods", [out.methods]),
+        ("key_findings", out.key_findings),
+        ("limitations", out.limitations),
+    ]
+    flat = [(name, point) for name, points in sections for point in points]
+    raw = [(p.text, p.evidence_ids, p.quotes, False) for _, p in flat]
+    removed_total = 0
+    kept_by_section: dict[str, list[dict[str, Any]]] = {name: [] for name, _ in sections}
     by_key = {i.key: i for i in items}
-
-    def cite(point: SummaryPoint) -> dict[str, Any]:
-        return {
-            "text": point.text,
-            "evidence": [
-                {
-                    "key": k,
-                    "section": by_key[k].section,
-                    "page_start": by_key[k].page_start,
-                    "excerpt": by_key[k].text[:400],
-                    "kind": by_key[k].kind,
-                }
-                for k in point.evidence_ids
-                if k in by_key
-            ],
-        }
+    survivors = []
+    for (name, _), claim_input in zip(flat, raw, strict=True):
+        kept, removed = check_claims([claim_input], items)
+        removed_total += removed
+        survivors.extend((name, claim) for claim in kept)
+    supported = await verify_support([claim for _, claim in survivors], items, llm)
+    for (name, claim), ok in zip(survivors, supported, strict=True):
+        if not ok:
+            removed_total += 1
+            continue
+        kept_by_section[name].append(
+            {
+                "text": claim.text,
+                "evidence": [
+                    {
+                        "key": k,
+                        "section": by_key[k].section,
+                        "page_start": by_key[k].page_start,
+                        "excerpt": by_key[k].text[:400],
+                        "kind": by_key[k].kind,
+                    }
+                    for k in claim.evidence_ids
+                ],
+            }
+        )
+    if not out.insufficient_evidence and not (kept_by_section["overview"] or kept_by_section["key_findings"]):
+        raise AIOutputInvalid("The AI summary could not be verified against the paper and was discarded.")
 
     content = {
-        "overview": out.overview,
-        "research_question": cite(out.research_question),
-        "methods": cite(out.methods),
-        "key_findings": [cite(p) for p in out.key_findings],
-        "limitations": [cite(p) for p in out.limitations],
+        "overview": kept_by_section["overview"],
+        "research_question": (kept_by_section["research_question"] or [None])[0],
+        "methods": (kept_by_section["methods"] or [None])[0],
+        "key_findings": kept_by_section["key_findings"],
+        "limitations": kept_by_section["limitations"],
         "based_on": "full_text" if paper.status == PaperStatus.READY else "abstract",
         "insufficient_evidence": out.insufficient_evidence,
+        "removed_note": removal_note(removed_total),
     }
     if existing:
         existing.content, existing.model, existing.prompt_version = content, model, SUMMARY_PROMPT_VERSION

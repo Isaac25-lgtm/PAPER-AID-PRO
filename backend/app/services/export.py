@@ -12,8 +12,9 @@ from docx import Document as DocxDocument
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
 from fpdf import FPDF
+from fpdf.errors import FPDFUnicodeEncodingException
 
-from app.errors import UpstreamError
+from app.errors import UpstreamError, ValidationFailed
 
 _TAG = re.compile(r"<[^>]+>")
 
@@ -22,8 +23,20 @@ def strip_html(value: str) -> str:
     return html.unescape(_TAG.sub("", value)).strip()
 
 
+MISSING = "[missing source]"
+
+
 def _cluster_texts(rendered: dict[str, Any]) -> list[str]:
-    return [strip_html(c["text"]) for c in rendered.get("clusters", [])]
+    """Formatted text for each citation node, in document order (render_citations emits one entry per node)."""
+    texts = []
+    for cluster in rendered.get("clusters", []):
+        text = strip_html(cluster["text"]) if cluster.get("text") else ""
+        if not text:
+            text = MISSING
+        elif cluster.get("missing_ids"):
+            text = f"{text} {MISSING}"
+        texts.append(text)
+    return texts
 
 
 # ------------------------------------------------------------------------------------------------------ DOCX
@@ -47,7 +60,7 @@ def to_docx(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> by
                 run.font.superscript = "superscript" in marks
                 run.font.subscript = "subscript" in marks
             elif node.get("type") == "citation":
-                paragraph.add_run(next(citations, "[citation]"))
+                paragraph.add_run(next(citations, MISSING))
             elif node.get("type") == "hardBreak":
                 paragraph.add_run().add_break()
 
@@ -113,6 +126,13 @@ _FONT_CANDIDATES = [
 ]
 
 
+# Extra scripts (Arabic, Hebrew, Greek, Cyrillic, ...) when the body font lacks a glyph.
+_FALLBACK_FONTS = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+]
+
+
 def _register_font(pdf: FPDF) -> str:
     for regular, bold, italic, bold_italic in _FONT_CANDIDATES:
         if all(Path(p).exists() for p in (regular, bold, italic, bold_italic)):
@@ -120,11 +140,28 @@ def _register_font(pdf: FPDF) -> str:
             pdf.add_font("Body", "B", bold)
             pdf.add_font("Body", "I", italic)
             pdf.add_font("Body", "BI", bold_italic)
+            fallbacks = []
+            for index, path in enumerate(p for p in _FALLBACK_FONTS if Path(p).exists()):
+                pdf.add_font(f"Fallback{index}", "", path)
+                fallbacks.append(f"Fallback{index}")
+            if fallbacks:
+                pdf.set_fallback_fonts(fallbacks, exact_match=False)
             return "Body"
     raise UpstreamError("PDF export is unavailable: no Unicode font installed on the server.")
 
 
 def to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> bytes:
+    try:
+        return _to_pdf(title, content, rendered)
+    except FPDFUnicodeEncodingException as exc:
+        raise ValidationFailed(
+            "PDF export cannot draw some characters in this document (for example Chinese or Japanese script). "
+            "Export to Word (.docx) instead, which supports every language.",
+            code="PDF_UNSUPPORTED_CHARACTERS",
+        ) from exc
+
+
+def _to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> bytes:
     citations = iter(_cluster_texts(rendered))
     pdf = FPDF(format="A4")
     pdf.set_margins(22, 20, 22)
@@ -148,7 +185,7 @@ def to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> byt
                     text = f"__{text}__"
                 out.append(text)
             elif node.get("type") == "citation":
-                out.append(next(citations, "[citation]"))
+                out.append(next(citations, MISSING))
             elif node.get("type") == "hardBreak":
                 out.append("\n")
         return "".join(out)

@@ -11,7 +11,7 @@ import {
   type User as FirebaseUser,
 } from "@firebase/auth";
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api, ApiError, setTokenGetter } from "./api";
 import { auth } from "./firebase";
@@ -22,6 +22,8 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   notInvited: boolean;
+  /** This email already belongs to an account created with a different sign-in (API 409 ACCOUNT_CONFLICT). */
+  accountConflict: boolean;
   signIn(email: string, password: string): Promise<void>;
   signUp(name: string, email: string, password: string): Promise<void>;
   signInWithGoogle(): Promise<void>;
@@ -59,29 +61,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [notInvited, setNotInvited] = useState(false);
+  const [accountConflict, setAccountConflict] = useState(false);
+  // The identity whose data is in the cache, and a counter that lets late /me responses be discarded.
+  const cachedUid = useRef<string | null | undefined>(undefined);
+  const profileRequest = useRef(0);
 
   const loadProfile = useCallback(async () => {
+    const request = ++profileRequest.current;
+    const uid = auth.currentUser?.uid ?? null;
+    const current = () => request === profileRequest.current && (auth.currentUser?.uid ?? null) === uid;
     setNotInvited(false);
-    if (!auth.currentUser) {
+    setAccountConflict(false);
+    if (!uid) {
       setUser(null);
       return;
     }
     try {
-      setUser(await api.get<User>("/me"));
+      const profile = await api.get<User>("/me");
+      if (current()) setUser(profile);
     } catch (error) {
+      if (!current()) return; // a newer sign-in state owns the UI now
       setUser(null);
       if (error instanceof ApiError && error.code === "NOT_INVITED") setNotInvited(true);
+      if (error instanceof ApiError && error.code === "ACCOUNT_CONFLICT") setAccountConflict(true);
     }
   }, []);
 
   useEffect(
     () =>
       onIdTokenChanged(auth, async (next) => {
+        const uid = next?.uid ?? null;
+        if (cachedUid.current !== undefined && cachedUid.current !== uid) {
+          // Signed out or a different account (possibly in another tab): no private data may outlive it.
+          queryClient.clear();
+          setUser(null);
+        }
+        cachedUid.current = uid;
         setFirebaseUser(next);
         await loadProfile();
         setLoading(false);
       }),
-    [loadProfile],
+    [loadProfile, queryClient],
   );
 
   const value = useMemo<AuthState>(
@@ -90,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       notInvited,
+      accountConflict,
       async signIn(email, password) {
         await signInWithEmailAndPassword(auth, email.trim(), password);
       },
@@ -124,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loadProfile();
       },
     }),
-    [firebaseUser, user, loading, notInvited, loadProfile, queryClient],
+    [firebaseUser, user, loading, notInvited, accountConflict, loadProfile, queryClient],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

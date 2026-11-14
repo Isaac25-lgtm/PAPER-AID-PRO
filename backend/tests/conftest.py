@@ -44,6 +44,9 @@ os.environ.update(
         "CONTACT_EMAIL": "",
         "AI_PROVIDER": "none",
         "EMBEDDING_PROVIDER": "none",
+        # Never a real project: nothing in the test suite may reach production Firebase/Google APIs.
+        "FIREBASE_PROJECT_ID": "paperaid-test-local",
+        "MAINTENANCE_ON_STARTUP": "false",
     }
 )
 
@@ -62,6 +65,7 @@ from app.services.ai.providers import set_embedder, set_llm  # noqa: E402
 
 TABLES = [
     "audit_events",
+    "storage_deletions",
     "rate_limit_buckets",
     "messages",
     "conversations",
@@ -107,6 +111,26 @@ def fake_verifier(token: str) -> TokenClaims:
     except ValueError as exc:
         raise Unauthenticated("bad token") from exc
     return TokenClaims(uid=uid, email=email, email_verified=verified == "1", name=email.split("@")[0])
+
+
+class FakeIdentityAdmin:
+    """Stands in for the Firebase Identity Toolkit (account deletion) in every test."""
+
+    def __init__(self) -> None:
+        self.deleted: list[str] = []
+
+    async def delete(self, uid: str) -> bool:
+        self.deleted.append(uid)
+        return True
+
+
+@pytest.fixture(autouse=True)
+def identity_admin(monkeypatch: pytest.MonkeyPatch) -> FakeIdentityAdmin:
+    from app.services import identity
+
+    fake = FakeIdentityAdmin()
+    monkeypatch.setattr(identity, "delete_firebase_account", fake.delete)
+    return fake
 
 
 @pytest.fixture(autouse=True)

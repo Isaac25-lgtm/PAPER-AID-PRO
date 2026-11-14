@@ -1,12 +1,14 @@
 import clsx from "clsx";
-import { BookOpen, FileText, FlaskConical, LibraryBig, LogOut, Menu, Quote, Search, Shield, UserRound, X } from "lucide-react";
+import { BookOpen, FileText, FlaskConical, House, LibraryBig, LogOut, Menu, Quote, Search, Shield, UserRound, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router";
 
 import { useAuth } from "@/lib/auth";
+import { HelpButton, useGuidance } from "./Guidance";
 import { Alert, Button, Spinner } from "./ui";
 
 const NAV = [
+  { to: "/dashboard", label: "Home", icon: House, auth: true },
   { to: "/discover", label: "Discover", icon: Search, auth: false },
   { to: "/papers", label: "Catalog", icon: BookOpen, auth: false },
   { to: "/library", label: "Library", icon: LibraryBig, auth: true },
@@ -16,8 +18,9 @@ const NAV = [
 ];
 
 function Logo() {
+  const { user } = useAuth();
   return (
-    <Link to="/" className="flex items-center gap-2 font-semibold text-slate-900">
+    <Link to={user ? "/dashboard" : "/"} className="flex items-center gap-2 font-semibold text-slate-900">
       <img src="/favicon.svg" alt="" className="h-7 w-7" />
       <span>
         PaperAid <span className="text-brand-700">Pro</span>
@@ -28,6 +31,7 @@ function Logo() {
 
 export function Layout() {
   const { user, signOut, loading } = useAuth();
+  const { openHelp } = useGuidance();
   const [open, setOpen] = useState(false);
   const links = NAV.filter((item) => !item.auth || user);
   return (
@@ -57,6 +61,7 @@ export function Layout() {
           <div className="ml-auto hidden items-center gap-2 md:flex">
             {loading ? null : user ? (
               <>
+                <HelpButton />
                 <Link to="/account" className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-slate-700 hover:bg-slate-100">
                   <UserRound className="h-4 w-4" aria-hidden />
                   {user.name || user.email}
@@ -89,6 +94,9 @@ export function Layout() {
             ))}
             {user ? (
               <>
+                <button className="block w-full px-2 py-2 text-left text-sm text-slate-700" onClick={() => { setOpen(false); openHelp(); }}>
+                  Help
+                </button>
                 <NavLink to="/account" onClick={() => setOpen(false)} className="block rounded px-2 py-2 text-sm text-slate-700">
                   Account
                 </NavLink>
@@ -130,7 +138,7 @@ export function Container({ children, className }: { children: ReactNode; classN
 
 /** Route guard: signed in AND email verified (the API enforces the same rule). */
 export function RequireAuth({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
-  const { user, firebaseUser, loading, notInvited, resendVerification, refresh, signOut } = useAuth();
+  const { user, firebaseUser, loading, notInvited, accountConflict, resendVerification, refresh, signOut } = useAuth();
   const location = useLocation();
   const [sent, setSent] = useState(false);
   if (loading) return <Spinner />;
@@ -146,6 +154,21 @@ export function RequireAuth({ children, admin = false }: { children: ReactNode; 
             </Button>
             <Button size="sm" variant="secondary" disabled={sent} onClick={() => void resendVerification().then(() => setSent(true))}>
               {sent ? "Email sent" : "Resend email"}
+            </Button>
+          </div>
+        </Alert>
+      </Container>
+    );
+  }
+  if (accountConflict) {
+    return (
+      <Container className="max-w-xl">
+        <Alert kind="warning" title="This email is linked to a different sign-in">
+          An account for <strong>{firebaseUser.email}</strong> already exists, created with another sign-in method.
+          Sign out and sign in the way you originally did, or ask the project owner to re-link your account.
+          <div className="mt-3">
+            <Button size="sm" variant="secondary" onClick={() => void signOut()}>
+              Sign out
             </Button>
           </div>
         </Alert>

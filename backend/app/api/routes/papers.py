@@ -6,9 +6,11 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
 from app.api.deps import DB, AppSettings
+from app.api.downloads import content_disposition
 from app.db.models import (
     LibraryItem,
     Paper,
@@ -35,6 +37,7 @@ from app.security.rate_limit import enforce_rate_limit
 from app.services import processing
 from app.services.ai import features as ai_features
 from app.services.citations.csl import STYLES, format_citations
+from app.services.maintenance import delete_now_or_later, schedule_deletion
 from app.services.papers import (
     can_manage,
     create_private_paper,
@@ -47,7 +50,7 @@ from app.services.papers import (
 from app.services.scholarly.aggregator import resolve_identifier
 from app.services.scholarly.identifiers import parse_identifier
 from app.services.scholarly.models import ScholarlyWork
-from app.services.search import search_catalog_ids, search_evidence
+from app.services.search import search_evidence
 from app.services.storage import get_storage
 
 router = APIRouter(prefix="/papers", tags=["papers"])
@@ -83,27 +86,26 @@ async def list_papers(
 ) -> PaperPage:
     """The catalog of papers imported into PaperAid (public records + your private uploads)."""
 
-    clause = visible_papers_clause(user)
-    filters = [clause]
+    filters = [visible_papers_clause(user)]
     if status:
         filters.append(Paper.status == PaperStatus(status))
+    rank = None
     if q and q.strip():
-        ids = await search_catalog_ids(db, q.strip(), clause, limit=1000)
-        if not ids:
-            return PaperPage(items=[], total=0, page=page, page_size=page_size)
-        filters.append(Paper.id.in_(ids))
+        tsquery = func.websearch_to_tsquery("english", q.strip())
+        filters.append(Paper.search_vector.op("@@")(tsquery))
+        rank = func.ts_rank_cd(Paper.search_vector, tsquery)
     total = (await db.execute(select(func.count()).select_from(Paper).where(*filters))).scalar_one()
-    order = {
-        "recent": [Paper.created_at.desc()],
-        "year": [Paper.year.desc().nulls_last(), Paper.created_at.desc()],
-        "citations": [Paper.citation_count.desc(), Paper.created_at.desc()],
-        "relevance": [Paper.created_at.desc()],
-    }[sort]
+    if sort == "relevance" and rank is not None:
+        order = [rank.desc(), Paper.created_at.desc(), Paper.id]
+    else:
+        order = {
+            "recent": [Paper.created_at.desc()],
+            "year": [Paper.year.desc().nulls_last(), Paper.created_at.desc()],
+            "citations": [Paper.citation_count.desc(), Paper.created_at.desc()],
+            "relevance": [Paper.created_at.desc()],
+        }[sort] + [Paper.id]  # deterministic tie-breaker keeps pages stable
     stmt = with_authors(select(Paper).where(*filters).order_by(*order).offset((page - 1) * page_size).limit(page_size))
     papers = list((await db.execute(stmt)).scalars().unique())
-    if q and sort == "relevance":
-        rank = {pid: i for i, pid in enumerate(ids)}
-        papers.sort(key=lambda p: rank.get(p.id, 10**6))
     library = await _in_library(db, user.id if user else None, [p.id for p in papers])
     return PaperPage(
         items=[PaperOut.build(p, user_id=user.id if user else None, in_library=p.id in library) for p in papers],
@@ -161,9 +163,19 @@ async def upload_paper(
         if name.lower().endswith(".pdf"):
             name = name[:-4]
         work = ScholarlyWork(title=name[:500] or "Uploaded document", work_type="article")
-    paper = await create_private_paper(db, owner=user, work=work, source=PaperSource.UPLOAD)
-    await processing.store_pdf(db, paper, data)
-    await _ensure_library(db, user.id, paper.id)
+    # One transaction for the paper row, its stored PDF pointer and the library entry. The object is uploaded
+    # before the commit; if the commit fails the object is recorded for deletion instead of being orphaned.
+    paper = await create_private_paper(db, owner=user, work=work, source=PaperSource.UPLOAD, commit=False)
+    key = await processing.store_pdf(db, paper, data)
+    db.add(LibraryItem(user_id=user.id, paper_id=paper.id, tags=[]))
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        await schedule_deletion(db, key)
+        await db.commit()
+        await delete_now_or_later(db, key)
+        raise
     await processing.queue_ingest(db, paper, user)
     paper = await get_paper_for_user(db, paper.id, user)
     return PaperOut.build(paper, user_id=user.id, in_library=True)
@@ -182,10 +194,10 @@ async def delete_paper(paper_id: uuid.UUID, db: DB, user: VerifiedUser) -> Respo
     if not can_manage(paper, user):
         raise Forbidden("Only the owner of an uploaded paper can delete it.")
     storage_path = paper.storage_path
+    await schedule_deletion(db, storage_path)  # same transaction as the row delete: never orphaned
     await db.delete(paper)
     await db.commit()
-    if storage_path:
-        await get_storage().delete(storage_path)
+    await delete_now_or_later(db, storage_path)
     return Response(status_code=204)
 
 
@@ -214,20 +226,21 @@ async def paper_jobs(paper_id: uuid.UUID, db: DB, user: OptionalUser) -> list[Jo
 
 @router.get("/{paper_id}/pdf")
 async def paper_pdf(paper_id: uuid.UUID, db: DB, user: VerifiedUser) -> Response:
+    """Streams the stored PDF (constant memory). Never cached: access can be revoked at any time."""
     paper = await get_paper_for_user(db, paper_id, user)
     if not paper.storage_path:
         raise NotFound("No PDF is stored for this paper.")
-    data = await get_storage().get(paper.storage_path)
-    filename = "".join(ch for ch in paper.title[:80] if ch.isalnum() or ch in " -_").strip() or "paper"
-    return Response(
-        content=data,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'inline; filename="{filename}.pdf"',
-            "Cache-Control": "private, max-age=300",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    storage_path, title, size = paper.storage_path, paper.title, paper.file_size
+    await db.commit()  # release the DB connection before the (possibly long) transfer
+    body = await get_storage().open_stream(storage_path)
+    headers = {
+        "Content-Disposition": content_disposition(f"{title[:120]}.pdf", disposition="inline"),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    if size:
+        headers["Content-Length"] = str(size)
+    return StreamingResponse(body, media_type="application/pdf", headers=headers)
 
 
 @router.get("/{paper_id}/passages", response_model=list[PassageOut])
@@ -281,7 +294,7 @@ async def cite_paper(
 async def get_summary(paper_id: uuid.UUID, db: DB, user: OptionalUser) -> dict[str, object]:
     await get_paper_for_user(db, paper_id, user)
     summary = (await db.execute(select(PaperSummary).where(PaperSummary.paper_id == paper_id))).scalar_one_or_none()
-    if summary is None:
+    if summary is None or summary.prompt_version != ai_features.SUMMARY_PROMPT_VERSION:
         raise NotFound("No AI summary has been generated for this paper yet.")
     return {
         "content": summary.content,

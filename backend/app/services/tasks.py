@@ -25,7 +25,8 @@ from app.errors import Unauthenticated, UpstreamError
 
 log = logging.getLogger(__name__)
 
-JobRunner = Callable[[uuid.UUID], Awaitable[None]]
+JobRunner = Callable[[uuid.UUID], Awaitable[str]]  # returns "done" | "retry" | "skipped"
+INLINE_MAX_DELIVERIES = 5
 _inline_runner: JobRunner | None = None
 _credentials = None
 
@@ -49,7 +50,10 @@ async def enqueue_job(job_id: uuid.UUID) -> None:
     if settings.tasks_backend == "inline":
         if _inline_runner is None:
             raise RuntimeError("No inline job runner registered")
-        await _inline_runner(job_id)
+        # Mimic Cloud Tasks: redeliver while the worker asks for a retry (the worker caps its own attempts).
+        for _ in range(INLINE_MAX_DELIVERIES):
+            if await _inline_runner(job_id) != "retry":
+                break
         return
 
     target = settings.tasks_target_url.rstrip("/") + "/internal/tasks/run-job"

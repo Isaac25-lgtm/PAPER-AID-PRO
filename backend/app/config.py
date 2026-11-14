@@ -77,6 +77,15 @@ class Settings(BaseSettings):
     embedding_model: str = ""
     embedding_dimensions: int = Field(default=1536, frozen=True)  # fixed by the pgvector column
 
+    # Verify each AI claim against its cited passages with a second model call (recommended).
+    ai_verify_claims: bool = True
+
+    # --- Operations ---------------------------------------------------------------------------------------
+    maintenance_on_startup: bool = True
+    # Cloud Run's front end appends the caller's address as the LAST X-Forwarded-For entry; trust only that.
+    # None = automatic (trusted in production, where the API only runs behind Cloud Run).
+    trust_forwarded_for: bool | None = None
+
     # --- Rate limits (per user per minute unless noted) -------------------------------------------------
     rate_limit_search_per_min: int = 30
     rate_limit_ai_per_min: int = 10
@@ -106,6 +115,10 @@ class Settings(BaseSettings):
     @property
     def admin_email_set(self) -> set[str]:
         return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
+
+    @property
+    def trusts_forwarded_for(self) -> bool:
+        return self.is_production if self.trust_forwarded_for is None else self.trust_forwarded_for
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 from sqlalchemy import select
 
 from app.api.deps import DB, AppSettings
@@ -26,7 +27,7 @@ from app.schemas import (
     VerifyRequest,
 )
 from app.security.auth import OptionalUser, VerifiedUser
-from app.security.rate_limit import enforce_rate_limit
+from app.security.rate_limit import enforce_caller_limit, enforce_rate_limit
 from app.services.ai import features as ai_features
 from app.services.citations.csl import STYLES, format_citations
 from app.services.citations.verify import verify_references
@@ -34,8 +35,12 @@ from app.services.documents import get_owned_document
 from app.services.papers import get_papers_for_user, to_csl_json, work_to_csl_json
 from app.services.scholarly.aggregator import resolve_identifier
 from app.services.scholarly.identifiers import parse_identifier
+from app.services.scholarly.models import ScholarlyWork
 
 router = APIRouter()
+ANON_MAX_IDENTIFIERS = 20
+HISTORY_MESSAGES = 6  # three question/answer turns
+MAX_THREAD_MESSAGES = 200
 
 
 # ----------------------------------------------------------------------------------------------- citations
@@ -45,38 +50,71 @@ async def styles() -> list[StyleOut]:
 
 
 @router.post("/citations/format", response_model=FormatResponse, tags=["citations"])
-async def format_references(body: FormatRequest, db: DB, user: OptionalUser) -> FormatResponse:
-    """Format papers (by id) and/or identifiers (DOI/PMID/arXiv, resolved against registries) in a CSL style."""
+async def format_references(request: Request, body: FormatRequest, db: DB, user: OptionalUser) -> FormatResponse:
+    """Format papers (by id) and/or identifiers (DOI/PMID/arXiv, resolved against registries) in a CSL style.
+
+    All works are formatted together in ONE citeproc processor, so numeric styles number them 1..n and author-date
+    styles disambiguate same-author/same-year works. Entries are returned in bibliography (CSL) order."""
     if body.style not in STYLES:
         raise ValidationFailed("Unknown citation style.")
     if not body.paper_ids and not body.identifiers:
         raise ValidationFailed("Provide paper_ids or identifiers.")
-    key = f"citefmt:{user.id}" if user else "citefmt:anon"
-    await enforce_rate_limit(db, key=key, limit=30 if user else 60, window_seconds=60, action="citation formatting")
-    items, titles, paper_ids, unresolved = [], [], [], []
-    for paper in await get_papers_for_user(db, list(body.paper_ids), user):
-        items.append(to_csl_json(paper))
-        titles.append(paper.title)
-        paper_ids.append(paper.id)
-    for index, raw in enumerate(body.identifiers):
+    if user is None and len(body.identifiers) > ANON_MAX_IDENTIFIERS:
+        raise ValidationFailed(f"Sign in to format more than {ANON_MAX_IDENTIFIERS} identifiers at once.")
+    await enforce_caller_limit(
+        db, request, user, name="citefmt", user_limit=30, anon_limit=20, window_seconds=60, action="citation formatting"
+    )
+    records: list[tuple[dict[str, object], str, uuid.UUID | None]] = []
+    seen: set[str] = set()  # the same work asked for twice (by id and by DOI) is formatted once
+
+    def keys(doi: str | None, pmid: str | None, arxiv_id: str | None) -> set[str]:
+        return {f"{k}:{v}" for k, v in (("doi", doi), ("pmid", pmid), ("arxiv", arxiv_id)) if v}
+
+    for paper in await get_papers_for_user(db, list(dict.fromkeys(body.paper_ids)), user):
+        records.append((to_csl_json(paper), paper.title, paper.id))
+        seen |= keys(paper.doi, paper.pmid, paper.arxiv_id)
+    await db.commit()  # release the DB connection while registries and the citation engine run
+
+    semaphore = asyncio.Semaphore(5)
+
+    async def resolve(raw: str) -> ScholarlyWork | None:
         identifier = parse_identifier(raw)
-        work = await resolve_identifier(identifier) if identifier else None
+        if identifier is None:
+            return None
+        async with semaphore:
+            return await resolve_identifier(identifier)
+
+    raw_identifiers = list(dict.fromkeys(i.strip() for i in body.identifiers if i.strip()))
+    unresolved = []
+    for index, (raw, work) in enumerate(
+        zip(raw_identifiers, await asyncio.gather(*(resolve(r) for r in raw_identifiers)), strict=True)
+    ):
         if work is None:
             unresolved.append(raw)
             continue
-        item = work_to_csl_json(work, f"ext-{index}")
-        items.append(item)
-        titles.append(work.title)
-        paper_ids.append(None)
-    if not items:
+        work_keys = keys(work.doi, work.pmid, work.arxiv_id)
+        if work_keys & seen:
+            continue
+        seen |= work_keys
+        records.append((work_to_csl_json(work, f"ext-{index}"), work.title, None))
+    if not records:
         return FormatResponse(style=body.style, entries=[], unresolved=unresolved)
+    items = [item for item, _, _ in records]
+    formatted = await format_citations(
+        items, style=body.style, clusters=[[{"id": item["id"]}] for item in items], output=body.output
+    )
+    by_id = {str(item["id"]): (index, title, pid) for index, (item, title, pid) in enumerate(records)}
+    bibliography = dict(zip(formatted.bibliography_ids, formatted.bibliography, strict=False))
+    order = [i for i in formatted.bibliography_ids if i in by_id] + [
+        str(item["id"]) for item in items if str(item["id"]) not in bibliography
+    ]
     entries = []
-    for item, title, pid in zip(items, titles, paper_ids, strict=True):
-        single = await format_citations([item], style=body.style, clusters=[[{"id": item["id"]}]], output=body.output)
+    for item_id in order:
+        index, title, pid = by_id[item_id]
         entries.append(
             FormattedEntry(
-                in_text=single.citations[0] if single.citations else "",
-                bibliography=single.bibliography[0] if single.bibliography else "",
+                in_text=formatted.citations[index] if index < len(formatted.citations) else "",
+                bibliography=bibliography.get(item_id, ""),
                 paper_id=pid,
                 title=title,
             )
@@ -85,10 +123,12 @@ async def format_references(body: FormatRequest, db: DB, user: OptionalUser) -> 
 
 
 @router.post("/citations/verify", tags=["citations"])
-async def verify(body: VerifyRequest, db: DB, user: OptionalUser) -> dict[str, object]:
+async def verify(request: Request, body: VerifyRequest, db: DB, user: OptionalUser) -> dict[str, object]:
     """Check each reference against Crossref (title, first author, year). Deterministic; no AI involved."""
-    key = f"verify:{user.id}" if user else "verify:anon"
-    await enforce_rate_limit(db, key=key, limit=10 if user else 20, window_seconds=300, action="reference checks")
+    await enforce_caller_limit(
+        db, request, user, name="verify", user_limit=10, anon_limit=5, window_seconds=300, action="reference checks"
+    )
+    await db.commit()
     return {"results": await verify_references(body.references)}
 
 
@@ -103,13 +143,32 @@ async def research_ask(
     papers = await get_papers_for_user(db, list(dict.fromkeys(body.paper_ids)), user)
     if not papers:
         raise ValidationFailed("None of the selected papers are available to you.")
+    history: list[tuple[str, str]] = []
     if body.conversation_id:
         conversation = await db.get(Conversation, body.conversation_id)
         if conversation is None or conversation.user_id != user.id:
             raise NotFound("Conversation not found.")
+        # Bounded follow-up context: the last few turns, so "those studies" / "that outcome" resolve.
+        recent = list(
+            (
+                await db.execute(
+                    select(Message)
+                    .where(Message.conversation_id == conversation.id)
+                    .order_by(Message.created_at.desc())
+                    .limit(HISTORY_MESSAGES)
+                )
+            ).scalars()
+        )[::-1]
+        question: str | None = None
+        for message in recent:
+            if message.role == MessageRole.USER:
+                question = message.content
+            elif question is not None:
+                history.append((question, message.content))
+                question = None
     else:
         conversation = None
-    result = await ai_features.research_synthesis(db, papers, body.question)
+    result = await ai_features.research_synthesis(db, papers, body.question, history=history)
     if conversation is None:
         conversation = Conversation(user_id=user.id, title=body.question[:120], paper_ids=[p.id for p in papers])
         db.add(conversation)
@@ -124,6 +183,8 @@ async def research_ask(
             content=result["answer"],
             citations=result["citations"],
             model=result["model"],
+            insufficient_evidence=result["insufficient_evidence"],
+            gaps=result["gaps"],
         )
     )
     await db.commit()
@@ -144,8 +205,14 @@ async def conversation(conversation_id: uuid.UUID, db: DB, user: VerifiedUser) -
     if convo is None or convo.user_id != user.id:
         raise NotFound("Conversation not found.")
     messages = (
-        await db.execute(select(Message).where(Message.conversation_id == convo.id).order_by(Message.created_at))
+        await db.execute(
+            select(Message)
+            .where(Message.conversation_id == convo.id)
+            .order_by(Message.created_at.desc())
+            .limit(MAX_THREAD_MESSAGES)
+        )
     ).scalars()
+    messages = list(messages)[::-1]
     return ConversationOut(
         id=convo.id,
         title=convo.title,

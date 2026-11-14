@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from sqlalchemy import or_, select
 
 from app.api.deps import DB, AppSettings
@@ -12,7 +12,7 @@ from app.db.models import Paper, PaperVisibility
 from app.errors import ValidationFailed
 from app.schemas import GroundedAnswerOut, ProviderStatusOut, SearchResponse, SnapshotRequest, WorkOut
 from app.security.auth import OptionalUser, VerifiedUser
-from app.security.rate_limit import enforce_rate_limit
+from app.security.rate_limit import enforce_caller_limit, enforce_rate_limit
 from app.services.ai.features import discovery_snapshot
 from app.services.papers import upsert_public_paper
 from app.services.scholarly.aggregator import federated_search, resolve_identifier
@@ -34,6 +34,7 @@ def _identifier(work: ScholarlyWork) -> str | None:
 
 @router.get("/search", response_model=SearchResponse)
 async def search(
+    request: Request,
     db: DB,
     settings: AppSettings,
     user: OptionalUser,
@@ -46,12 +47,22 @@ async def search(
 ) -> SearchResponse:
     if year_from and year_to and year_from > year_to:
         raise ValidationFailed("year_from must not be after year_to.")
-    key = f"search:user:{user.id}" if user else "search:anon"
-    limit_per_min = settings.rate_limit_search_per_min if user else settings.rate_limit_search_per_min * 3
-    await enforce_rate_limit(db, key=key, limit=limit_per_min, window_seconds=60, action="search")
+    await enforce_caller_limit(
+        db,
+        request,
+        user,
+        name="search",
+        user_limit=settings.rate_limit_search_per_min,
+        anon_limit=settings.rate_limit_search_per_min,
+        window_seconds=60,
+        action="search",
+    )
+    # Each provider is queried at most once, whatever the client sends.
+    selected = [p for p in ALL_PROVIDERS if p in set(providers or ALL_PROVIDERS)]
+    await db.commit()  # do not hold a DB connection while the providers are queried
     works, statuses = await federated_search(
         q.strip(),
-        providers=providers or ALL_PROVIDERS,
+        providers=selected,
         limit=limit,
         year_from=year_from,
         year_to=year_to,
@@ -114,5 +125,5 @@ async def snapshot(body: SnapshotRequest, db: DB, user: VerifiedUser, settings: 
         work = await resolve_identifier(identifier)
         if work is not None:
             papers.append(await upsert_public_paper(db, work, created_by=user))
-    result = await discovery_snapshot(papers, body.query)
+    result = await discovery_snapshot(db, papers, body.query)
     return GroundedAnswerOut(**result)

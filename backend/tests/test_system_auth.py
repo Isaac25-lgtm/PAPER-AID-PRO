@@ -5,7 +5,8 @@ from tests.conftest import ADMIN, ALICE, UNVERIFIED, auth
 
 async def test_health_and_ready(client):
     assert (await client.get("/api/v1/health")).json() == {"status": "ok"}
-    assert (await client.get("/api/v1/ready")).json() == {"status": "ready"}
+    ready = (await client.get("/api/v1/ready")).json()
+    assert ready["status"] == "ready" and ready["schema"]
 
 
 async def test_security_headers_and_request_id(client):

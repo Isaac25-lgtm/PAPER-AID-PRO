@@ -3,6 +3,7 @@ import { FileText, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 
+import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
 import { useStyles } from "@/components/papers";
 import { Alert, Button, EmptyState, Input, Label, Modal, PageHeader, Select, Spinner, Textarea } from "@/components/ui";
@@ -128,6 +129,7 @@ export default function DocumentsPage() {
   return (
     <Container>
       <PageHeader title="Documents" subtitle="Write with sources from your library and correctly formatted citations." actions={<Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> New document</Button>} />
+      <SectionGuide section="documents" />
       {docs.isLoading && <Spinner />}
       {docs.error && <Alert kind="error">{errorMessage(docs.error)}</Alert>}
       {docs.data?.length === 0 && (
@@ -147,7 +149,7 @@ export default function DocumentsPage() {
               <p className="mt-2 text-xs text-slate-500">Edited {relativeTime(doc.updated_at)}</p>
             </Link>
             <button
-              className="absolute right-3 top-3 hidden rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover:block"
+              className="absolute right-3 top-3 rounded p-1 text-slate-400 opacity-100 hover:bg-red-50 hover:text-red-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
               aria-label={`Delete ${doc.title}`}
               onClick={() => window.confirm(`Delete “${doc.title}” and its history? This cannot be undone.`) && remove.mutate(doc.id)}
             >
