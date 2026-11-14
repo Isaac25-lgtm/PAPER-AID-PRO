@@ -46,7 +46,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SHA="$("$GIT" -C "$ROOT" rev-parse --short HEAD)"
 STAMP="$(date -u +%Y%m%d%H%M%S)"
 IMAGE="$REPO/paperaid-api:$SHA-$STAMP"
-TAG="rc-$SHA-$STAMP-$((RANDOM % 1000))"   # unique per release, even for the same commit
+# Unique per release, even for the same commit (one release per service at a time, by the lock). Cloud Run limits
+# the tag plus the service name to 46 characters, so the tag is kept short: commit + Unix time in seconds.
+TAG="rc-$SHA-$(date -u +%s)"
+if (( ${#TAG} + ${#SERVICE} > 46 )); then
+  echo "Refusing to release: tag '$TAG' and service '$SERVICE' exceed Cloud Run's 46-character limit." >&2
+  exit 1
+fi
 LOCK="gs://$LOCK_BUCKET/release-locks/$SERVICE.lock"
 
 if [[ -n "$("$GIT" -C "$ROOT" status --porcelain -- backend)" ]]; then

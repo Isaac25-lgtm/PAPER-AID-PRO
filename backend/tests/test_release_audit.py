@@ -491,6 +491,10 @@ def test_a_staging_release_only_touches_staging_resources(tmp_path):
     deploys = [line for line in mutations if "run deploy" in line or "update-traffic" in line]
     assert deploys and all("paperaid-api-staging" in line for line in deploys)
     assert "release-locks/paperaid-api-staging.lock" in calls
+    # Cloud Run refuses a traffic tag whose length plus the service name's exceeds 46 (it failed the first staging
+    # release after the migration had already run).
+    tag = next(line for line in calls.splitlines() if "run deploy" in line).split("--tag ")[1].split()[0]
+    assert len(tag) + len("paperaid-api-staging") <= 46, tag
 
 
 @pytest.mark.parametrize(
