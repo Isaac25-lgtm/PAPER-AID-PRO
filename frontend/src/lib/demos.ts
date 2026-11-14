@@ -169,8 +169,8 @@ export const DEMOS: Record<SectionKey, DemoScene> = {
       { id: "text", kind: "input", area: "main", text: "Start writing…" },
       { id: "result", kind: "card", area: "main", text: AKER.title, sub: `${AKER.sub} · ↵ cite`, hidden: true },
       { id: "chip", kind: "chip", area: "main", text: "(Aker & Mbiti, 2010)", hidden: true },
-      { id: "menu", kind: "note", area: "side", text: "Selected text: Find a source · Rewrite · Shorten · Check against my sources", hidden: true },
-      { id: "page", kind: "note", area: "side", text: "PDF page 3 · Cite highlight, p. 3", hidden: true },
+      { id: "menu", kind: "note", area: "side", text: "Selected text: Find a source (with AI on: Rewrite · Shorten · Check)", hidden: true },
+      { id: "page", kind: "note", area: "side", text: "Select words on a PDF page · Cite that page", hidden: true },
     ],
     frames: [
       { step: 0, to: "text", type: "Mobile phones lowered search costs /cite", reveal: ["result"] },
@@ -187,7 +187,7 @@ export const DEMOS: Record<SectionKey, DemoScene> = {
       { id: "ask", kind: "accent", area: "bar", text: "Ask" },
       { id: "s1", kind: "check", area: "side", text: "Suri & Jack (2016)" },
       { id: "s2", kind: "check", area: "side", text: "Jack & Suri (2014)" },
-      { id: "answer", kind: "note", area: "main", text: "Each statement in the answer ends with a numbered marker [1] linked to its source.", hidden: true },
+      { id: "answer", kind: "note", area: "main", text: "Each statement in the answer ends with a numbered marker [1] linked to its source. (Needs AI for your account.)", hidden: true },
       { id: "evidence", kind: "card", area: "main", text: "Source 1 · the supporting words are highlighted", sub: "Suri & Jack · 2016 · Science", hidden: true },
     ],
     frames: [

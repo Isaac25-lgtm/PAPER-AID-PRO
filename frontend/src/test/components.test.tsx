@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +9,7 @@ import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
 import { ApiError } from "@/lib/api";
 import type { GroundedAnswer } from "@/lib/types";
 
-const authState = { user: null as null | { id: string; role: string }, firebaseUser: null as null | { emailVerified: boolean; email: string }, loading: false, notInvited: false, accountConflict: false };
+const authState = { user: null as null | { id: string; role: string; needs_consent?: boolean; email?: string }, firebaseUser: null as null | { emailVerified: boolean; email: string }, loading: false, notInvited: false, accountConflict: false, profileError: false };
 vi.mock("@/lib/auth", () => ({
   useAuth: () => ({ ...authState, signOut: vi.fn(), resendVerification: vi.fn(), refresh: vi.fn() }),
 }));
@@ -148,5 +148,59 @@ describe("pages against a mocked API", () => {
     wrap(<CatalogPage />, "/papers");
     await waitFor(() => expect(screen.getByText("The catalog is empty")).toBeInTheDocument());
     expect(screen.getByText(/Discover papers/)).toHaveAttribute("href", "/discover");
+  });
+});
+
+describe("Route guard (hardening audit)", () => {
+  function Draft() {
+    const [text, setText] = useState("server version");
+    return <input aria-label="draft" value={text} onChange={(e) => setText(e.target.value)} />;
+  }
+
+  it("asks for re-consent in an overlay and keeps unsaved work mounted", async () => {
+    authState.firebaseUser = { emailVerified: true, email: "a@b.edu" };
+    authState.user = { id: "u1", role: "user", email: "a@b.edu", needs_consent: false };
+    const { RequireAuth } = await import("@/components/Layout");
+    const view = wrap(<RequireAuth><Draft /></RequireAuth>);
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "unsaved edits" } });
+    authState.user = { ...authState.user, needs_consent: true }; // the policy changed mid-session
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter><RequireAuth><Draft /></RequireAuth></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Agree and continue" })).toBeInTheDocument();
+    expect((screen.getByLabelText("draft", { selector: "input" }) as HTMLInputElement).value).toBe("unsaved edits");
+    expect(screen.getByLabelText("draft", { selector: "input" }).closest("[inert]")).not.toBeNull(); // unreachable meanwhile
+    authState.user = { ...authState.user, needs_consent: false };
+    authState.firebaseUser = null;
+    authState.user = null;
+  });
+
+  it("offers data rights to former testers, not to a conflicting identity", async () => {
+    const { RequireAuth } = await import("@/components/Layout");
+    authState.firebaseUser = { emailVerified: true, email: "former@example.edu" };
+    authState.notInvited = true;
+    const first = wrap(<RequireAuth><p>secret</p></RequireAuth>);
+    expect(screen.getByText("Download or delete your data without continuing")).toBeInTheDocument();
+    first.unmount();
+    authState.notInvited = false;
+    authState.accountConflict = true;
+    wrap(<RequireAuth><p>secret</p></RequireAuth>);
+    expect(screen.queryByText("Download or delete your data without continuing")).toBeNull();
+    expect(screen.getByText(/sign in with its original method/)).toBeInTheDocument();
+    authState.accountConflict = false;
+    authState.firebaseUser = null;
+  });
+
+  it("offers a retry when the account could not be loaded", async () => {
+    const { RequireAuth } = await import("@/components/Layout");
+    authState.firebaseUser = { emailVerified: true, email: "a@b.edu" };
+    authState.user = null;
+    authState.profileError = true;
+    wrap(<RequireAuth><p>secret</p></RequireAuth>);
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    authState.profileError = false;
+    authState.firebaseUser = null;
   });
 });

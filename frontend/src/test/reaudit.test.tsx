@@ -93,6 +93,24 @@ describe("H1: Find a source keeps draft text private until confirmed", () => {
     await waitFor(() => expect(calls.gets.some((g) => g.path === "/discovery/search")).toBe(true), { timeout: 2000 });
   });
 
+  it("never sends the original wording while the writer is redacting it; only the submitted text goes out", async () => {
+    const editor = makeEditor("<p>Text</p>");
+    const original = "Confidential result from our village cohort";
+    wrap(<CitePalette editor={editor} documentId="d1" request={{ pos: 1, query: original, origin: "selection" }} onClose={vi.fn()} onInserted={vi.fn()} />);
+    const box = screen.getByLabelText("Search sources to cite");
+    await userEvent.clear(box);
+    await userEvent.type(box, "village cohort");
+    await new Promise((r) => setTimeout(r, 700));
+    expect(calls.gets.filter((g) => g.path === "/discovery/search")).toEqual([]); // editing alone sends nothing
+    await userEvent.click(screen.getByRole("button", { name: "Search all sources" }));
+    await waitFor(() => expect(calls.gets.filter((g) => g.path === "/discovery/search")).toHaveLength(1), { timeout: 2000 });
+    expect(calls.gets.find((g) => g.path === "/discovery/search")?.query).toMatchObject({ q: "village cohort" });
+    await userEvent.type(box, " Kenya");
+    await new Promise((r) => setTimeout(r, 700));
+    expect(calls.gets.filter((g) => g.path === "/discovery/search")).toHaveLength(1); // a further edit needs another submit
+    expect(calls.gets.some((g) => JSON.stringify(g.query).includes("Confidential"))).toBe(false);
+  });
+
   it("searches all sources as the writer types their own words", async () => {
     const editor = makeEditor("<p>Text</p>");
     wrap(<CitePalette editor={editor} documentId="d1" request={{ pos: 1 }} onClose={vi.fn()} onInserted={vi.fn()} />);
@@ -135,21 +153,61 @@ describe("H2: Quote and cite uses what was captured at the click", () => {
 });
 
 describe("M7: export and restore wait for in-flight edits and block new ones", () => {
-  it("drains running operations before locking, then refuses new ones until resumed", async () => {
+  it("drains running operations before locking, then refuses new ones until released", async () => {
     const gate = new EditGate();
     let finish: () => void = () => undefined;
     const running = gate.run(() => new Promise<void>((r) => (finish = r)));
-    let paused = false;
-    const pausing = gate.pause().then(() => (paused = true));
+    const release = gate.acquire();
+    expect(release).not.toBeNull();
+    let drained = false;
+    const draining = gate.drain().then(() => (drained = true));
     await new Promise((r) => setTimeout(r, 10));
-    expect(paused).toBe(false); // still waiting for the citation in flight
+    expect(drained).toBe(false); // still waiting for the citation in flight
     finish();
     await running;
-    await pausing;
-    expect(paused).toBe(true);
+    await draining;
     await expect(gate.run(async () => "late")).rejects.toThrow(/paused/);
-    gate.resume();
+    release!();
     await expect(gate.run(async () => "ok")).resolves.toBe("ok");
+  });
+
+  it("allows only one export or restore at a time, and only its holder reopens editing", async () => {
+    const gate = new EditGate();
+    const first = gate.acquire();
+    expect(gate.acquire()).toBeNull(); // a second export/restore is refused while the first runs
+    expect(gate.isOpen).toBe(false);
+    first!();
+    first!(); // releasing twice is harmless
+    expect(gate.isOpen).toBe(true);
+    const second = gate.acquire();
+    expect(second).not.toBeNull();
+    first!(); // a stale release from the first holder cannot reopen the gate
+    expect(gate.isOpen).toBe(false);
+    second!();
+  });
+});
+
+describe("M5: a delayed citation never lands beside unrelated text", () => {
+  it("refuses to insert when the text around the chosen spot was deleted while waiting", async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    calls.post = (path) => (path.endsWith("/citations") ? new Promise((resolve) => (finish = resolve)) : Promise.resolve({}));
+    calls.library = [{ paper: { id: "p1", title: "Risk sharing", authors: [], year: 2014, has_pdf: false }, notes: null, tags: [], collection_ids: [], added_at: "" }];
+    const editor = makeEditor({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "Claim that needs a source." }] },
+        { type: "paragraph", content: [{ type: "text", text: "Another statement." }] },
+      ],
+    });
+    const target = 1 + "Claim that needs a source".length;
+    wrap(<CitePalette editor={editor} documentId="d1" request={{ pos: target }} onClose={vi.fn()} onInserted={vi.fn()} />);
+    await userEvent.click(await screen.findByText("Risk sharing"));
+    act(() => {
+      editor.commands.setContent({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Another statement." }] }] });
+    });
+    await act(async () => finish({ id: "cit-1" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/changed or deleted/);
+    expect(JSON.stringify(editor.getJSON())).not.toContain("citation");
   });
 });
 

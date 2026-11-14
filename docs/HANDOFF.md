@@ -69,6 +69,9 @@ yet").
   - concurrent uploads are deduplicated, with a retry for private uploads
   - staging is defined in isolation
   - editor citation labels are applied by occurrence
+- **Hardening audit (Codex):** 13 findings, 3 of them high severity, all fixed with tests
+  (`docs/HARDENING_AUDIT_RESPONSE.md`): draft text is sent only as the exact words submitted, re-consent no longer
+  loses unsaved work, uploads are fenced against account closure, among others.
 - **System re-audit (Codex):** 15 findings, 3 of them high severity, all fixed with tests
   (`docs/SYSTEM_REAUDIT_RESPONSE.md`):
   - draft text never leaves the app without the writer confirming it
@@ -109,9 +112,9 @@ yet").
 
 | Check | Result |
 |---|---|
-| Backend tests (real PostgreSQL + pgvector) | **249 passed** locally and in GitHub CI |
+| Backend tests (real PostgreSQL + pgvector) | **255 passed** locally and in GitHub CI |
 | Live checks against real scholarly APIs | **7 passed** (OpenAlex, Crossref, PubMed, arXiv, DOAJ, Europe PMC, Crossref verification) |
-| Frontend tests + strict type-check + build | **91 passed**, clean |
+| Frontend tests + strict type-check + build | **99 passed**, clean |
 | Production image smoke test (CI container job) | fonts, all 18 styles, migrations, readiness: **passed** |
 | Migration on existing rows | upgrade from the previous schema with seeded legacy-policy rows; repairs verified |
 | Dependency audits | npm: 0 vulnerabilities; pip-audit: no known vulnerabilities |

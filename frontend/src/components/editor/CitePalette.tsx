@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { useLibrarySearch } from "@/components/papers";
 import { Alert } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
-import { trackPosition, useEditGate } from "@/lib/editGate";
+import { ANCHOR_LOST, trackPosition, useEditGate } from "@/lib/editGate";
 import { PROVIDER_LABELS, type Citation, type Paper, type SearchResponse, type Work } from "@/lib/types";
 
 export interface CiteRequest {
@@ -67,12 +67,15 @@ export function CitePalette({
 }) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState(request.query ?? "");
-  // External search is armed for words the person types; draft text must be confirmed first.
-  const [externalAllowed, setExternalAllowed] = useState(request.origin !== "selection");
+  // Draft-derived searches stay inside the library for the life of the palette: only the exact text the writer
+  // submits with "Search all sources" is ever sent outside, and any later edit needs another explicit submit.
+  const fromDraft = request.origin === "selection";
+  const [submitted, setSubmitted] = useState<string | null>(null);
   const [locator, setLocator] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const [debounced, setDebounced] = useState(query.trim());
+  const externalQuery = fromDraft ? (submitted ?? "") : debounced;
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(query.trim()), 450);
     return () => window.clearTimeout(timer);
@@ -80,9 +83,9 @@ export function CitePalette({
 
   const library = useLibrarySearch(query, 5);
   const everywhere = useQuery({
-    queryKey: ["cite-search", debounced],
-    queryFn: ({ signal }) => api.get<SearchResponse>("/discovery/search", { q: debounced, limit: 6 }, signal),
-    enabled: externalAllowed && debounced.length >= MIN_ALL_SOURCES_QUERY,
+    queryKey: ["cite-search", externalQuery],
+    queryFn: ({ signal }) => api.get<SearchResponse>("/discovery/search", { q: externalQuery, limit: 6 }, signal),
+    enabled: externalQuery.length >= MIN_ALL_SOURCES_QUERY,
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -104,12 +107,15 @@ export function CitePalette({
   }, []);
 
   const gate = useEditGate();
+  // Bookmark the insertion point now, when the target is chosen, and follow every later edit.
+  const [target] = useState(() => trackPosition(editor, request.pos));
+  useEffect(() => () => target.stop(), [target]);
   const cite = useMutation({
     // Part of the export/restore gate; the insertion point follows any edits made while the request runs.
     mutationFn: (option: Option) =>
       gate.run(async () => {
-        const target = trackPosition(editor, request.pos);
-        try {
+        if (target.deleted) throw new Error(ANCHOR_LOST);
+        {
           let paperId: string;
           if (option.kind === "library") paperId = option.paper.id;
           else {
@@ -119,10 +125,9 @@ export function CitePalette({
             void queryClient.invalidateQueries({ queryKey: ["library"] });
           }
           const citation = await api.post<Citation>(`/documents/${documentId}/citations`, { paper_id: paperId, locator: locator.trim() || null });
+          if (target.deleted) throw new Error(ANCHOR_LOST);
           insertCitationAt(editor, target.pos, citation.id);
           return citation;
-        } finally {
-          target.stop();
         }
       }),
     onSuccess: () => {
@@ -194,7 +199,6 @@ export function CitePalette({
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
-              setExternalAllowed(true); // the person is now writing their own search
             }}
             placeholder="Search your library and all sources"
             aria-label="Search sources to cite"
@@ -216,12 +220,12 @@ export function CitePalette({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {cite.error && <div className="p-1.5"><Alert kind="error">{errorMessage(cite.error)}</Alert></div>}
-          {!externalAllowed && query.trim().length >= MIN_ALL_SOURCES_QUERY && (
+          {fromDraft && query.trim().length >= MIN_ALL_SOURCES_QUERY && query.trim() !== submitted && (
             <div className="m-1 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600">
               <p>Showing matches from your library only. Searching all sources sends these words to OpenAlex, Crossref and other scholarly indexes:</p>
               <p className="mt-1 font-medium text-slate-900">“{query.trim()}”</p>
               <p className="mt-1">Edit them above first if they contain anything private.</p>
-              <button type="button" onClick={() => setExternalAllowed(true)} className="mt-2 rounded-md bg-slate-900 px-2.5 py-1 font-medium text-white hover:bg-slate-800">
+              <button type="button" onClick={() => setSubmitted(query.trim())} className="mt-2 rounded-md bg-slate-900 px-2.5 py-1 font-medium text-white hover:bg-slate-800">
                 Search all sources
               </button>
             </div>
@@ -264,7 +268,7 @@ export function CitePalette({
           </ul>
           {noResults && debounced.length >= MIN_ALL_SOURCES_QUERY && !everywhere.isFetching && <p className="px-2.5 py-3 text-sm text-slate-500">No matching sources. Try different words or a DOI.</p>}
           {!query.trim() && libraryCount === 0 && <p className="px-2.5 py-3 text-sm text-slate-500">Type a few words of a title, an author or a topic.</p>}
-          {externalAllowed && query.trim().length > 0 && debounced.length < MIN_ALL_SOURCES_QUERY && <p className="px-2.5 py-2 text-xs text-slate-500">Type at least {MIN_ALL_SOURCES_QUERY} characters to search all sources.</p>}
+          {!fromDraft && query.trim().length > 0 && debounced.length < MIN_ALL_SOURCES_QUERY && <p className="px-2.5 py-2 text-xs text-slate-500">Type at least {MIN_ALL_SOURCES_QUERY} characters to search all sources.</p>}
         </div>
         <p className="border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500">↑↓ choose · Enter cite · Esc close · type <kbd className="font-mono">/cite</kbd> while writing to open this</p>
       </div>

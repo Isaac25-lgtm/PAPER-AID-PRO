@@ -24,6 +24,8 @@ interface AuthState {
   notInvited: boolean;
   /** This email already belongs to an account created with a different sign-in (API 409 ACCOUNT_CONFLICT). */
   accountConflict: boolean;
+  /** The profile could not be loaded (transient); the guard offers a retry when no profile is loaded yet. */
+  profileError: boolean;
   signIn(email: string, password: string): Promise<void>;
   signUp(name: string, email: string, password: string): Promise<void>;
   signInWithGoogle(): Promise<void>;
@@ -62,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [notInvited, setNotInvited] = useState(false);
   const [accountConflict, setAccountConflict] = useState(false);
+  const [profileError, setProfileError] = useState(false);
   // The identity whose data is in the cache, and a counter that lets late /me responses be discarded.
   const cachedUid = useRef<string | null | undefined>(undefined);
   const profileRequest = useRef(0);
@@ -72,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const current = () => request === profileRequest.current && (auth.currentUser?.uid ?? null) === uid;
     setNotInvited(false);
     setAccountConflict(false);
+    setProfileError(false);
     if (!uid) {
       setUser(null);
       return;
@@ -81,9 +85,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (current()) setUser(profile);
     } catch (error) {
       if (!current()) return; // a newer sign-in state owns the UI now
-      setUser(null);
-      if (error instanceof ApiError && error.code === "NOT_INVITED") setNotInvited(true);
-      if (error instanceof ApiError && error.code === "ACCOUNT_CONFLICT") setAccountConflict(true);
+      const code = error instanceof ApiError ? error.code : "";
+      if (code === "NOT_INVITED" || code === "ACCOUNT_CONFLICT") {
+        setUser(null);
+        setNotInvited(code === "NOT_INVITED");
+        setAccountConflict(code === "ACCOUNT_CONFLICT");
+        return;
+      }
+      // A transient failure (network, server) must not tear down the page someone is working in: keep the
+      // profile already loaded and report the problem; with no profile yet, the guard offers a retry.
+      setProfileError(true);
     }
   }, []);
 
@@ -125,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       notInvited,
       accountConflict,
+      profileError,
       async signIn(email, password) {
         await signInWithEmailAndPassword(auth, email.trim(), password);
       },

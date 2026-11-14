@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { BookOpen, FileText, FlaskConical, House, LibraryBig, LogOut, Menu, Quote, Search, Shield, UserRound, X } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router";
 import { DataRightsPanel } from "./DataRights";
 
@@ -165,9 +165,17 @@ export function Container({ children, className }: { children: ReactNode; classN
 
 /** Route guard: signed in AND email verified (the API enforces the same rule). */
 export function RequireAuth({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
-  const { user, firebaseUser, loading, notInvited, accountConflict, resendVerification, refresh, signOut } = useAuth();
+  const { user, firebaseUser, loading, notInvited, accountConflict, profileError, resendVerification, refresh, signOut } = useAuth();
   const location = useLocation();
   const [sent, setSent] = useState(false);
+  // Whether this signed-in person's pages have been shown (then consent is asked in an overlay, not by unmounting).
+  const workMounted = useRef(false);
+  const mountedFor = useRef<string | null>(null);
+  if ((user?.id ?? null) !== mountedFor.current) {
+    mountedFor.current = user?.id ?? null;
+    workMounted.current = false;
+  }
+  const inertRef = useInert(Boolean(user?.needs_consent));
   if (loading) return <Spinner />;
   if (!firebaseUser) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   if (!firebaseUser.emailVerified) {
@@ -199,7 +207,10 @@ export function RequireAuth({ children, admin = false }: { children: ReactNode; 
             </Button>
           </div>
         </Alert>
-        {firebaseUser.email && <DataRightsPanel email={firebaseUser.email} />}
+        <p className="mt-4 text-sm text-slate-600">
+          To download or delete the data of your original account, sign in with its original method and use Account,
+          or write to the privacy contact on the <Link className="text-brand-700 underline" to="/privacy">Privacy Notice</Link>.
+        </p>
       </Container>
     );
   }
@@ -214,11 +225,51 @@ export function RequireAuth({ children, admin = false }: { children: ReactNode; 
             </Button>
           </div>
         </Alert>
+        {/* Former testers keep their data rights (the API serves export and deletion to them). */}
+        {firebaseUser.email && <DataRightsPanel email={firebaseUser.email} />}
       </Container>
     );
   }
-  if (!user) return <Spinner label="Loading your account" />;
-  if (user.needs_consent) return <ConsentGate />;
+  if (!user) {
+    if (profileError) {
+      return (
+        <Container className="max-w-xl">
+          <Alert kind="error" title="We couldn’t load your account">
+            Check your connection and try again.
+            <div className="mt-3">
+              <Button size="sm" onClick={() => void refresh()}>Try again</Button>
+            </div>
+          </Alert>
+        </Container>
+      );
+    }
+    return <Spinner label="Loading your account" />;
+  }
+  if (user.needs_consent && !workMounted.current) return <ConsentGate />;
   if (admin && user.role !== "admin") return <Navigate to="/" replace />;
-  return <>{children}</>;
+  workMounted.current = true;
+  // Consent requested mid-session (the policy changed while someone was working): ask in an overlay and keep the
+  // page underneath mounted, so unsaved work (e.g. the editor's pending saves) survives and saves after acceptance.
+  return (
+    <>
+      <div ref={inertRef} aria-hidden={user.needs_consent || undefined}>{children}</div>
+      {user.needs_consent && (
+        <div className="fixed inset-0 z-[70] overflow-y-auto bg-black/50" role="presentation">
+          <ConsentGate />
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Make the page behind the consent overlay unreachable by keyboard and pointer (the `inert` attribute). */
+function useInert(active: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (active) el.setAttribute("inert", "");
+    else el.removeAttribute("inert");
+  }, [active]);
+  return ref;
 }

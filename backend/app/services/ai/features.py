@@ -203,7 +203,10 @@ async def check_passage(db: AsyncSession, papers: list[Paper], passage: str) -> 
     if not papers:
         raise ValidationFailed("Add sources to this document or your library first.")
     items = await gather_evidence(db, passage, papers, limit=12)
-    return await grounded_answer(db, passage, items, feature="Checking against your sources", task=CHECK_TASK)
+    result = await grounded_answer(db, passage, items, feature="Checking against your sources", task=CHECK_TASK)
+    # Which selected sources actually contributed evidence the model saw (scope reporting).
+    result["evidence_paper_ids"] = sorted({str(item.paper.id) for item in items})
+    return result
 
 
 async def discovery_snapshot(db: AsyncSession, papers: list[Paper], query: str) -> dict[str, Any]:

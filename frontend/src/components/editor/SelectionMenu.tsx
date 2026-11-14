@@ -5,9 +5,8 @@ import { Bot, Check, Loader2, ScanSearch, Search, Scissors, Wand2, X } from "luc
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 import { AIError } from "@/components/GroundedAnswerView";
-import { api } from "@/lib/api";
 import { useEditGate } from "@/lib/editGate";
-import { applyRewrite, buildRewriteInput, REWRITE_PROBLEMS, type RewriteInput } from "@/lib/rewrite";
+import { applyRewrite, buildRewriteInput, inputText, proposalText, requestRewrite, REWRITE_PROBLEMS, type RewriteInput } from "@/lib/rewrite";
 
 export interface Span {
   from: number;
@@ -57,7 +56,7 @@ export function SelectionMenu({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const rewrite = useMutation({
-    mutationFn: ({ input, mode }: { input: RewriteInput; mode: RewriteMode }) => api.post<{ text: string; model: string }>("/ai/rewrite", { text: input.text, mode }),
+    mutationFn: ({ input, mode }: { input: RewriteInput; mode: RewriteMode }) => requestRewrite(input, mode),
   });
 
   const refresh = useCallback(() => {
@@ -118,7 +117,7 @@ export function SelectionMenu({
       setProblem(REWRITE_PROBLEMS[input]);
       return;
     }
-    if (input.text.length > MAX_REWRITE) {
+    if (inputText(input).length > MAX_REWRITE) {
       setProblem("Select a shorter passage (up to about 1,200 words) to rewrite it.");
       return;
     }
@@ -139,7 +138,7 @@ export function SelectionMenu({
       setProblem("Editing is paused while the document is exported or restored. Try again in a moment.");
       return;
     }
-    const error = applyRewrite(editor, proposal.input, rewrite.data.text);
+    const error = applyRewrite(editor, proposal.input, rewrite.data);
     if (error) {
       setProblem(error);
       return;
@@ -147,9 +146,6 @@ export function SelectionMenu({
     setProposal(null);
     rewrite.reset();
   };
-  // Show citation placeholders as their labels while the writer reviews the proposal.
-  const readable = (text: string) =>
-    text.replace(/\[\[C(\d+)\]\]/g, (_m, n: string) => String((proposal?.input.citations[Number(n) - 1]?.attrs as { label?: string } | undefined)?.label ?? "[citation]"));
 
   const button = "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-white/90 hover:bg-white/10 focus:bg-white/10 focus:outline-none";
   return (
@@ -178,8 +174,8 @@ export function SelectionMenu({
           {problem && <p role="alert" className="mb-2 text-xs text-red-700">{problem}</p>}
           {rewrite.data && (
             <>
-              <p className="max-h-60 overflow-y-auto whitespace-pre-wrap font-serif text-[15px] leading-relaxed text-slate-900">{readable(rewrite.data.text)}</p>
-              <p className="mt-2 flex items-center gap-1 text-xs text-slate-600"><Bot className="h-3.5 w-3.5" aria-hidden /> {rewrite.data.model} · instructed not to add facts or citations; each citation stays with its claim. Review before keeping it.</p>
+              <p className="max-h-60 overflow-y-auto whitespace-pre-wrap font-serif text-[15px] leading-relaxed text-slate-900">{proposalText(proposal.input, rewrite.data)}</p>
+              <p className="mt-2 flex items-center gap-1 text-xs text-slate-600"><Bot className="h-3.5 w-3.5" aria-hidden /> {rewrite.data.model} · each claim is rewritten on its own, its citation stays with it, and no facts or citations are added. Review before keeping it.</p>
               {proposal.input.hasFormatting && <p className="mt-1 text-xs text-slate-600">Bold, italics and links in this passage are not kept.</p>}
             </>
           )}

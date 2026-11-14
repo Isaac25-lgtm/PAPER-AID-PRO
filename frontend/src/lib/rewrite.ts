@@ -1,109 +1,154 @@
 import type { Editor } from "@tiptap/react";
 
+import { api } from "./api";
+
 /*
- * One path for applying AI rewrites (selection menu and toolbar). Citations in the passage are sent as numbered
- * placeholders ([[C1]], [[C2]], ...) that the model is told to keep with the claims they support. A proposal is
- * applied only if every placeholder comes back exactly once and in the original order, so a citation can never move
- * to a different claim or disappear, and only if the passage has not changed since it was sent.
+ * One path for AI rewrites (selection menu and toolbar). The passage is split at its citations: each piece of text
+ * is rewritten on its own and its citations stay attached right after it, exactly as before. The model never sees
+ * or moves a citation, so a citation cannot end up beside a different claim or disappear. A proposal is applied
+ * only if the passage, including the identity of every citation in it, is unchanged since it was sent.
  */
 
 type JSONNode = Record<string, unknown>;
 
+export interface RewriteSegment {
+  lead: string;
+  /** The words to rewrite (trimmed). */
+  core: string;
+  trail: string;
+  /** Citations that directly follow this text, kept in place. */
+  citations: JSONNode[];
+  /** Whether this piece has words worth rewriting (not just punctuation between citations). */
+  rewrite: boolean;
+}
+
 export interface RewriteInput {
   from: number;
   to: number;
-  /** Text sent to the model, with citation placeholders. */
-  text: string;
-  citations: JSONNode[];
+  segments: RewriteSegment[];
+  /** Exact text and citation identities, used to detect any change before applying. */
+  signature: string;
   /** Bold, italics or links in the passage (not carried into the rewrite). */
   hasFormatting: boolean;
 }
 
-export type RewriteProblem = "empty" | "multiple-paragraphs";
+export interface RewriteProposal {
+  /** Rewritten text per segment (null where the segment is kept as is). */
+  texts: (string | null)[];
+  model: string;
+}
 
-const TOKEN = /\[\[C(\d+)\]\]/g;
+export type RewriteProblem = "empty" | "multiple-paragraphs" | "too-many-citations";
+
+/** At most this many pieces of text are rewritten per request (one AI call each). */
+export const MAX_REWRITE_SEGMENTS = 6;
+
+const WORDS = /\p{L}/u;
+
+function signatureOf(segments: RewriteSegment[]): string {
+  return JSON.stringify(
+    segments.map((s) => [s.lead, s.core, s.trail, s.citations.map((c) => (c.attrs as { citationIds?: string[] } | undefined)?.citationIds ?? [])]),
+  );
+}
 
 export function buildRewriteInput(editor: Editor, from: number, to: number): RewriteInput | RewriteProblem {
   const doc = editor.state.doc;
-  const $from = doc.resolve(from);
-  const $to = doc.resolve(to);
-  if (!$from.sameParent($to)) return "multiple-paragraphs";
-  let text = "";
-  const citations: JSONNode[] = [];
+  if (!doc.resolve(from).sameParent(doc.resolve(to))) return "multiple-paragraphs";
+  const raw: { text: string; citations: JSONNode[] }[] = [{ text: "", citations: [] }];
   let hasFormatting = false;
   doc.nodesBetween(from, to, (node, pos) => {
+    const current = raw[raw.length - 1]!;
     if (node.isText) {
       const start = Math.max(from, pos) - pos;
       const end = Math.min(to, pos + node.nodeSize) - pos;
-      text += (node.text ?? "").slice(start, end);
+      const piece = (node.text ?? "").slice(start, end);
+      if (current.citations.length) raw.push({ text: piece, citations: [] });
+      else current.text += piece;
       if (node.marks.length) hasFormatting = true;
     } else if (node.type.name === "citation") {
-      citations.push(node.toJSON() as JSONNode);
-      text += `[[C${citations.length}]]`;
+      current.citations.push(node.toJSON() as JSONNode);
     }
     return true;
   });
-  if (!text.replace(TOKEN, "").trim()) return "empty";
-  return { from, to, text, citations, hasFormatting };
+  const segments = raw
+    .filter((r) => r.text || r.citations.length)
+    .map((r) => {
+      // Punctuation right after a citation (". ", ", ") closes the previous claim: kept as it is, not rewritten.
+      const lead = /^[\s.,;:!?)\]]*/.exec(r.text)![0];
+      const trail = r.text.slice(lead.length).match(/\s*$/)![0];
+      const core = r.text.slice(lead.length, r.text.length - trail.length);
+      return { lead, core, trail, citations: r.citations, rewrite: WORDS.test(core) };
+    });
+  const rewritable = segments.filter((s) => s.rewrite).length;
+  if (!rewritable) return "empty";
+  if (rewritable > MAX_REWRITE_SEGMENTS) return "too-many-citations";
+  return { from, to, segments, signature: signatureOf(segments), hasFormatting };
 }
 
-/** Whether the passage still reads exactly as it did when it was sent (otherwise a proposal must not be applied). */
+/** Ask the AI to rewrite each piece separately (citations are never sent). */
+export async function requestRewrite(input: RewriteInput, mode: string): Promise<RewriteProposal> {
+  let model = "";
+  const texts = await Promise.all(
+    input.segments.map(async (segment) => {
+      if (!segment.rewrite) return null;
+      const result = await api.post<{ text: string; model: string }>("/ai/rewrite", { text: segment.core, mode });
+      model = result.model;
+      return fitToSegment(segment, result.text);
+    }),
+  );
+  return { texts, model };
+}
+
+/** Keep a rewritten piece shaped like the original: no sentence-ending stop added before a citation. */
+export function fitToSegment(segment: RewriteSegment, rewritten: string): string {
+  let text = rewritten.trim();
+  if (!/[.!?;:,]$/.test(segment.core)) text = text.replace(/[.!?]+$/, "");
+  return text || segment.core;
+}
+
+function labelOf(citation: JSONNode): string {
+  return String((citation.attrs as { label?: string } | undefined)?.label ?? "[citation]");
+}
+
+/** The proposal as readable text, citations shown as their labels, for the writer to review. */
+export function proposalText(input: RewriteInput, proposal: RewriteProposal): string {
+  return input.segments
+    .map((s, i) => `${s.lead}${proposal.texts[i] ?? s.core}${s.trail}${s.citations.map(labelOf).join("")}`)
+    .join("");
+}
+
+/** The passage as sent (readable). */
+export function inputText(input: RewriteInput): string {
+  return input.segments.map((s) => `${s.lead}${s.core}${s.trail}${s.citations.map(labelOf).join("")}`).join("");
+}
+
+/** Whether the passage, including the identity of each citation, still reads exactly as when it was sent. */
 export function isUnchanged(editor: Editor, input: RewriteInput): boolean {
   if (input.to > editor.state.doc.content.size) return false;
   const now = buildRewriteInput(editor, input.from, input.to);
-  return typeof now !== "string" && now.text === input.text;
+  return typeof now !== "string" && now.signature === input.signature;
 }
 
-/**
- * Replacement content for a proposal, or an explanation of why it cannot be applied safely.
- * Leading and trailing spaces of the original passage are preserved.
- */
-export function rewriteContent(input: RewriteInput, proposal: string): { content: JSONNode[] } | { error: string } {
-  const found = Array.from(proposal.matchAll(TOKEN), (m) => Number(m[1]));
-  const expected = input.citations.map((_, i) => i + 1);
-  if (found.length !== expected.length || found.some((n, i) => n !== expected[i])) {
-    return {
-      error:
-        expected.length === 0
-          ? "The rewrite added citation markers that were not in your text, so it was not applied."
-          : "The rewrite moved, dropped or repeated a citation, so it was not applied. Try a shorter passage.",
-    };
-  }
-  const lead = /^\s/.test(input.text) ? " " : "";
-  const trail = /\s$/.test(input.text) ? " " : "";
-  const body = proposal.trim();
+/** Replacement content: each segment's (rewritten) text followed by its original citation nodes. */
+export function rewriteContent(input: RewriteInput, proposal: RewriteProposal): JSONNode[] {
   const content: JSONNode[] = [];
-  let last = 0;
-  for (const match of body.matchAll(TOKEN)) {
-    const before = body.slice(last, match.index);
-    if (before) content.push({ type: "text", text: before });
-    content.push(input.citations[Number(match[1]) - 1]!);
-    last = (match.index ?? 0) + match[0].length;
-  }
-  if (body.slice(last)) content.push({ type: "text", text: body.slice(last) });
-  if (lead) {
-    const first = content[0];
-    if (first?.type === "text") first.text = lead + String(first.text);
-    else content.unshift({ type: "text", text: lead });
-  }
-  if (trail) {
-    const end = content[content.length - 1];
-    if (end?.type === "text") end.text = String(end.text) + trail;
-    else content.push({ type: "text", text: trail });
-  }
-  return { content };
+  input.segments.forEach((segment, i) => {
+    const text = `${segment.lead}${proposal.texts[i] ?? segment.core}${segment.trail}`;
+    if (text) content.push({ type: "text", text });
+    content.push(...segment.citations);
+  });
+  return content;
 }
 
 /** Apply a proposal in one transaction. Returns an error message instead of changing anything when unsafe. */
-export function applyRewrite(editor: Editor, input: RewriteInput, proposal: string): string | null {
-  if (!isUnchanged(editor, input)) return "The passage has changed since it was sent, so it was not replaced. Select it again to rewrite it.";
-  const result = rewriteContent(input, proposal);
-  if ("error" in result) return result.error;
-  editor.chain().focus().insertContentAt({ from: input.from, to: input.to }, result.content).run();
+export function applyRewrite(editor: Editor, input: RewriteInput, proposal: RewriteProposal): string | null {
+  if (!isUnchanged(editor, input)) return "The passage or one of its citations changed since it was sent, so it was not replaced. Select it again to rewrite it.";
+  editor.chain().focus().insertContentAt({ from: input.from, to: input.to }, rewriteContent(input, proposal)).run();
   return null;
 }
 
 export const REWRITE_PROBLEMS: Record<RewriteProblem, string> = {
   empty: "Select some words to rewrite.",
   "multiple-paragraphs": "Select text within one paragraph to rewrite it.",
+  "too-many-citations": `Select a shorter passage (up to ${MAX_REWRITE_SEGMENTS} cited claims) to rewrite it.`,
 };

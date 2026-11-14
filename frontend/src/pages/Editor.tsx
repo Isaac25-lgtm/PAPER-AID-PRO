@@ -26,10 +26,10 @@ import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
 import { applyRenderIfCurrent } from "@/lib/citationLabels";
 import { CitationNode, LABEL_META } from "@/lib/citationNode";
 import { CiteTrigger } from "@/lib/citeTrigger";
-import { EditGate, EditGateContext, trackPosition, useEditGate } from "@/lib/editGate";
+import { ANCHOR_LOST, EditGate, EditGateContext, trackPosition, useEditGate, type TrackedPosition } from "@/lib/editGate";
 import { GhostText } from "@/lib/ghostText";
 import { usePreference } from "@/lib/preferences";
-import { applyRewrite, buildRewriteInput, REWRITE_PROBLEMS } from "@/lib/rewrite";
+import { applyRewrite, buildRewriteInput, inputText, proposalText, requestRewrite, REWRITE_PROBLEMS } from "@/lib/rewrite";
 import { relativeTime, sanitizeHtml } from "@/lib/format";
 import { SaveQueue, type Fields } from "@/lib/saveQueue";
 import { normalizeSuggestion } from "@/lib/templates";
@@ -116,11 +116,11 @@ function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; 
   const gate = useEditGate();
   const insert = useMutation({
     // Where the cursor was at the click, followed through later edits; part of the export/restore gate.
-    mutationFn: (paper: Paper) =>
+    mutationFn: ({ paper, target }: { paper: Paper; target: TrackedPosition }) =>
       gate.run(async () => {
-        const target = trackPosition(editor, editor.state.selection.to);
         try {
           const citation = await api.post<Citation>(`/documents/${documentId}/citations`, { paper_id: paper.id, locator: locator.trim() || null });
+          if (target.deleted) throw new Error(ANCHOR_LOST);
           insertCitationAt(editor, target.pos, citation.id);
           return citation;
         } finally {
@@ -131,6 +131,7 @@ function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; 
       setLocator("");
       onInserted();
     },
+    onSettled: (_data, _error, variables) => variables.target.stop(), // also when the gate refused to start
   });
   const papers = (library.data?.items ?? []).map((i) => i.paper);
   const more = (library.data?.total ?? 0) - papers.length;
@@ -148,7 +149,7 @@ function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; 
           <li key={paper.id} className="rounded-lg border border-slate-200 p-2.5">
             <p className="line-clamp-2 text-sm font-medium text-slate-900">{paper.title}</p>
             <p className="text-xs text-slate-500">{paper.authors[0] ?? "Unknown"}{paper.authors.length > 1 ? " et al." : ""} · {paper.year ?? "n.d."}</p>
-            <Button size="sm" variant="secondary" className="mt-2" loading={insert.isPending && insert.variables?.id === paper.id} onClick={() => insert.mutate(paper)}>
+            <Button size="sm" variant="secondary" className="mt-2" loading={insert.isPending && insert.variables?.paper.id === paper.id} onClick={() => insert.mutate({ paper, target: trackPosition(editor, editor.state.selection.to) })}>
               Cite at cursor
             </Button>
           </li>
@@ -158,7 +159,7 @@ function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; 
   );
 }
 
-function RevisionsPanel({ documentId, onRestore }: { documentId: string; onRestore: (revisionId: string) => Promise<void> }) {
+function RevisionsPanel({ documentId, onRestore, disabled }: { documentId: string; onRestore: (revisionId: string) => Promise<void>; disabled?: boolean }) {
   const revisions = useQuery({ queryKey: ["revisions", documentId], queryFn: () => api.get<Revision[]>(`/documents/${documentId}/revisions`) });
   const restore = useMutation({ mutationFn: onRestore });
   if (revisions.isLoading) return <Spinner />;
@@ -171,7 +172,7 @@ function RevisionsPanel({ documentId, onRestore }: { documentId: string; onResto
             <p className="font-medium text-slate-900">v{r.version} · {r.title}</p>
             <p className="text-xs text-slate-500">{relativeTime(r.created_at)} · {r.word_count} words · {r.reason.replace("_", " ")}</p>
           </div>
-          <Button size="sm" variant="ghost" loading={restore.isPending && restore.variables === r.id} onClick={() => window.confirm(`Restore version ${r.version}? Your current text is kept in history.`) && restore.mutate(r.id)}>
+          <Button size="sm" variant="ghost" disabled={disabled || restore.isPending} loading={restore.isPending && restore.variables === r.id} onClick={() => window.confirm(`Restore version ${r.version}? Your current text is kept in history.`) && restore.mutate(r.id)}>
             Restore
           </Button>
         </li>
@@ -191,11 +192,11 @@ function AIAssistModal({ editor, documentId, open, onClose }: { editor: Editor; 
   const [cursor] = useState(() => editor.state.selection.from);
   const [problem, setProblem] = useState<string | null>(typeof input === "string" ? REWRITE_PROBLEMS[input] : null);
   const passage = input && typeof input !== "string" ? input : null;
-  const selection = passage ? passage.text.replace(/\[\[C(\d+)\]\]/g, (_m, n: string) => String((passage.citations[Number(n) - 1]?.attrs as { label?: string } | undefined)?.label ?? "[citation]")) : "";
-  const rewrite = useMutation({ mutationFn: () => api.post<{ text: string; model: string }>("/ai/rewrite", { text: passage?.text ?? "", mode }) });
+  const selection = passage ? inputText(passage) : "";
+  const rewrite = useMutation({ mutationFn: () => (passage ? requestRewrite(passage, mode) : Promise.reject(new Error("Select text to rewrite."))) });
   const preceding = editor.state.doc.textBetween(0, cursor, "\n").slice(-6000);
   const complete = useMutation({ mutationFn: () => api.post<{ text: string; model: string }>("/ai/complete", { document_id: documentId, preceding_text: preceding }) });
-  const result = rewrite.data ?? complete.data;
+  const result = rewrite.data ? { text: passage ? proposalText(passage, rewrite.data) : "", model: rewrite.data.model } : complete.data;
   const keep = () => {
     if (!result) return;
     if (!gate.isOpen) {
@@ -203,7 +204,7 @@ function AIAssistModal({ editor, documentId, open, onClose }: { editor: Editor; 
       return;
     }
     if (passage) {
-      const error = applyRewrite(editor, passage, result.text);
+      const error = rewrite.data ? applyRewrite(editor, passage, rewrite.data) : "Nothing to apply yet.";
       if (error) {
         setProblem(error);
         return;
@@ -244,7 +245,7 @@ function AIAssistModal({ editor, documentId, open, onClose }: { editor: Editor; 
       {(rewrite.error || complete.error) && <div className="mt-3"><AIError error={rewrite.error ?? complete.error} /></div>}
       {result && (
         <div className="mt-4 space-y-2">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-serif text-sm">{passage && rewrite.data ? result.text.replace(/\[\[C(\d+)\]\]/g, (_m, n: string) => String((passage.citations[Number(n) - 1]?.attrs as { label?: string } | undefined)?.label ?? "[citation]")) : result.text}</div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-serif text-sm">{result.text}</div>
           <p className="flex items-center gap-1 text-xs text-slate-500"><Bot className="h-3.5 w-3.5" /> Generated by {result.model}. Review before keeping it.</p>
           <Button
             size="sm"
@@ -262,9 +263,11 @@ const MAX_CHECK_CHARS = 2000;
 
 interface CheckScope {
   basis: "document" | "library";
-  sources: { id: string; title: string; full_text: boolean }[];
+  sources: { id: string; title: string; full_text: boolean; in_evidence: boolean }[];
   total: number;
   limit: number;
+  selected: number;
+  in_evidence: number;
   not_checked: number;
 }
 
@@ -291,11 +294,16 @@ function CheckPanel({ documentId, span }: { documentId: string; span: Span | nul
       {scope && (
         <details className="rounded-lg border border-slate-200 p-2.5 text-xs text-slate-700">
           <summary className="cursor-pointer font-medium text-slate-900">
-            Checked against {scope.sources.length} {scope.basis === "library" ? "papers in your library" : "of this document's sources"}
-            {scope.not_checked > 0 ? ` (${scope.not_checked} older ${scope.not_checked === 1 ? "one was" : "ones were"} not checked)` : ""}
+            Evidence came from {scope.in_evidence} of {scope.selected} {scope.basis === "library" ? "papers in your library" : "of this document's sources"}
+            {scope.not_checked > 0 ? ` (${scope.not_checked} older ${scope.not_checked === 1 ? "one was" : "ones were"} not considered)` : ""}
           </summary>
           <ul className="mt-2 list-disc space-y-0.5 pl-5">
-            {scope.sources.map((s) => <li key={s.id}>{s.title}{s.full_text ? "" : " (abstract only)"}</li>)}
+            {scope.sources.map((s) => (
+              <li key={s.id}>
+                {s.title}
+                {s.in_evidence ? (s.full_text ? "" : " (abstract only)") : " (not used: no matching passage or abstract within the limit)"}
+              </li>
+            ))}
           </ul>
           {scope.not_checked > 0 && <p className="mt-2">Only the {scope.limit} most recently added sources are checked at once. Add the ones you need to this document to include them.</p>}
         </details>
@@ -478,14 +486,17 @@ export default function EditorPage() {
 
   /** Run `task` with editing paused, so the text cannot change between "everything is saved" and the action. */
   const frozen = async <T,>(task: () => Promise<T>): Promise<T> => {
+    // One export or restore at a time; operations already in flight (citations, quotes, rewrites) finish and are
+    // saved first, and nothing new can change the text until this operation releases the gate.
+    const release = gate.acquire();
+    if (!release) throw new Error("Another export or restore is still running. Try again when it has finished.");
     editor?.setEditable(false);
     setBusy(true);
     try {
-      // Citations, quotes and rewrites already in flight finish (and are saved) first; nothing new starts.
-      await gate.pause();
+      await gate.drain();
       return await task();
     } finally {
-      gate.resume();
+      release();
       editor?.setEditable(true);
       setBusy(false);
     }
@@ -563,8 +574,9 @@ export default function EditorPage() {
           className="w-24 py-1.5 sm:w-32"
           value=""
           aria-label="Export"
+          disabled={busy}
           onChange={(e) => {
-            if (e.target.value) void exportAs(e.target.value);
+            if (e.target.value) void exportAs(e.target.value).catch((error: unknown) => setExportError(errorMessage(error)));
           }}
         >
           <option value="">Export…</option>
@@ -642,7 +654,7 @@ export default function EditorPage() {
                 </Suspense>
               )}
               {panel === "check" && <CheckPanel documentId={id} span={checkSpan} />}
-              {panel === "history" && <RevisionsPanel documentId={id} onRestore={restoreRevision} />}
+              {panel === "history" && <RevisionsPanel documentId={id} onRestore={restoreRevision} disabled={busy} />}
             </div>
           </aside>
         )}

@@ -141,7 +141,8 @@ async def create_citation(document_id: uuid.UUID, body: CitationCreate, db: DB, 
         chunk = await db.get(PaperChunk, body.chunk_id)
         if chunk is None or chunk.paper_id != paper.id:
             raise ValidationFailed("That passage does not belong to the cited paper.")
-    await svc.add_source(db, doc, paper)
+    # The source link and the citation commit together; concurrent first citations of a source are safe.
+    await svc.add_source(db, doc, paper, commit=False)
     citation = DocumentCitation(document_id=doc.id, **body.model_dump())
     db.add(citation)
     await db.commit()
@@ -182,11 +183,24 @@ async def check_passage(
     ids = list((await db.execute(query.limit(MAX_CHECK_SOURCES))).scalars())
     papers = await get_papers_for_user(db, ids, user)
     result = await ai_features.check_passage(db, papers, body.text.strip())
+    used = set(result.pop("evidence_paper_ids", []))
     scope = {
         "basis": basis,
-        "sources": [{"id": str(p.id), "title": p.title, "full_text": p.status == PaperStatus.READY} for p in papers],
+        # in_evidence: the source contributed passages or its abstract to what the model was shown. Selected
+        # sources without usable text, or beyond the evidence budget, are listed with in_evidence false.
+        "sources": [
+            {
+                "id": str(p.id),
+                "title": p.title,
+                "full_text": p.status == PaperStatus.READY,
+                "in_evidence": str(p.id) in used,
+            }
+            for p in papers
+        ],
         "total": total,
         "limit": MAX_CHECK_SOURCES,
+        "selected": len(papers),
+        "in_evidence": len(used),
         "not_checked": max(0, total - len(papers)),
     }
     return GroundedAnswerOut(**result, scope=scope)

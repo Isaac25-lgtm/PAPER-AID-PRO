@@ -4,12 +4,11 @@ import { Loader2, Quote, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 
-import { useLibrarySearch } from "@/components/papers";
 import { Alert, Input, Select, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
-import type { Citation, Paper } from "@/lib/types";
+import type { Citation, LibraryItem, Paper } from "@/lib/types";
 
-import { trackPosition, useEditGate } from "@/lib/editGate";
+import { ANCHOR_LOST, trackPosition, useEditGate, type TrackedPosition } from "@/lib/editGate";
 
 import { insertCitationAt } from "./CitePalette";
 import { openPdf, renderPage, type PdfDocument } from "./pdfDocument";
@@ -27,7 +26,8 @@ interface CiteSnapshot {
   paperId: string;
   locator: string | null;
   quote: string | null;
-  at: number;
+  /** Bookmarked at the click and followed through every later edit. */
+  target: TrackedPosition;
 }
 
 /** The PDF page (data-page) containing a DOM node inside the reader, or null. */
@@ -93,7 +93,16 @@ export default function PdfPanel({ editor, documentId, onInserted }: { editor: E
   const gate = useEditGate();
   const sources = useQuery({ queryKey: ["document-sources", documentId], queryFn: () => api.get<Paper[]>(`/documents/${documentId}/sources`) });
   const [find, setFind] = useState("");
-  const library = useLibrarySearch(find, 50);
+  const [debouncedFind, setDebouncedFind] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedFind(find.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [find]);
+  // Only papers with a stored PDF, filtered on the server before paging (older PDFs are never hidden).
+  const library = useQuery({
+    queryKey: ["library", "pdfs", debouncedFind],
+    queryFn: () => api.page<LibraryItem>("/library", { q: debouncedFind || undefined, limit: 50, has_pdf: true }),
+  });
   const candidates = useMemo(() => {
     const seen = new Set<string>();
     return [...(sources.data ?? []), ...(library.data?.items ?? []).map((i) => i.paper)].filter((p) => p.has_pdf && !seen.has(p.id) && Boolean(seen.add(p.id)));
@@ -170,16 +179,18 @@ export default function PdfPanel({ editor, documentId, onInserted }: { editor: E
     // quotation and its citation are inserted in one transaction.
     mutationFn: (snapshot: CiteSnapshot) =>
       gate.run(async () => {
-        const target = trackPosition(editor, snapshot.at);
+        const target = snapshot.target;
         try {
+          if (target.deleted) throw new Error(ANCHOR_LOST);
           const citation = await api.post<Citation>(`/documents/${documentId}/citations`, { paper_id: snapshot.paperId, locator: snapshot.locator });
-          if (target.deleted) throw new Error("The place in your draft where this was going was deleted. Put the cursor where it belongs and try again.");
+          if (target.deleted) throw new Error(ANCHOR_LOST);
           insertCitationAt(editor, target.pos, citation.id, snapshot.quote ? { before: `“${snapshot.quote}” ` } : {});
           return citation;
         } finally {
           target.stop();
         }
       }),
+    onSettled: (_data, _error, snapshot) => snapshot.target.stop(), // also when the gate refused to start
     onSuccess: () => {
       window.getSelection()?.removeAllRanges();
       setPick(null);
@@ -188,7 +199,7 @@ export default function PdfPanel({ editor, documentId, onInserted }: { editor: E
   });
   const start = (quote: boolean) => {
     if (!pick || cite.isPending) return;
-    cite.mutate({ paperId: pick.paperId, locator: locator.trim() || null, quote: quote ? pick.text : null, at: editor.state.selection.to });
+    cite.mutate({ paperId: pick.paperId, locator: locator.trim() || null, quote: quote ? pick.text : null, target: trackPosition(editor, editor.state.selection.to) });
   };
 
   const listError = sources.error ?? library.error;
@@ -200,7 +211,7 @@ export default function PdfPanel({ editor, documentId, onInserted }: { editor: E
   if (!candidates.length)
     return (
       <div className="space-y-3">
-        {find && finder}
+        {finder}
         <p className="text-sm text-slate-600">
           {find ? "No paper with a PDF matches that title." : (
             <>None of your sources has a PDF yet. Open a paper from your <Link className="text-brand-700 underline" to="/library">library</Link> and retrieve its open-access PDF or upload your copy; it will appear here.</>

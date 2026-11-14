@@ -39,7 +39,7 @@ const { CiteTrigger } = await import("@/lib/citeTrigger");
 const { GhostText, acceptGhost, currentGhost, showGhost, suggestionPoint } = await import("@/lib/ghostText");
 const { CitePalette, queryFromSelection } = await import("@/components/editor/CitePalette");
 const { SelectionMenu } = await import("@/components/editor/SelectionMenu");
-const { buildRewriteInput, rewriteContent, applyRewrite } = await import("@/lib/rewrite");
+const { buildRewriteInput, rewriteContent, applyRewrite, requestRewrite, proposalText } = await import("@/lib/rewrite");
 const { useAutocomplete } = await import("@/components/editor/useAutocomplete");
 const { cleanPdfQuote } = await import("@/components/editor/PdfPanel");
 const { applyCitationLabels } = await import("@/lib/citationLabels");
@@ -176,12 +176,20 @@ describe("rewrite helpers", () => {
     ],
   };
 
-  it("sends citations as numbered placeholders and keeps each with its own claim", () => {
+  it("rewrites each cited claim on its own; citations never reach the model and stay with their claims", async () => {
+    calls.post = async (_path, body) => {
+      const text = (body as { text: string }).text;
+      // A model that tries to merge claims or move citations cannot: it only ever sees one claim's words.
+      return { text: text === "Mobile money reduced poverty" ? "Mobile money lowered poverty." : "Mobile phones lowered search costs.", model: "fake-model" };
+    };
     const editor = makeEditor(twoClaims);
     const input = buildRewriteInput(editor, 1, endOf(editor));
     if (typeof input === "string") throw new Error(input);
-    expect(input.text).toBe("Mobile money reduced poverty [[C1]]. Phones cut search costs [[C2]].");
-    expect(applyRewrite(editor, input, "Mobile money lowered poverty [[C1]]. Mobile phones lowered search costs [[C2]].")).toBeNull();
+    const proposal = await requestRewrite(input, "academic");
+    expect(calls.posts.map((p) => (p.body as { text: string }).text)).toEqual(["Mobile money reduced poverty", "Phones cut search costs"]);
+    expect(calls.posts.some((p) => JSON.stringify(p.body).includes("Suri"))).toBe(false); // no citation text sent
+    expect(proposalText(input, proposal)).toBe("Mobile money lowered poverty (Suri & Jack, 2016). Mobile phones lowered search costs (Aker, 2010).");
+    expect(applyRewrite(editor, input, proposal)).toBeNull();
     const nodes = (editor.getJSON() as J).content?.[0]?.content ?? [];
     expect(nodes.map((n) => n.type)).toEqual(["text", "citation", "text", "citation", "text"]);
     expect(nodes[0]?.text).toBe("Mobile money lowered poverty ");
@@ -190,19 +198,16 @@ describe("rewrite helpers", () => {
     expect(nodes[3]?.attrs?.citationIds).toEqual(["c2"]);
   });
 
-  it("refuses a proposal that moves, drops, repeats or invents a citation", () => {
+  it("refuses to apply when a citation in the passage was changed meanwhile", () => {
     const editor = makeEditor(twoClaims);
     const input = buildRewriteInput(editor, 1, endOf(editor));
     if (typeof input === "string") throw new Error(input);
-    for (const bad of [
-      "Phones cut search costs [[C2]] and mobile money reduced poverty [[C1]].",
-      "Mobile money and phones helped households [[C1]].",
-      "Mobile money reduced poverty [[C1]][[C1]]. Phones cut costs [[C2]].",
-      "Mobile money reduced poverty [[C1]]. Phones cut costs [[C2]] [[C3]].",
-    ]) {
-      expect(rewriteContent(input, bad)).toHaveProperty("error");
-    }
-    expect(applyRewrite(editor, input, "Phones cut search costs [[C2]] and mobile money reduced poverty [[C1]].")).toMatch(/moved, dropped or repeated/);
+    let citationPos = -1;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "citation" && citationPos < 0) citationPos = pos;
+    });
+    editor.view.dispatch(editor.state.tr.setNodeMarkup(citationPos, undefined, { citationIds: ["c9"], label: "(Suri & Jack, 2016)" }));
+    expect(applyRewrite(editor, input, { texts: ["X", null, "Y", null], model: "m" })).toMatch(/changed/);
     expect(editor.getText()).toContain("Mobile money reduced poverty");
   });
 
@@ -212,7 +217,7 @@ describe("rewrite helpers", () => {
     const plain = makeEditor({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "a passage to improve " }] }] });
     const input = buildRewriteInput(plain, 1, endOf(plain));
     if (typeof input === "string") throw new Error(input);
-    expect(rewriteContent(input, "A clearer passage.")).toEqual({ content: [{ type: "text", text: "A clearer passage. " }] });
+    expect(rewriteContent(input, { texts: ["A clearer passage."], model: "m" })).toEqual([{ type: "text", text: "A clearer passage. " }]);
   });
 
   it("builds a short search from a selected sentence without citation labels", () => {
@@ -317,14 +322,14 @@ describe("selection menu", () => {
   });
 
   it("replaces the passage only on Replace, keeping its citation", async () => {
-    calls.post = async () => ({ text: "Mobile money lowered poverty [[C1]].", model: "fake-model" });
+    calls.post = async () => ({ text: "Mobile money lowered poverty.", model: "fake-model" });
     const editor = makeEditor(doc);
     wrap(<SelectionMenu editor={editor} aiEnabled onFindSource={vi.fn()} onCheck={vi.fn()} />);
     select(editor);
     await userEvent.click(await screen.findByRole("button", { name: /Rewrite/ }));
     expect(await screen.findByText("Mobile money lowered poverty (Suri & Jack, 2016).")).toBeInTheDocument(); // shown with its label
     expect(editor.getText()).toContain("reduced"); // nothing changes before Replace
-    expect(calls.posts[0]).toEqual({ path: "/ai/rewrite", body: { text: "Mobile money reduced poverty [[C1]].", mode: "academic" } });
+    expect(calls.posts).toEqual([{ path: "/ai/rewrite", body: { text: "Mobile money reduced poverty", mode: "academic" } }]); // the claim only
     await userEvent.click(screen.getByRole("button", { name: /Replace/ }));
     const nodes = (editor.getJSON() as J).content?.[0]?.content ?? [];
     expect(nodes.map((n) => n.type)).toEqual(["text", "citation", "text"]);
@@ -345,7 +350,7 @@ describe("selection menu", () => {
     });
     await act(async () => finish({ text: "Shorter.", model: "fake-model" }));
     await userEvent.click(await screen.findByRole("button", { name: /Replace/ }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("has changed");
+    expect(await screen.findByRole("alert")).toHaveTextContent("changed");
     expect(screen.queryByRole("button", { name: /Replace/ })).toBeNull();
     expect(editor.getText()).toContain("Clearly, Mobile money reduced poverty");
   });

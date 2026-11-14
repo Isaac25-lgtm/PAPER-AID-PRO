@@ -43,6 +43,7 @@ from app.db.models import (
     StorageDeletion,
     User,
 )
+from app.db.session import get_sessionmaker
 from app.policy import POLICY_VERSION
 from app.services import identity
 from app.services.citations.interchange import to_bibtex
@@ -130,7 +131,9 @@ async def _finish_closure(
     if request is not None and request.pending_keys and await db.get(User, user_id) is None:
         # A resumed closure whose data is already deleted: only stored files remain.
         return await _finish_files(db, uid, list(request.pending_keys), papers=0, identity_deleted=identity_deleted)
-    # 3. Data, with durable storage-deletion records in the same transaction.
+    # 3. Data, with durable storage-deletion records in the same transaction. Lock the account row first: an
+    # upload that is attaching a file holds a share lock on it until it commits, so every committed file is seen.
+    await db.execute(select(User.id).where(User.id == user_id).with_for_update())
     private = list((await db.execute(select(Paper).where(Paper.owner_id == user_id))).scalars())
     public: list[Paper] = []
     if purge_public:
@@ -418,7 +421,10 @@ async def _build_export(db: AsyncSession, user: User) -> tempfile.SpooledTempora
                 ],
             )
             try:
-                rendered = await render_citations(db, doc, user, output="text")
+                # A short-lived session per document: a failed statement here cannot abort the archive's own
+                # transaction, and the connection is released before the Word file is built.
+                async with get_sessionmaker()() as render_db:
+                    rendered = await render_citations(render_db, doc, user, output="text")
                 write(f"documents/{doc.id}.docx", await asyncio.to_thread(to_docx, doc.title, doc.content, rendered))
             except Exception:  # one document that cannot be rendered must not lose the whole archive
                 log.warning("account.export_render_failed", extra={"document_id": str(doc.id)}, exc_info=True)

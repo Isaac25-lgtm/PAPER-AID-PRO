@@ -12,6 +12,8 @@ export interface TrackedPosition {
   stop(): void;
 }
 
+export const ANCHOR_LOST = "The place in your draft where this was going was changed or deleted. Put the cursor where it belongs and try again.";
+
 export function trackPosition(editor: Editor, start: number): TrackedPosition {
   let pos = start;
   let deleted = false;
@@ -34,12 +36,14 @@ export function trackPosition(editor: Editor, start: number): TrackedPosition {
 
 /**
  * One gate for every operation that changes the draft from outside the keyboard (citations from panels, rewrites,
- * PDF quotes). Export and restore `pause()` it: operations already in flight finish first (so their edits are saved
- * before the export or replaced knowingly by the restore), and nothing new can change the text until `resume()`.
+ * PDF quotes). An export or restore `acquire()`s it exclusively and `drain()`s it: operations already in flight finish
+ * first (so their edits are saved before the export or replaced knowingly by the restore), and nothing new can change
+ * the text until the holder releases it.
  */
 export class EditGate {
   private state: "open" | "draining" | "locked" = "open";
   private inflight = new Set<Promise<unknown>>();
+  private holder: symbol | null = null;
 
   /** Run an operation that will change the draft. Refused while an export or restore holds the gate. */
   run<T>(operation: () => Promise<T>): Promise<T> {
@@ -55,15 +59,30 @@ export class EditGate {
     return this.state === "open";
   }
 
-  /** Wait for in-flight operations, then hold the gate. */
-  async pause(): Promise<void> {
+  /**
+   * Take the gate exclusively (synchronously): one export or restore at a time. Returns the release function, or
+   * null if another operation already holds it. Only the holder's release reopens the gate.
+   */
+  acquire(): (() => void) | null {
+    if (this.holder) return null;
+    const token = Symbol("gate holder");
+    this.holder = token;
     this.state = "draining";
-    while (this.inflight.size) await Promise.allSettled([...this.inflight]);
-    this.state = "locked";
+    return () => {
+      if (this.holder !== token) return;
+      this.holder = null;
+      this.state = "open";
+    };
   }
 
-  resume(): void {
-    this.state = "open";
+  /** After `acquire`: wait until operations already in flight have finished, then hold the gate locked. */
+  async drain(): Promise<void> {
+    while (this.inflight.size) await Promise.allSettled([...this.inflight]);
+    if (this.holder) this.state = "locked";
+  }
+
+  get isHeld(): boolean {
+    return this.holder !== null;
   }
 }
 

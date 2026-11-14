@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Document, DocumentCitation, DocumentRevision, DocumentSource, Paper, User
@@ -465,10 +466,10 @@ async def restore_revision(
     return doc
 
 
-async def add_source(db: AsyncSession, doc: Document, paper: Paper) -> None:
-    exists = await db.get(DocumentSource, (doc.id, paper.id))
-    if exists is None:
-        db.add(DocumentSource(document_id=doc.id, paper_id=paper.id))
+async def add_source(db: AsyncSession, doc: Document, paper: Paper, *, commit: bool = True) -> None:
+    """Link a paper to a document. Idempotent and safe under concurrency (INSERT ... ON CONFLICT DO NOTHING)."""
+    await db.execute(pg_insert(DocumentSource).values(document_id=doc.id, paper_id=paper.id).on_conflict_do_nothing())
+    if commit:
         await db.commit()
 
 

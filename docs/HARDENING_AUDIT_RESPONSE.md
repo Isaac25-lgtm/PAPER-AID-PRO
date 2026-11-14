@@ -1,0 +1,32 @@
+# Response to the hardening audit
+
+Response to [PAPERAID_V2_HARDENING_AUDIT.md](PAPERAID_V2_HARDENING_AUDIT.md) (`main` through `2248a45`). All 13
+findings are fixed with tests: backend `backend/tests/test_hardening_audit.py`; frontend
+`frontend/src/test/reaudit.test.tsx`, `writing.test.tsx` and `components.test.tsx`. No schema change. Full suites:
+255 backend, 99 frontend.
+
+| # | Severity | Finding | Fix | Tests |
+|---|---|---|---|---|
+| 1 | High | Editing a draft-derived search sent the original text | A palette opened from draft text never searches externally on its own. Only the exact value submitted with "Search all sources" is sent (a `submitted` value, independent of the live debounce), and any later edit needs another submit. Typed searches are unchanged. | Redaction: clear and type, wait, then nothing is sent. Submit sends only the edited value. A further edit sends nothing more, and the original wording never appears. |
+| 2 | High | Mid-session re-consent could discard unsaved work | Once a person's pages have been shown, a consent requirement opens as an **overlay**. The page underneath stays mounted (`inert`, so it can't be used), so the editor's pending save queue survives and its retry saves after acceptance. A transient profile-reload failure keeps the loaded profile instead of tearing down the page; with no profile yet, the guard offers "Try again". | Real `RequireAuth`: an edited draft survives a consent change mid-session and is inert behind the overlay; retry screen. |
+| 3 | High | Closure could miss a PDF committed by an in-flight upload | The upload holds a share lock on the account row (`SELECT … FOR SHARE`) and re-checks `is_active` in the transaction that attaches the file. Closure locks the row `FOR UPDATE` before collecting files, so a closure sees every committed upload, and a later upload sees the account closed and abandons its object (queued for deletion). | Deterministic PostgreSQL interleaving: closure runs while the upload is writing its object. The upload is refused (403), no paper exists, the object is queued and the closure completes. |
+| 4 | Medium | Export and restore could hold the gate at once | `EditGate.acquire()` is synchronous and exclusive (one holder). Only the holder's release reopens the gate, so a stale release is ignored. The Export menu and Restore buttons are disabled while it is held. A second operation gets a clear message. | Double acquisition refused; stale release ignored; drain-then-lock. |
+| 5 | Medium | Delayed citation could land beside unrelated text | The insertion point is bookmarked synchronously when the target is chosen (palette open, sources-panel click, PDF click). Every path checks the "anchor deleted" flag before and after the request and refuses with a clear message. Trackers are always released. | Palette: target paragraph replaced while the request is pending, so nothing is inserted and an alert appears. |
+| 6 | Medium | Rewrite allowed a citation to change claims | The passage is split at its citations and each piece of text is rewritten **on its own**. Its citations stay attached after it, and the model never sees citation text or markers. Applying requires an unchanged signature that includes every citation's identity. Punctuation after a citation stays fixed. There are at most 6 cited claims per request. | Two claims rewritten separately (citation text never sent); citation identity change refused; paragraphs and spacing. |
+| 7 | Medium | Export fallback failed on a database-level render error | Each document's citations render in a **short-lived session**, so a failed statement there cannot abort the archive's transaction, and its connection is released before the Word file is built (also for citation-free documents). | A render with a failing SQL statement: later documents and the manifest are intact. |
+| 8 | Medium | A deadline response was treated as a definite rejection | 5xx responses and the `DEADLINE_EXCEEDED`, `UNAVAILABLE`, `INTERNAL`, `UNKNOWN`, `ABORTED` and `CANCELLED` statuses are **uncertain**: the job stays queued and is recovered by its lease if the task never arrives. 4xx (e.g. `INVALID_ARGUMENT`, `PERMISSION_DENIED`) are rejections. `ALREADY_EXISTS` counts as queued. | 504/503/500 give uncertain; 400/403 give rejected. |
+| 9 | Medium | The check overstated which sources it examined | `scope` now reports `selected`, `in_evidence` and, per source, `in_evidence` (whether it contributed passages or its abstract to what the model saw). The UI says "Evidence came from N of M", and lists unused sources as "not used: no matching passage or abstract within the limit". | A source without text is reported as not in the evidence. |
+| 10 | Medium | Data-rights panel on the wrong guard branch | The not-invited (former tester) screen offers download and delete. The identity-conflict screen explains how to reach the original account or the privacy contact, and no longer shows actions that would fail. | Both guard branches. |
+| 11 | Medium | Concurrent first citations of a source could collide | The document-source link is an `INSERT … ON CONFLICT DO NOTHING`, committed in the same transaction as the citation. | Two simultaneous citations with different pages both succeed, with one link. |
+| 12 | Low | PDF picker hid its search box and older PDFs | `GET /library?has_pdf=true` filters before paging. The panel uses it and always shows the finder. | An older PDF is found behind newer metadata-only entries. |
+| 13 | Low | Walkthrough showed an untraceable page and AI-only actions | The editor scene says "Select words on a PDF page · Cite that page" (no page number). AI actions are labelled "with AI on", and the research answer step "Needs AI for your account". | Scene and narration consistency tests. |
+
+## Notes on the auditor's remaining observations
+
+- **Claim numbering** in answers is still derived from rendered marker groups, which match the order the server
+  assembles statements in. Stable structured claim IDs would be a schema change to stored answers; that is noted for
+  when AI goes live.
+- **Scheduled maintenance** is still waiting on the maintainer's approval (DEPLOYMENT.md). Automatic completion of
+  closures and storage cleanup depends on it.
+- A **signed-in staging run** (draft redaction, failed autosave during re-consent, PDF quoting, closure racing an
+  upload) still waits on the staging project decision.

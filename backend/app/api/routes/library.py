@@ -87,6 +87,7 @@ async def list_library(
     q: Annotated[str | None, Query(max_length=200)] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIBRARY_PAGE)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    has_pdf: bool = False,
 ) -> list[LibraryItemOut]:
     """One page of the library (newest first). `X-Total-Count` gives the total for paging; `q` filters by title."""
     stmt = _visible_items(user)
@@ -100,6 +101,8 @@ async def list_library(
         stmt = stmt.where(tag == any_(LibraryItem.tags))
     if q and q.strip():
         stmt = stmt.where(Paper.title.ilike(f"%{q.strip()}%"))
+    if has_pdf:  # filtered before paging, so an older PDF is never hidden behind newer metadata-only entries
+        stmt = stmt.where(Paper.storage_path.is_not(None))
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     response.headers["X-Total-Count"] = str(total)
     page = (

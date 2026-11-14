@@ -45,6 +45,17 @@ async def _cloud_tasks_token() -> str:
     return str(_credentials.token)
 
 
+# gRPC/HTTP outcomes of a create call that do not prove the task was NOT created.
+AMBIGUOUS_STATUSES = {"DEADLINE_EXCEEDED", "UNAVAILABLE", "INTERNAL", "UNKNOWN", "ABORTED", "CANCELLED"}
+
+
+def _error_status(response: httpx.Response) -> str:
+    try:
+        return str(response.json().get("error", {}).get("status", ""))
+    except ValueError:
+        return ""
+
+
 class DispatchRejected(UpstreamError):
     """The queue definitely did not accept the job."""
 
@@ -98,7 +109,11 @@ async def enqueue_job(job_id: uuid.UUID) -> None:
     if response.status_code == 409:  # ALREADY_EXISTS: an earlier attempt for this job was accepted
         return
     if response.status_code >= 300:
-        log.error("tasks.enqueue_failed", extra={"status": response.status_code, "body": response.text[:500]})
+        status = _error_status(response)
+        log.error("tasks.enqueue_failed", extra={"status": response.status_code, "rpc_status": status})
+        if response.status_code >= 500 or status in AMBIGUOUS_STATUSES:
+            # The create may have taken effect (e.g. DEADLINE_EXCEEDED after acceptance): never fail the job here.
+            raise DispatchUncertain("The processing queue did not confirm the job.")
         raise DispatchRejected("Could not queue the processing job. Please retry.")
 
 
