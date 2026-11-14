@@ -116,13 +116,19 @@ async def test_worker_first_the_closure_waits_for_it_and_deletes_the_attached_pd
         assert not closure[0].done()  # the closure is blocked by the fence until this attachment commits
 
     monkeypatch.setattr(processing, "attach_pdf", attach_then_close)
-    await processing.run_job(job_id)
-    await asyncio.wait_for(closure[0], timeout=30)
+    try:
+        await asyncio.wait_for(processing.run_job(job_id), timeout=60)
+        await asyncio.wait_for(closure[0], timeout=60)
+    finally:  # never leave a closure running into later tests
+        for task in closure:
+            if not task.done():
+                task.cancel()
     assert attached and not await _object_exists(attached[0])  # the closure saw the new file and deleted it
     async with get_sessionmaker()() as db:
         assert await db.get(Paper, paper_id) is None
         assert (await db.execute(select(StorageDeletion).where(StorageDeletion.key == attached[0]))).first() is None
         request = await db.get(ClosedAccount, "alice")
+        assert request.last_error is None, request.last_error  # a swallowed closure error shows here
         assert request.completed_at is not None and request.pending_keys == []
 
 

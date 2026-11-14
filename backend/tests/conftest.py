@@ -264,3 +264,10 @@ async def import_doi(client: AsyncClient, headers: dict[str, str] = ALICE, **ext
     response = await client.post("/api/v1/papers/import", json={"identifier": fx.DOI, **extra}, headers=headers)
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def pytest_runtest_logreport(report):  # type: ignore[no-untyped-def]
+    """Print a failure's traceback the moment it happens (not only in the end-of-run summary), so a CI run that
+    later hangs still shows why a test failed."""
+    if report.failed:
+        print(f"\n--- {report.nodeid} ({report.when}) failed ---\n{report.longreprtext}\n", flush=True)
