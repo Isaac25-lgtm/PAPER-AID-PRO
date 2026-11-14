@@ -1,104 +1,84 @@
-# Audit brief — PaperAid Pro v2 (`main`)
+# Audit brief — hardening review of changes since `6db03b0`
 
-**Audience:** an independent coding agent (e.g. Codex) asked to audit the rebuild. Read `AGENTS.md` first.
-**Deliverable:** a findings report (format at the end). Do **not** modify production resources. Code fixes are
-welcome as a separate branch/PR after the report, one finding per commit, with tests.
+**For:** Codex (independent reviewer). Read `AGENTS.md` first.
+**Scope:** everything on `main` after `6db03b0` (your system re-audit snapshot) up to `eeff256`, 66 files changed.
+**Ask:** is this code hardened? Verify that each fix in `docs/SYSTEM_REAUDIT_RESPONSE.md` closes its failure scenario
+at the real entry points, and look for new defects the changes introduced. Report findings in the same format as
+`docs/PAPERAID_V2_SYSTEM_REAUDIT.md`. Do not touch production (Cloud Run, Cloud SQL, Firebase `paperaid`).
 
-## 1. Background
+## Commits in scope
 
-The original app (preserved at tag `legacy-v1`) was a Next.js 14 monolith: TypeScript server code mixed with UI, Prisma +
-Supabase (Postgres + Storage), NextAuth credentials auth. A review found, among other problems:
-
-- **Fabricated output:** the "AI Research Snapshot" returned a fixed medical-imaging paragraph for every query,
-  with invented page numbers; the "agent" metric verifier contained hard-coded results for one benchmark paper;
-  citation validators had breast-imaging-specific rules; a homepage "evidence sandbox" showed invented papers and
-  statistics.
-- Security/ops: Next.js critical advisory + 13 vulnerable deps, weak sign-up (6-char passwords, no verification,
-  account enumeration), in-memory rate limits, fire-and-forget background work, no security headers.
-
-The maintainer asked for a production-grade rebuild with a **separate Python backend**, everything fake removed,
-and parity with the original's genuine features.
-
-## 2. What v2 is
-
-| Layer | Implementation |
+| Commit | What |
 |---|---|
-| API | FastAPI on Cloud Run (`backend/`), async SQLAlchemy + Alembic, PostgreSQL 16 + pgvector (Cloud SQL) |
-| Auth | Firebase Authentication; backend verifies ID tokens (`app/security/auth.py`, google-auth); roles in DB; verified email required; **invite-only allowlist** via `ALLOWED_EMAILS` |
-| Files | Private Cloud Storage bucket via JSON API (`services/storage.py`); PDFs streamed by the API |
-| Jobs | Cloud Tasks → `POST /internal/tasks/run-job` (OIDC-verified) → `services/processing.py` |
-| Discovery | OpenAlex, Crossref, PubMed, Semantic Scholar, arXiv (`services/scholarly/*`); merge/dedupe; RRF ranking |
-| Full text | SSRF-safe fetch with IP pinning (`security/url_safety.py`), pypdf extraction, section detection, chunking |
-| Search | Hybrid Postgres FTS + pgvector with reciprocal-rank fusion (`services/search.py`) |
-| Citations | citeproc-js runner, 10 official CSL styles; BibTeX/RIS/CSL-JSON; Crossref reference verification |
-| Documents | TipTap JSON sanitised server-side, optimistic concurrency (`base_version` → 409), revisions, DOCX/PDF export |
-| AI | Provider-neutral adapters (Anthropic SDK / OpenAI / Gemini REST); grounded answers validated in `services/ai/grounding.py`; **no provider configured yet** |
-| Frontend | React SPA on Firebase Hosting; calls the Cloud Run URL directly (CORS allow-list) |
+| `9387181` | Floating per-section guide with a ghost-cursor walkthrough; new logo; header no longer wraps |
+| `2ec2cf1` | Fixes for all 15 system re-audit findings; narrated walkthroughs; migration `f2a6c8e4b1d3`; policy version `2026-11-14.2` |
+| `15b2d0b` | README for GitHub with live screenshots; handoff update |
+| `eeff256` | Fonts never inlined as `data:` URLs (CSP `font-src 'self'`); consent screen appears when the policy changes mid-session; smaller guide panel |
 
-Tests: 205 backend (real Postgres + pgvector), 7 live, 44 frontend, plus a CI smoke test inside the production image.
-Audit fixes: docs/AUDIT_RESPONSE.md (first audit) and docs/REAUDIT_RESPONSE.md (follow-up audit). CI: `.github/workflows/ci.yml`.
+Deployed: API `paperaid-api-00015-kaf` (schema `f2a6c8e4b1d3`, via `deploy/release.sh`), frontend on Firebase
+Hosting. AI is **not configured** in production. CI is green: 249 backend tests, 93 frontend tests, plus the container
+smoke test.
 
-## 3. Change log (`git log legacy-v1..main`)
+## What changed, by finding (where to look)
 
-1. Rebuild: separated backend/frontend, removal of fabricated features, new infra, tests, CI.
-2. Lockfile compatibility for npm 10/11.
-3. Handoff docs.
-4. Invite-only tester allowlist (`ALLOWED_EMAILS`, 403 `NOT_INVITED`, UI message).
-5. Google sign-in button; `scripts/delete_user.py` (account deletion with storage cleanup).
-6. (in progress) Guided document templates restored from the original (`frontend/src/lib/templates.ts`).
+| # | Fix | Main code | Tests |
+|---|---|---|---|
+| H1 | Draft text from "Find a source" is searched in the library only. External search requires an explicit button that shows the exact words and their destination. Typed queries still search externally. | `frontend/src/components/editor/CitePalette.tsx` (`origin`, `externalAllowed`), `pages/Editor.tsx` (`onFindSource`) | `src/test/reaudit.test.tsx` (H1) |
+| H2 | Quote and cite captures paper, words, start and end pages and insertion point at the click. The position is mapped through later transactions (`trackPosition`). Quote and citation are inserted in one transaction. Cross-page selections get a range locator. | `components/editor/PdfPanel.tsx`, `lib/editGate.ts` (`trackPosition`), `CitePalette.tsx` (`insertCitationAt` with `before`) | `reaudit.test.tsx` (H2: your exact scenario) |
+| H3 | Identity deletion fails closed outside `ENV=production`: it uses the Auth emulator if `FIREBASE_AUTH_EMULATOR_HOST` is set, otherwise skips the step. | `backend/app/services/identity.py`, README, DEPLOYMENT.md | `tests/test_system_reaudit.py` (identity) |
+| M4 | One rewrite path (selection menu and AI assist). Citations are sent as `[[C1]]`… placeholders, and a proposal applies only if every marker appears once and in order. An unchanged-passage check guards the replacement. Multi-paragraph selections are refused. The backend prompt was updated. | `frontend/src/lib/rewrite.ts`, `SelectionMenu.tsx`, `Editor.tsx` (`AIAssistModal`), `backend/app/services/ai/features.py` (`rewrite_text`) | `writing.test.tsx` (rewrite helpers, selection menu) |
+| M5 | AI cohort: `AI_ACCESS=pilot` (default) with `AI_PILOT_EMAILS` (admins always allowed), via an `AIUser` dependency on every AI route. Separate `AI_AUTOCOMPLETE_ENABLED` (default off), per-user opt-in (off by default) and per-account `/ai/status`. The AI notice describes suggestions. | `app/security/auth.py` (`ai_allowed_for`, `get_ai_user`), `config.py`, routes `discovery/papers/tools/documents.py`, `system.py` (`ai_status`), `Static.tsx` | `test_system_reaudit.py` (M5), `test_system_auth.py` |
+| M6 | A closure completes only when its files are deleted (`closed_accounts.pending_keys`), with back-off retries via `resume_closures`. The browser shows the 202 "finishing automatically" message. | `services/accounts.py` (`_finish_closure`, `_finish_files`, `resume_closures`), migration `f2a6c8e4b1d3`, `components/DataRights.tsx` | `test_system_reaudit.py` (M6), `test_release_audit.py` |
+| M7 | Edit gate: panel citations, PDF quotes, palette, rewrites and AI assist run through `EditGate.run`. Export and restore `pause()` (drain in-flight, then lock) and `resume()`. The toolbar is disabled while frozen. | `lib/editGate.ts`, `Editor.tsx` (`frozen`, `EditGateContext`), `SourcesPanel`, `PdfPanel`, `CitePalette`, `SelectionMenu` | `reaudit.test.tsx` (M7) |
+| M8 | Render generation counter. A render applies only if it is the newest and matches the current style and citation sequence; the reference list is published only with the labels. | `Editor.tsx` (`refreshCitations`), `lib/citationLabels.ts` (`applyRenderIfCurrent`) | `reaudit.test.tsx` (M8), `writing.test.tsx` (labels) |
+| M9 | Check refuses passages over 2,000 characters instead of truncating. The response `scope` lists the sources examined, the total and how many were not checked; the source query filters to visible papers. `gather_evidence` has an overall budget (`limit + EVIDENCE_COVERAGE_EXTRA`). | `routes/documents.py` (`check_passage`), `ai/features.py`, `schemas.py` (`GroundedAnswerOut.scope`), `Editor.tsx` (`CheckPanel`) | `test_system_reaudit.py` (M9) |
+| M10 | Quotes carry `claims` (statement indices). The UI numbers marker groups (`numberClaims`), merges overlapping spans and emphasises the clicked statement's words. Legacy code-point offsets are converted. | `ai/grounding.py` (`citation_payload`, `evidence_excerpt` owners), `components/GroundedAnswerView.tsx` | `test_system_reaudit.py` (M10), `reaudit.test.tsx` (M10) |
+| M11 | Export snapshots file metadata, commits to release the connection, then reads storage. DOCX is built in a thread. A render failure goes into the manifest. Limits: 5 per hour per account, `EXPORT_SLOTS = Semaphore(2)` per instance. | `services/accounts.py` (`export_account`, `_build_export`), `routes/system.py` | `test_system_reaudit.py` (M11) |
+| M12 | Stable Cloud Tasks name `job-<id>`, with 409 ALREADY_EXISTS treated as queued. `DispatchRejected` (connect errors, non-2xx) vs `DispatchUncertain` (other transport errors: the job stays queued for lease recovery). On rejection only an unclaimed queued job is failed, and the paper is restored only if no newer active job exists. | `services/tasks.py`, `services/processing.py` (`queue_ingest`) | `test_system_reaudit.py` (M12) |
+| M13 | Light `slate-500` and both `slate-400` tokens raised; small text moved off `slate-400`. An automated WCAG test computes ratios from `theme.css`. | `frontend/src/theme.css`, many `className`s | `contrast.test.ts` |
+| M14 | The landing demo is labelled, says what "Matched" means, has a keyboard Play/Pause and one pending timer. The trader claim cites Aker (2010, AEJ: Applied), verified matched by the live checker. Section walkthroughs also have pause. | `components/LiveDemo.tsx`, `SectionDemo.tsx` | `liveDemo.test.tsx`, `sectionDemo.test.tsx` |
+| L15 | PDF pages render only near the viewport and are released when far. The download is aborted on paper switch (`api.blob` signal). A searchable picker shows list errors. | `PdfPanel.tsx`, `lib/api.ts` | `reaudit.test.tsx` (H2 harness) |
 
-## 4. Known gaps vs the original (parity work in progress — verify and extend this list)
+Not from the audit:
+- **Guides:** `components/Guidance.tsx` (`SectionGuide` dock with `guide_<section>_collapsed`), `components/SectionDemo.tsx`,
+  `lib/demos.ts` (scenes and one-line narration) and `lib/guides.ts` (structured steps).
+- **Logo:** `LogoMark` in `Layout.tsx`, `public/favicon.svg`.
+- **Fonts:** `vite.config.ts` `assetsInlineLimit` keeps fonts as files.
+- **Mid-session consent:** `lib/api.ts` `setConsentRequiredHandler`, registered in `lib/auth.tsx` to reload the profile on any `CONSENT_REQUIRED`.
 
-Missing or reduced in v2: signed-in **dashboard** + onboarding checklist; **authors** and **categories** pages;
-**admin paper create/edit** forms, CSL catalog admin, backfill tools; editor **inline ghost autocomplete**,
-**selection popover**, **evidence-summary panel** (backend `summarize_evidence` was not re-implemented);
-**onboarding tour / help guides**; homepage **FAQs** and tools showcase; **agent workspace** (to be rebuilt as a
-real grounded evidence-table extractor); **table extraction** (Docling sidecar removed); CitedEvidence
-"scholar tools"/MCP proxy (third-party, needs an API key).
+## Where I am least certain (please probe)
 
-Please do a **parity audit**: walk every page, server action and API route in `legacy-v1` (`src/app/**`, `src/lib/**`)
-and list each genuine capability as present / partial / missing in v2, with the v2 file that implements it.
-Flag anything in `legacy-v1` that is fabricated so it is not restored as-is.
+1. **Gate coverage.** Are there command paths that still change the document while frozen? Candidates:
+   - keyboard shortcuts such as undo/redo or Tab-accepting a ghost suggestion while `setEditable(false)`;
+   - paste;
+   - the citation-label refresh (it uses `LABEL_META` transactions, which are meant to be allowed).
+2. **`trackPosition` semantics.** It maps through `editor.on("transaction")`. Check transactions dispatched before
+   the listener attaches, and whether `deleted` should also refuse when the surrounding paragraph is replaced.
+3. **Rewrite markers.** Validation checks only marker count and order. Can a proposal still attach a citation to a
+   different sentence while keeping the order, for example by merging two claims? Is refusing that the right rule?
+4. **Export after a render failure.** I deliberately do not roll back (a rollback would expire the ORM objects still
+   in use), so a database-level error inside `render_citations` could still abort the whole archive.
+5. **Closure files.** `_finish_files` decides completion from the `storage_deletions` rows for `pending_keys`.
+   Check the interaction with the live-object guard in `process_deletions`, and with concurrent maintenance runs.
+6. **Dispatch classification.** `httpx.ConnectTimeout` is treated as "not sent". Confirm that holds for the
+   Cloud Tasks client path, and that name reuse cannot block a legitimate re-queue of the same job id.
+7. **AI cohort.** `/ai/status` uses `OptionalUser`. Confirm no AI route still uses `VerifiedUser` (grep), and that
+   admins bypassing the pilot list is acceptable.
+8. **Consent reload.** `setConsentRequiredHandler` is a module-level singleton. Look for loops (repeated 403 →
+   reload) and the behaviour when the consent screen itself makes requests.
+9. **Upload deduplication.** It uses `pg_advisory_xact_lock(hashtextextended(...))` across a commit boundary, with
+   a re-check under the lock. Look for any window where two papers can still be created.
+10. **Demos.** Every paper and number in `LiveDemo.tsx`, `lib/demos.ts` and the narration must be real and true to
+    the product (AGENTS rule "never fabricate").
 
-## 5. Deliberate decisions (flag only if you think they are wrong, with reasons)
+## How to verify
 
-- Frontend calls Cloud Run directly instead of a Hosting rewrite (Hosting proxy has a 60 s limit).
-- Cloud Tasks queue in `europe-west1` (not available in `europe-west4`).
-- citeproc-js via a Node subprocess (citeproc-py produced incorrect output for several styles).
-- Embeddings fixed at 1536 dimensions (`vector(1536)`).
-- Rate limits are fixed-window in Postgres.
-- Scanned PDFs are rejected (no OCR).
-
-## 6. Audit scope (priority order)
-
-1. **Security** — authN/authZ on every route (IDOR, role checks, invite-only bypass, private-paper leakage via
-   search/citations/exports/conversations/summaries), token verification, SSRF (`url_safety.py` + every
-   outbound fetch), upload handling, XSS (all `dangerouslySetInnerHTML` + `sanitizeHtml`, TipTap content
-   sanitiser), CSP/CORS, secrets handling, internal task endpoint, rate-limit coverage, dependency CVEs.
-2. **Correctness** — grounding validator (can an answer pass with unsupported claims?), citation clustering and
-   bibliography ordering, document concurrency/revision logic, processing job state machine and retries,
-   federated search merge/dedupe edge cases, BibTeX/RIS parsing, identifier parsing.
-3. **Data integrity** — migrations vs models drift (`alembic check`), cascades, unique/partial indexes,
-   transaction boundaries (commit/rollback in long flows), orphaned storage objects.
-4. **Reliability & performance** — N+1 queries, missing indexes, unbounded queries/payloads, timeouts, async
-   blocking calls, Cloud Run concurrency/pool sizing, cold starts.
-5. **Frontend** — error/loading states, auth edge cases (unverified, not invited, token refresh), editor
-   autosave races, accessibility basics.
-6. **Tests & CI** — meaningful gaps, brittle tests, untested branches.
-7. **Parity** — section 4.
-
-## 7. Report format
-
-For each finding:
-
-```
-[SEVERITY: critical|high|medium|low|info] Title
-Where: path/to/file.py:LINE (and related lines)
-What: one-sentence defect statement
-Impact / failure scenario: concrete inputs → wrong outcome
-Evidence: code excerpt or a failing test you wrote
-Fix: specific change (and test to add)
+```bash
+cd backend && .venv/Scripts/python -m pytest -q            # 249 (embedded Postgres; or TEST_PG_URL)
+cd backend && .venv/Scripts/ruff check app tests alembic scripts
+cd frontend && npx tsc -b --noEmit && npx vitest run       # 93
+cd frontend && npx vite build && grep -c "url(data:font" dist/assets/*.css   # expect 0
 ```
 
-End with: a parity table (capability | legacy-v1 | v2 status | v2 file), a list of verified-OK areas you checked,
-and the exact commands you ran with their results (tests, lint, `npm audit`, `pip-audit` if available).
+Constraints that still apply: the beta stays invite-only, AI stays off in production, frontend and backend stay
+separate (the browser only calls `/api/v1`), and nothing is changed in production resources.
