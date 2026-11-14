@@ -54,6 +54,23 @@ describe("GroundedAnswerView", () => {
   });
 });
 
+describe("AddToLibraryButton", () => {
+  it("follows the paper's library state when the paper is reloaded, not only its first value", async () => {
+    const { AddToLibraryButton } = await import("@/components/papers");
+    const paper = { id: "p1", in_library: false } as Parameters<typeof AddToLibraryButton>[0]["paper"];
+    const view = wrap(<AddToLibraryButton paper={paper} />);
+    expect(screen.getByRole("button", { name: "Save to library" })).toBeInTheDocument();
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <AddToLibraryButton paper={{ ...paper, in_library: true }} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("In your library")).toBeInTheDocument();
+  });
+});
+
 describe("AIError", () => {
   it.each([
     ["AI_NOT_CONFIGURED", /not switched on yet/],

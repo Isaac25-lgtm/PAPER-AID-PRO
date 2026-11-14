@@ -130,12 +130,12 @@ in production). Please sign in once, accept the consent screen, and try each sec
 | 1 | **Look and feel review** | Graphite and Night mode are live; the signed-in screens were checked through tests and the shared tokens, not screenshots | Sign in once in both modes and tell me anything that feels off |
 | 2 | **Legal review** | The Terms, Privacy and AI notices are careful drafts, not legal advice. One data-protection lawyer can cover all your markets | Share the three pages with counsel. Bump `POLICY_VERSION` after changes. |
 | 3 | **Registrations** | Uganda: register with the Personal Data Protection Office. South Africa: register an Information Officer. Kenya: confirm whether education-related services need ODPC registration regardless of size. EU: an Article 27 representative once EU use is regular | With counsel, before inviting testers from each country |
-| 4 | **Uptime alert, staging** | Scheduled maintenance is live (every 15 minutes). Staging is approved as a separate project (`paperaid-staging`), which the owner creates and links to billing; then I set up the rest | Create the project in the Google Cloud console, then hand over |
+| 4 | **Uptime alert; staging contact email** | Scheduled maintenance is live (every 15 minutes). Staging is live at https://paperaid-staging.web.app (Neon free tier, own bucket/queue/service account). Staging has no `CONTACT_EMAIL`, so it skips Unpaywall when finding open-access PDFs | Approve an uptime alert; decide whether staging may send your contact email to Unpaywall/Crossref/OpenAlex |
 | 5 | **Free API keys** | Semantic Scholar (stops HTTP 429), CORE (all-discipline open-access source), NCBI (faster PubMed) | Sign up and send them, or add them as secrets |
 | 6 | **AI keys** | Turns on Q&A, summaries, overviews and writing help | Start with a small tester group and a spending cap |
 | 7 | **Legacy data** | Nothing from the original Supabase app is migrated | Decide whether anything must carry over |
 | 8 | **Landing-page claims** | "Start writing — it's free" leads to an invite-only sign-up, and AI is described before it is on | Fine for a private beta; revisit before public launch |
-| 9 | **Signed-in end-to-end check** | The auditor recommends a full signed-in run in isolated staging before widening the beta | After staging exists, or sign in on production once with a test account |
+| 9 | **Signed-in end-to-end check** | Done on staging on 2026-11-14: every scenario passed and three frontend bugs were found and fixed ([STAGING_TEST_RUN.md](STAGING_TEST_RUN.md)). The fixes are on staging; production gets them with the next frontend deploy | Approve deploying the frontend fixes to production |
 | 10 | **Budget alert** | The $10/month alert will fire monthly once usage grows | Raise to about $20 in Billing → Budgets |
 
 ## 6. Known limitations (deliberate, documented)

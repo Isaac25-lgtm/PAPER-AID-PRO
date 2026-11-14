@@ -122,15 +122,12 @@ export function CiteModal({ paperId, open, onClose }: { paperId: string; open: b
 }
 
 export function AddToLibraryButton({ paper, onDone }: { paper: Paper; onDone?: () => void }) {
-  const [added, setAdded] = useState(paper.in_library);
   const mutation = useMutation({
     mutationFn: () => api.post("/library", { paper_id: paper.id }),
-    onSuccess: () => {
-      setAdded(true);
-      onDone?.();
-    },
+    onSuccess: () => onDone?.(),
   });
-  if (added) return <Badge tone="green"><Check className="h-3 w-3" /> In your library</Badge>;
+  // Follows the server's answer when the paper is reloaded, not only the value it first rendered with.
+  if (paper.in_library || mutation.isSuccess) return <Badge tone="green"><Check className="h-3 w-3" /> In your library</Badge>;
   return (
     <Button size="sm" variant="secondary" loading={mutation.isPending} onClick={() => mutation.mutate()}>
       Save to library

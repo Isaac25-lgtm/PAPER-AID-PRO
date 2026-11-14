@@ -43,7 +43,7 @@ vi.mock("@/components/editor/pdfDocument", () => ({
 }));
 
 const { CitationNode } = await import("@/lib/citationNode");
-const { CitePalette } = await import("@/components/editor/CitePalette");
+const { CitePalette, insertCitationAt } = await import("@/components/editor/CitePalette");
 const { default: PdfPanel } = await import("@/components/editor/PdfPanel");
 const { EditGate } = await import("@/lib/editGate");
 const { applyRenderIfCurrent } = await import("@/lib/citationLabels");
@@ -111,6 +111,23 @@ describe("H1: Find a source keeps draft text private until confirmed", () => {
     expect(calls.gets.some((g) => JSON.stringify(g.query).includes("Confidential"))).toBe(false);
   });
 
+  it("moves the keyboard into the search box only once the palette is visible, so typing never replaces the selected draft", async () => {
+    // Browsers refuse focus on a `visibility: hidden` element (jsdom does not), which left focus in the draft with
+    // the passage selected: found in the signed-in staging run.
+    const original = HTMLElement.prototype.focus;
+    const visibilityAtFocus: string[] = [];
+    const focusSpy = vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+      if (this.getAttribute("aria-label") === "Search sources to cite") visibilityAtFocus.push((this.closest('[role="dialog"]') as HTMLElement).style.visibility);
+      original.call(this, options);
+    });
+    const editor = makeEditor("<p>Unpublished finding about our village cohort</p>");
+    wrap(<CitePalette editor={editor} documentId="d1" request={{ pos: 5, query: "Unpublished finding", origin: "selection" }} onClose={vi.fn()} onInserted={vi.fn()} />);
+    const box = screen.getByLabelText("Search sources to cite");
+    await waitFor(() => expect(document.activeElement).toBe(box));
+    expect(visibilityAtFocus).toEqual([""]); // focused exactly once, after the palette was placed and made visible
+    focusSpy.mockRestore();
+  });
+
   it("searches all sources as the writer types their own words", async () => {
     const editor = makeEditor("<p>Text</p>");
     wrap(<CitePalette editor={editor} documentId="d1" request={{ pos: 1 }} onClose={vi.fn()} onInserted={vi.fn()} />);
@@ -148,7 +165,30 @@ describe("H2: Quote and cite uses what was captured at the click", () => {
     await waitFor(() => expect(editor.getText()).toContain("“words printed on page 1”"));
     expect(calls.posts[0]).toEqual({ path: "/documents/d1/citations", body: { paper_id: "p1", locator: "1" } });
     expect(editor.getText()).not.toContain("page 2");
-    expect(editor.getText().startsWith("New Draft sentence.“words printed on page 1”")).toBe(true); // mapped position
+    expect(editor.getText().startsWith("New Draft sentence. “words printed on page 1”")).toBe(true); // mapped position
+  });
+});
+
+describe("Citation spacing (staging run)", () => {
+  const textOf = (editor: InstanceType<typeof Editor>) => editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n", (node) => (node.type.name === "citation" ? "[C]" : ""));
+
+  it.each([
+    ["after a full stop", "Compare the results.", 21, "Compare the results. “quoted” [C]"],
+    ["after a word", "Prices rose", 12, "Prices rose “quoted” [C]"],
+    ["after a space", "Prices rose ", 13, "Prices rose “quoted” [C]"],
+    ["inside brackets", "Prices rose (", 14, "Prices rose (“quoted” [C]"],
+    ["at the start of a paragraph", "", 1, "“quoted” [C]"],
+  ])("separates a quotation from the text before it %s", (_label, text, pos, expected) => {
+    // JSON content keeps a trailing space exactly (HTML parsing would drop it).
+    const editor = makeEditor({ type: "doc", content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : [] }] });
+    insertCitationAt(editor, pos, "c1", { before: "“quoted” " });
+    expect(textOf(editor).trimEnd()).toBe(expected);
+  });
+
+  it("keeps a citation tight against following punctuation and spaced from the word before", () => {
+    const editor = makeEditor("<p>Prices rose.</p>");
+    insertCitationAt(editor, 12, "c1");
+    expect(textOf(editor)).toBe("Prices rose [C].");
   });
 });
 

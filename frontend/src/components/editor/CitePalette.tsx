@@ -31,12 +31,18 @@ function byline(authors: string[], year: number | null): string {
   return `${first}${authors.length > 1 ? " et al." : ""} · ${year ?? "n.d."}`;
 }
 
-/** Insert a citation node at `pos`, with a space after it unless punctuation or a space already follows. */
+/**
+ * Insert a citation node (optionally preceded by a quotation) at `pos`: a space before it when it directly follows a
+ * word or punctuation, and a space after it unless punctuation or a space already follows.
+ */
 export function insertCitationAt(editor: Editor, pos: number, citationId: string, options: { before?: string } = {}): void {
   const at = Math.max(0, Math.min(pos, editor.state.doc.content.size));
   const next = editor.state.doc.textBetween(at, Math.min(at + 1, editor.state.doc.content.size), "", "");
+  const previous = at > 0 ? editor.state.doc.textBetween(at - 1, at, "", "") : "";
   const content: Array<Record<string, unknown>> = [];
-  if (options.before) content.push({ type: "text", text: options.before });
+  const lead = previous && !/[\s([{“‘"'/-]/.test(previous) ? " " : "";
+  const before = `${lead}${options.before ?? ""}`;
+  if (before) content.push({ type: "text", text: before });
   content.push({ type: "citation", attrs: { citationIds: [citationId] } });
   if (!/^[\s.,;:!?)\]]/.test(next)) content.push({ type: "text", text: " " });
   // One transaction: a quotation and its citation can never be separated or interleaved with another edit.
@@ -101,10 +107,6 @@ export function CitePalette({
   }, [library.data, everywhere.data]);
 
   useEffect(() => setActive(0), [debounced]);
-  useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
 
   const gate = useEditGate();
   // Bookmark the insertion point now, when the target is chosen, and follow every later edit.
@@ -176,6 +178,15 @@ export function CitePalette({
     const below = window.innerHeight - rect.bottom;
     setStyle(below >= 360 || below >= rect.top ? { left, top: rect.bottom + 8, width: WIDTH } : { left, bottom: window.innerHeight - rect.top + 8, width: WIDTH });
   }, [editor, request.pos]);
+  // Move the keyboard into the search box once the palette is placed and visible (a hidden element cannot take
+  // focus). Otherwise focus stays in the draft with the passage still selected, and typing would replace it.
+  const focused = useRef(false);
+  useEffect(() => {
+    if (focused.current || style.visibility === "hidden") return;
+    focused.current = true;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [style]);
 
   const optionId = (i: number) => `cite-option-${i}`;
   const libraryCount = options.filter((o) => o.kind === "library").length;

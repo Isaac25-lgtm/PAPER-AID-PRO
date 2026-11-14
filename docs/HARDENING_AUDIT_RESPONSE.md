@@ -26,7 +26,8 @@ findings are fixed with tests: backend `backend/tests/test_hardening_audit.py`; 
 - **Claim numbering** in answers is still derived from rendered marker groups, which match the order the server
   assembles statements in. Stable structured claim IDs would be a schema change to stored answers; that is noted for
   when AI goes live.
-- **Scheduled maintenance** is still waiting on the maintainer's approval (DEPLOYMENT.md). Automatic completion of
-  closures and storage cleanup depends on it.
-- A **signed-in staging run** (draft redaction, failed autosave during re-consent, PDF quoting, closure racing an
-  upload) still waits on the staging project decision.
+- **Scheduled maintenance** is live (Cloud Scheduler, every 15 minutes), so closures and storage cleanup complete
+  automatically.
+- The **signed-in staging run** is done: all scenarios passed (draft redaction, failed autosave during
+  re-consent, PDF quoting, export, closure racing an upload). It found three frontend bugs, now fixed: see
+  [STAGING_TEST_RUN.md](STAGING_TEST_RUN.md).

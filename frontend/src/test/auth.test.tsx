@@ -6,7 +6,11 @@ import { Modal } from "@/components/ui";
 
 // ----------------------------------------------------------------------------- Firebase + API test doubles
 type Listener = (user: { uid: string } | null) => Promise<void> | void;
-const firebase = vi.hoisted(() => ({ listener: null as Listener | null, currentUser: null as { uid: string } | null }));
+const firebase = vi.hoisted(() => ({
+  listener: null as Listener | null,
+  currentUser: null as { uid: string; getIdToken?: () => Promise<string> } | null,
+  ready: Promise.resolve() as Promise<void>,
+}));
 vi.mock("@firebase/auth", () => ({
   onIdTokenChanged: (_auth: unknown, cb: Listener) => {
     firebase.listener = cb;
@@ -26,6 +30,7 @@ vi.mock("@/lib/firebase", () => ({
     get currentUser() {
       return firebase.currentUser;
     },
+    authStateReady: () => firebase.ready,
   },
 }));
 const meResponses = vi.hoisted(() => ({ queue: [] as { resolve: (v: unknown) => void; reject: (e: unknown) => void }[] }));
@@ -39,7 +44,24 @@ vi.mock("@/lib/api", async (original) => ({
 }));
 
 const { AuthProvider, useAuth } = await import("@/lib/auth");
-const { ApiError } = await import("@/lib/api");
+const { ApiError, setTokenGetter } = await import("@/lib/api");
+const tokenGetter = vi.mocked(setTokenGetter).mock.calls[0]![0] as () => Promise<string | null>;
+
+describe("request tokens", () => {
+  it("waits for a saved session to be restored before deciding a request is anonymous", async () => {
+    // A paper page opened directly used to be fetched anonymously and showed "Save to library" for a saved paper.
+    let restore: () => void = () => undefined;
+    firebase.ready = new Promise<void>((resolve) => (restore = resolve));
+    firebase.currentUser = null;
+    const token = tokenGetter();
+    firebase.currentUser = { uid: "u1", getIdToken: async () => "restored-token" };
+    restore();
+    await expect(token).resolves.toBe("restored-token");
+    firebase.ready = Promise.resolve();
+    firebase.currentUser = null;
+    await expect(tokenGetter()).resolves.toBeNull();
+  });
+});
 
 function Who() {
   const { user, accountConflict } = useAuth();

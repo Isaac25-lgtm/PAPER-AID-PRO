@@ -37,7 +37,13 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
-setTokenGetter(async () => (auth.currentUser ? auth.currentUser.getIdToken() : null));
+// Wait until Firebase has restored any saved session before deciding whether a request is signed in. Otherwise a
+// public page (catalog, paper page) loaded directly fires its first request anonymously and shows the signed-out
+// view (e.g. "Save to library" for a paper already saved): found in the signed-in staging run.
+setTokenGetter(async () => {
+  await auth.authStateReady?.();
+  return auth.currentUser ? auth.currentUser.getIdToken() : null;
+});
 
 const FRIENDLY: Record<string, string> = {
   "auth/invalid-credential": "Incorrect email or password.",
