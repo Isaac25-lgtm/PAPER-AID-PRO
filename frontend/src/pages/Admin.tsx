@@ -30,6 +30,10 @@ export default function AdminPage() {
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.patch(`/admin/users/${id}`, body),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
   });
+  const maintenance = useMutation({
+    mutationFn: () => api.post<{ storage_objects_deleted: number; rate_buckets_purged: number; jobs_reclaimed: number }>("/admin/maintenance"),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin-stats"] }),
+  });
   const retry = useMutation({
     mutationFn: (id: string) => api.post(`/admin/jobs/${id}/retry`),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ["admin-jobs"] }),
@@ -37,7 +41,23 @@ export default function AdminPage() {
 
   return (
     <Container>
-      <PageHeader title="Administration" subtitle="Platform health, users and processing jobs. All changes are audited." />
+      <PageHeader
+        title="Administration"
+        subtitle="Platform health, users and processing jobs. All changes are audited."
+        actions={
+          <Button variant="secondary" loading={maintenance.isPending} onClick={() => maintenance.mutate()}>
+            Run maintenance
+          </Button>
+        }
+      />
+      {maintenance.data && (
+        <div className="mb-4">
+          <Alert kind="success" title="Maintenance finished">
+            {maintenance.data.storage_objects_deleted} stored files cleaned up, {maintenance.data.rate_buckets_purged} expired rate-limit records removed, {maintenance.data.jobs_reclaimed} stuck jobs released.
+          </Alert>
+        </div>
+      )}
+      {maintenance.error && <div className="mb-4"><Alert kind="error">{errorMessage(maintenance.error)}</Alert></div>}
       {stats.data && (
         <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
           <StatCard label="Users" value={stats.data.users} />
