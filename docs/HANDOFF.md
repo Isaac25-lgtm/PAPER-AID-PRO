@@ -7,7 +7,7 @@ at tag `legacy-v1`.
 |---|---|
 | App | https://paperaid.web.app |
 | API | https://paperaid-api-307658066472.europe-west4.run.app/api/v1/health |
-| Running revision | `paperaid-api-00008-cub`, database schema `c7e2d9a41f05` |
+| Running revision | `paperaid-api-00012-zor`, database schema `e5f3a8c1d927` |
 | Google Cloud / Firebase project | `paperaid` (main Google account) |
 | Start reading | this file → `docs/DEPLOYMENT.md` (operations) → `docs/ARCHITECTURE.md` → `AGENTS.md` (for coding agents) |
 
