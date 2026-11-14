@@ -28,8 +28,6 @@ jobs:
         working-directory: backend/app/services/citations/engine
       - run: ruff check app tests alembic scripts && ruff format --check app tests alembic scripts
       - run: python -m pytest -v --durations=15  # -v names each test as it starts, so a hang is attributable
-      - name: Closure race tests, repeated (temporary flakiness check)
-        run: for i in $(seq 1 15); do python -m pytest -q -p no:cacheprovider tests/test_staging_audit.py tests/test_hardening_audit.py -k "closure or worker or racing" || exit 1; done
 
   # The production image itself: fonts, Node/citeproc, migrations and readiness exactly as deployed.
   container:
