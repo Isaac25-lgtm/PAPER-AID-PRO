@@ -19,6 +19,12 @@ export function setTokenGetter(getter: TokenGetter): void {
   getToken = getter;
 }
 
+let onConsentRequired: () => void = () => undefined;
+/** Called when the API says the current notices must be accepted (e.g. the policy changed while the page was open). */
+export function setConsentRequiredHandler(handler: () => void): void {
+  onConsentRequired = handler;
+}
+
 // Production builds call the Cloud Run API directly (VITE_API_BASE_URL); development uses the Vite proxy.
 const BASE = `${import.meta.env.VITE_API_BASE_URL ?? ""}/api/v1`;
 
@@ -78,6 +84,7 @@ async function request<T>(method: string, path: string, options: RequestOptions 
     } catch {
       /* non-JSON error body */
     }
+    if (code === "CONSENT_REQUIRED") onConsentRequired();
     throw new ApiError(response.status, code, message, details);
   }
   if (options.raw) return (await response.blob()) as T;

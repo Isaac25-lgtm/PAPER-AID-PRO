@@ -90,7 +90,7 @@ export function SectionGuide({ section }: { section: SectionKey; className?: str
   return (
     <section
       aria-label={`How ${guide.title} works`}
-      className="fixed inset-x-3 bottom-3 z-30 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl sm:inset-x-auto sm:right-4 sm:w-[460px]"
+      className="fixed inset-x-3 bottom-3 z-30 max-h-[min(72vh,620px)] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl sm:inset-x-auto sm:right-4 sm:w-[420px]"
     >
       <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3">
         <div className="min-w-0 flex-1">

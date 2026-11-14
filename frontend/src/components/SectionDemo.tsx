@@ -211,7 +211,7 @@ export function DemoStage({
         <span className="ml-2 text-[11px] font-medium text-slate-500">{scene.title}</span>
       </div>
       <div className="flex min-h-[38px] items-center gap-2 border-b border-slate-200 bg-white px-3 py-2">{area("bar")}</div>
-      <div className="grid min-h-[150px] grid-cols-[1fr_150px] gap-3 p-3">
+      <div className="grid min-h-[120px] grid-cols-[1fr_140px] gap-2.5 p-2.5">
         <div className="flex min-w-0 flex-col gap-2">{area("main")}</div>
         <div className="flex min-w-0 flex-col gap-2">{area("side")}</div>
       </div>

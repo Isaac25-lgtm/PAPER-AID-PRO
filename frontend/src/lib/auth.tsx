@@ -13,7 +13,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { api, ApiError, setTokenGetter } from "./api";
+import { api, ApiError, setConsentRequiredHandler, setTokenGetter } from "./api";
 import { auth } from "./firebase";
 import type { User } from "./types";
 
@@ -86,6 +86,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error instanceof ApiError && error.code === "ACCOUNT_CONFLICT") setAccountConflict(true);
     }
   }, []);
+
+  // If the policy changes while the app is open, the next API call says so: reload the profile (which then shows
+  // the consent screen) instead of leaving pages half-loaded with errors. Throttled to one reload at a time.
+  const consentReload = useRef(false);
+  useEffect(() => {
+    setConsentRequiredHandler(() => {
+      if (consentReload.current) return;
+      consentReload.current = true;
+      void loadProfile().finally(() => {
+        consentReload.current = false;
+      });
+    });
+    return () => setConsentRequiredHandler(() => undefined);
+  }, [loadProfile]);
 
   useEffect(
     () =>
