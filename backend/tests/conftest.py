@@ -35,7 +35,8 @@ _storage_dir = tempfile.mkdtemp(prefix="paperaid-test-storage-")
 os.environ.update(
     {
         "ENV": "test",
-        "DATABASE_URL": f"{_base_uri}/{TEST_DB}",
+        # A lock wait longer than 60 s fails the statement (and names the test) instead of hanging the suite.
+        "DATABASE_URL": f"{_base_uri}/{TEST_DB}?options=-c%20lock_timeout%3D60000",
         "STORAGE_BACKEND": "local",
         "LOCAL_STORAGE_DIR": _storage_dir,
         "TASKS_BACKEND": "inline",

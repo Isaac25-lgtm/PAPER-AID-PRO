@@ -43,6 +43,8 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 markers = ["live: hits real external scholarly APIs (opt-in with -m live)"]
 addopts = "-m 'not live'"
+# A test stuck for 3 minutes dumps every thread's stack to the log (CI hang diagnosis).
+faulthandler_timeout = 180
 
 [tool.ruff]
 line-length = 120
