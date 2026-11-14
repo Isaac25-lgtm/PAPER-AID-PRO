@@ -20,19 +20,24 @@ const NAV = [
   { to: "/tools/citations", label: "Citations", icon: Quote, auth: false },
 ];
 
-/** Graphite mark: an ink tile with a signal-orange square. Theme-aware (the tile inverts in Night mode). */
+/**
+ * Graphite mark: a "P" monogram on an ink tile, with a small signal-orange square where a citation marker sits.
+ * Theme-aware: the tile and letter swap in Night mode; the orange marker stays.
+ */
 export function LogoMark({ className }: { className?: string }) {
   return (
-    <span aria-hidden className={clsx("inline-flex items-center justify-center rounded-[7px] bg-slate-950", className ?? "h-6 w-6")}>
-      <span className="h-[38%] w-[38%] rounded-[3px] bg-brand-500" />
-    </span>
+    <svg viewBox="0 0 32 32" aria-hidden className={clsx("shrink-0", className ?? "h-7 w-7")}>
+      <rect width="32" height="32" rx="8" className="fill-slate-950" />
+      <path d="M9.5 7.5h7.25a6.25 6.25 0 0 1 0 12.5H13.5v4.5h-4z M13.5 11v5.5h3.1a2.75 2.75 0 0 0 0-5.5z" fillRule="evenodd" className="fill-white" />
+      <rect x="20" y="20.5" width="4.5" height="4.5" rx="1.2" className="fill-brand-500" />
+    </svg>
   );
 }
 
 export function Logo() {
   const { user } = useAuth();
   return (
-    <Link to={user ? "/dashboard" : "/"} className="flex items-center gap-2.5 text-[17px] font-bold tracking-[-0.02em] text-slate-950">
+    <Link to={user ? "/dashboard" : "/"} className="flex shrink-0 items-center gap-2.5 whitespace-nowrap text-[17px] font-bold tracking-[-0.02em] text-slate-950">
       <LogoMark />
       PaperAid Pro
     </Link>
@@ -47,24 +52,26 @@ export function Layout() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4">
+        <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
           <Logo />
           <nav className="hidden flex-1 items-center gap-1 md:flex" aria-label="Main">
             {links.map(({ to, label, icon: Icon }) => (
               <NavLink
                 key={to}
                 to={to}
+                title={label}
+                aria-label={label}
                 className={({ isActive }) =>
                   clsx("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition", isActive ? "bg-slate-100 text-slate-950" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900")
                 }
               >
                 <Icon className="h-4 w-4" aria-hidden />
-                {label}
+                <span className="hidden xl:inline">{label}</span>
               </NavLink>
             ))}
             {user?.role === "admin" && (
               <NavLink to="/admin" className={({ isActive }) => clsx("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition", isActive ? "bg-slate-100 text-slate-950" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900")}>
-                <Shield className="h-4 w-4" aria-hidden /> Admin
+                <Shield className="h-4 w-4" aria-hidden /> <span className="hidden xl:inline">Admin</span>
               </NavLink>
             )}
           </nav>
@@ -73,9 +80,9 @@ export function Layout() {
             {loading ? null : user ? (
               <>
                 <HelpButton />
-                <Link to="/account" className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-slate-700 hover:bg-slate-100">
-                  <UserRound className="h-4 w-4" aria-hidden />
-                  {user.name || user.email}
+                <Link to="/account" title={user.name || user.email} className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 text-sm text-slate-700 hover:bg-slate-100">
+                  <UserRound className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="hidden max-w-[9rem] truncate whitespace-nowrap 2xl:inline">{user.name || user.email}</span>
                 </Link>
                 <Button variant="ghost" size="sm" onClick={() => void signOut()} aria-label="Sign out">
                   <LogOut className="h-4 w-4" />

@@ -63,21 +63,25 @@ beforeEach(() => {
 });
 
 describe("SectionGuide", () => {
-  it("is a single quiet line by default and remembers being opened, on the account", async () => {
+  it("opens on the first visit with a walkthrough and the steps, collapses with one click and comes back", async () => {
     const { unmount } = wrap(<SectionGuide section="library" />);
-    expect(screen.queryByText(/Create collections/)).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /New here\? How Library works/ }));
-    expect(screen.getByText(/Create collections/)).toBeInTheDocument();
-    expect(apiData.patches.at(-1)).toEqual({ path: "/me/preferences", body: { values: { guide_library_open: true } } });
+    expect(screen.getByRole("region", { name: "How Library works" })).toBeInTheDocument();
+    expect(screen.getByTestId("section-demo")).toBeInTheDocument();
+    expect(screen.getByText(/Bring your old library/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Collapse/ }));
+    expect(screen.queryByRole("region", { name: "How Library works" })).not.toBeInTheDocument();
+    expect(apiData.patches.at(-1)).toEqual({ path: "/me/preferences", body: { values: { guide_library_collapsed: true } } });
     unmount();
-    wrap(<SectionGuide section="library" />);
-    expect(screen.getByText(/Create collections/)).toBeInTheDocument(); // still open on return
+    wrap(<SectionGuide section="library" />); // stays collapsed on return
+    await userEvent.click(screen.getByRole("button", { name: "How Library works" }));
+    expect(screen.getByRole("region", { name: "How Library works" })).toBeInTheDocument();
   });
 
   it("follows the account to another device", () => {
-    authState.user = { ...authState.user!, preferences: { guide_discover_open: true } };
+    authState.user = { ...authState.user!, preferences: { guide_discover_collapsed: true } };
     wrap(<SectionGuide section="discover" />);
-    expect(screen.getByText(/Narrow results with a start year/)).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "How Discover works" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "How Discover works" })).toBeInTheDocument();
   });
 
   it("is not shown to signed-out visitors", () => {

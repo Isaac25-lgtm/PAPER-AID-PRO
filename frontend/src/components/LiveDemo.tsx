@@ -83,7 +83,7 @@ function Caret() {
   return <span className="pa-caret ml-px inline-block h-[18px] w-[2px] translate-y-[3px] bg-brand-500" />;
 }
 
-function Pointer({ x, y, visible, click, instant }: DemoState["pointer"]) {
+export function Pointer({ x, y, visible, click, instant }: DemoState["pointer"]) {
   return (
     <span
       className={clsx("pointer-events-none absolute left-0 top-0 z-20 ease-[cubic-bezier(.4,0,.2,1)]", !instant && "transition-[transform,opacity] duration-700")}

@@ -1,14 +1,16 @@
 import clsx from "clsx";
 import {
   ArrowLeft, ArrowRight, BookOpen, ChevronDown, ChevronUp, CircleHelp, Compass, FileText, FlaskConical, Keyboard,
-  LibraryBig, Quote, ShieldCheck, Sparkles,
+  LibraryBig, Play, Quote, ShieldCheck, Sparkles,
 } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 
 import { useAuth } from "@/lib/auth";
+import { DEMOS } from "@/lib/demos";
 import { EDITOR_SHORTCUTS, GUIDES, SECTION_ORDER, type SectionKey } from "@/lib/guides";
 import { usePreference } from "@/lib/preferences";
+import { DemoStage } from "./SectionDemo";
 import { Button, Modal } from "./ui";
 
 // --------------------------------------------------------------------------------------------- context
@@ -60,51 +62,100 @@ export function GuidanceProvider({ children }: { children: ReactNode }) {
 
 // --------------------------------------------------------------------------------- per-section guide
 /**
- * "How to use this page": a single quiet line ("New here? How Library works") that expands into the steps and
- * tips. Collapsed by default; if someone opens it, that choice is remembered on their account. Signed-in only.
+ * One easy guide per section: a floating panel that shows how the section works with a ghost-cursor
+ * walkthrough and the numbered steps (highlighted in sync with the animation). It is open on a person's first visit;
+ * one click collapses it to a small "How <section> works" button in the corner, one click brings it back. The choice
+ * is remembered per section on the account. Signed-in only.
  */
-export function SectionGuide({ section, className }: { section: SectionKey; className?: string }) {
+export function SectionGuide({ section }: { section: SectionKey; className?: string }) {
   const { user } = useAuth();
   const guide = GUIDES[section];
-  const [expanded, setExpanded] = usePreference<boolean>(`guide_${section}_open`, false);
+  const [collapsed, setCollapsed] = usePreference<boolean>(`guide_${section}_collapsed`, false);
+  const [step, setStep] = useState(0);
+  const [showTips, setShowTips] = useState(false);
   if (!user) return null;
-  const toggle = () => setExpanded(!expanded);
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setCollapsed(false)}
+        aria-expanded={false}
+        className="fixed bottom-4 right-4 z-30 flex items-center gap-2 rounded-full border border-slate-200 bg-white py-2 pl-2 pr-4 text-sm font-medium text-slate-900 shadow-lg transition hover:border-slate-300"
+      >
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white"><Play className="h-3 w-3" aria-hidden /></span>
+        How {guide.title} works
+      </button>
+    );
+  }
   return (
     <section
-      aria-label={`How to use ${guide.title}`}
-      className={clsx("mb-6 rounded-xl border border-slate-200 bg-white", expanded ? "p-4" : "px-4 py-2", className)}
+      aria-label={`How ${guide.title} works`}
+      className="fixed inset-x-3 bottom-3 z-30 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl sm:inset-x-auto sm:right-4 sm:w-[460px]"
     >
-      <button type="button" onClick={toggle} aria-expanded={expanded} className="flex w-full items-center gap-2 text-left">
-        <CircleHelp className="h-4 w-4 shrink-0 text-brand-700" aria-hidden />
-        <span className="flex-1 text-sm font-medium text-slate-900">
-          {expanded ? `How to use ${guide.title}` : `New here? How ${guide.title} works`}
-          {!expanded && <span className="ml-2 hidden font-normal text-slate-600 sm:inline">· {guide.summary}</span>}
-        </span>
-        <span className="text-xs text-brand-700">{expanded ? "Hide" : "Show"}</span>
-        {expanded ? <ChevronUp className="h-4 w-4 text-brand-700" /> : <ChevronDown className="h-4 w-4 text-brand-700" />}
-      </button>
-      {expanded && <GuideBody section={section} />}
+      <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-[10.5px] uppercase tracking-wide text-slate-500">Guide · {guide.title}</p>
+          <h2 className="mt-0.5 text-[15px] font-semibold text-slate-950">How {guide.title} works</h2>
+          <p className="mt-0.5 text-[13px] leading-snug text-slate-600">{guide.summary}</p>
+        </div>
+        <button type="button" onClick={() => setCollapsed(true)} aria-expanded className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100">
+          <ChevronDown className="h-3.5 w-3.5" aria-hidden /> Collapse
+        </button>
+      </div>
+      <div className="space-y-3 p-4">
+        <DemoStage scene={DEMOS[section]} playing onStep={setStep} />
+        <ol className="space-y-1.5">
+          {guide.steps.map((item, index) => (
+            <li
+              key={item.title}
+              className={clsx("flex gap-2.5 rounded-lg px-2 py-1.5 text-[13px] transition-colors", index === step ? "bg-slate-100" : "")}
+              aria-current={index === step ? "step" : undefined}
+            >
+              <span className={clsx("mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold", index === step ? "bg-brand-500 text-white" : "bg-slate-200 text-slate-700")}>{index + 1}</span>
+              <span className="min-w-0">
+                <span className="font-medium text-slate-950">{item.title}.</span> <span className="text-slate-600">{item.detail}</span>
+                {item.action && (
+                  <Link to={item.action.to} className="ml-1 whitespace-nowrap font-medium text-brand-700 hover:underline">{item.action.label} →</Link>
+                )}
+              </span>
+            </li>
+          ))}
+        </ol>
+        {guide.tips.length > 0 && (
+          <div className="border-t border-slate-100 pt-2">
+            <button type="button" onClick={() => setShowTips(!showTips)} aria-expanded={showTips} className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900">
+              {showTips ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />} Good to know
+            </button>
+            {showTips && (
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                {guide.tips.map((tip) => <li key={tip}>{tip}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
 
+/** Static steps and tips (Help centre). */
 function GuideBody({ section }: { section: SectionKey }) {
   const guide = GUIDES[section];
   return (
     <div className="mt-3 grid gap-4 text-sm text-slate-700 md:grid-cols-[1fr_auto]">
       <div>
         <p className="text-slate-600">{guide.summary}</p>
-        <ol className="mt-3 space-y-1.5">
-          {guide.steps.map((step, index) => (
-            <li key={step} className="flex gap-2.5">
+        <ol className="mt-3 space-y-2">
+          {guide.steps.map((item, index) => (
+            <li key={item.title} className="flex gap-2.5">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">{index + 1}</span>
-              <span>{step}</span>
+              <span><span className="font-medium text-slate-900">{item.title}.</span> {item.detail}</span>
             </li>
           ))}
         </ol>
       </div>
       {guide.tips.length > 0 && (
-        <ul className="space-y-1.5 rounded-lg bg-white/80 p-3 text-xs text-slate-600 md:max-w-xs">
+        <ul className="space-y-1.5 rounded-lg bg-slate-50 p-3 text-xs text-slate-600 md:max-w-xs">
           <li className="font-semibold uppercase tracking-wide text-slate-500">Good to know</li>
           {guide.tips.map((tip) => (
             <li key={tip}>{tip}</li>
