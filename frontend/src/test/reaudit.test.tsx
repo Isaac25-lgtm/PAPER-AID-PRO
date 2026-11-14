@@ -6,7 +6,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import type { ReactNode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -190,6 +190,40 @@ describe("Citation spacing (staging run)", () => {
     insertCitationAt(editor, 12, "c1");
     expect(textOf(editor)).toBe("Prices rose [C].");
   });
+
+  // Staging audit: the rule looked only at plain text, so a quote right after a citation node had no separator.
+  const afterCitation = { type: "paragraph", content: [{ type: "text", text: "Prices rose" }, { type: "citation", attrs: { citationIds: ["c0"] } }] };
+
+  it("separates a quotation inserted right after an existing citation", () => {
+    const editor = makeEditor({ type: "doc", content: [afterCitation] });
+    insertCitationAt(editor, editor.state.doc.content.size - 1, "c1", { before: "“quoted” " });
+    expect(textOf(editor).trimEnd()).toBe("Prices rose[C] “quoted” [C]");
+  });
+
+  it("separates adjacent citations", () => {
+    const editor = makeEditor({ type: "doc", content: [afterCitation] });
+    insertCitationAt(editor, editor.state.doc.content.size - 1, "c1");
+    expect(textOf(editor).trimEnd()).toBe("Prices rose[C] [C]");
+  });
+
+  it("adds no space after a line break", () => {
+    const editor = makeEditor({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Line" }, { type: "hardBreak" }] }] });
+    insertCitationAt(editor, editor.state.doc.content.size - 1, "c1", { before: "“quoted” " });
+    expect(textOf(editor).trimEnd()).toBe("Line“quoted” [C]");
+  });
+
+  it.each([
+    ["bold", { type: "bold" }],
+    ["a link", { type: "link", attrs: { href: "https://example.org" } }],
+  ])("a quotation typed inside %s stays plain", (_label, mark) => {
+    const editor = makeEditor({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Strong claim", marks: [mark] }] }] });
+    insertCitationAt(editor, 1 + "Strong".length, "c1", { before: "“quoted” " });
+    const quoted: string[] = [];
+    editor.state.doc.descendants((node) => {
+      if (node.isText && node.text?.includes("quoted")) quoted.push(node.marks.map((m) => m.type.name).join(","));
+    });
+    expect(quoted).toEqual([""]);
+  });
 });
 
 describe("M7: export and restore wait for in-flight edits and block new ones", () => {
@@ -248,6 +282,59 @@ describe("M5: a delayed citation never lands beside unrelated text", () => {
     await act(async () => finish({ id: "cit-1" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/changed or deleted/);
     expect(JSON.stringify(editor.getJSON())).not.toContain("citation");
+  });
+
+  it("closing the palette while a citation is in flight cancels it (staging audit)", async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    calls.post = (path) => (path.endsWith("/citations") ? new Promise((resolve) => (finish = resolve)) : Promise.resolve({}));
+    calls.library = [{ paper: { id: "p1", title: "Risk sharing", authors: [], year: 2014, has_pdf: false }, notes: null, tags: [], collection_ids: [], added_at: "" }];
+    const editor = makeEditor({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Claim that needs a source." }] }] });
+    const view = wrap(<CitePalette editor={editor} documentId="d1" request={{ pos: 1 + "Claim".length }} onClose={vi.fn()} onInserted={vi.fn()} />);
+    await userEvent.click(await screen.findByText("Risk sharing"));
+    view.unmount(); // Escape or a click outside closes the palette while the request is still running
+    act(() => {
+      editor.view.dispatch(editor.state.tr.insertText("Earlier words. ", 1)); // the draft keeps changing
+    });
+    await act(async () => finish({ id: "cit-1" }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(JSON.stringify(editor.getJSON())).not.toContain("citation"); // nothing lands at a stale position
+  });
+
+  it("under StrictMode the bookmark in use keeps following edits, and none is left behind after closing", async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    calls.post = (path) => (path.endsWith("/citations") ? new Promise((resolve) => (finish = resolve)) : Promise.resolve({}));
+    calls.library = [{ paper: { id: "p1", title: "Risk sharing", authors: [], year: 2014, has_pdf: false }, notes: null, tags: [], collection_ids: [], added_at: "" }];
+    const editor = makeEditor({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Claim. Other." }] }] });
+    const live = new Set<unknown>();
+    const on = editor.on.bind(editor);
+    const off = editor.off.bind(editor);
+    vi.spyOn(editor, "on").mockImplementation(((event: string, fn: unknown) => {
+      if (event === "transaction") live.add(fn);
+      return on(event as never, fn as never);
+    }) as never);
+    vi.spyOn(editor, "off").mockImplementation(((event: string, fn: unknown) => {
+      if (event === "transaction") live.delete(fn);
+      return off(event as never, fn as never);
+    }) as never);
+    const view = wrap(
+      <StrictMode>
+        <CitePalette editor={editor} documentId="d1" request={{ pos: 1 + "Claim".length }} onClose={vi.fn()} onInserted={vi.fn()} />
+      </StrictMode>,
+    );
+    await userEvent.click(await screen.findByText("Risk sharing"));
+    act(() => {
+      editor.view.dispatch(editor.state.tr.insertText("New ", 1)); // typed before the target while waiting
+    });
+    await act(async () => finish({ id: "cit-1" }));
+    await waitFor(() => expect(JSON.stringify(editor.getJSON())).toContain("citation"));
+    const first = editor.state.doc.firstChild!;
+    let citedAfter = "";
+    first.forEach((node, offset) => {
+      if (node.type.name === "citation") citedAfter = first.textBetween(0, offset);
+    });
+    expect(citedAfter).toBe("New Claim "); // followed the edit (a stopped bookmark would land inside "New Claim")
+    view.unmount();
+    expect(live.size).toBe(0);
   });
 });
 

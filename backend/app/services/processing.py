@@ -35,7 +35,7 @@ from app.db.session import get_sessionmaker
 from app.errors import AppError, Conflict, UpstreamError
 from app.security.url_safety import fetch_pdf
 from app.services import ai
-from app.services.maintenance import confirm_upload, record_upload_intent, schedule_deletion
+from app.services.maintenance import confirm_upload, delete_now_or_later, record_upload_intent, schedule_deletion
 from app.services.open_access import pdf_candidates
 from app.services.pdf import chunk_pages, extract_pages
 from app.services.storage import get_storage, pdf_key, sha256_hex
@@ -59,6 +59,13 @@ class PdfUnavailable(AppError):
 
     status_code = 422
     code = "PDF_UNAVAILABLE"
+
+
+class AccountClosed(AppError):
+    """The owner of a private paper closed their account: nothing may be attached to it any more. Terminal."""
+
+    status_code = 403
+    code = "ACCOUNT_CLOSED"
 
 
 class LeaseLost(Exception):
@@ -94,8 +101,24 @@ async def put_pdf(paper_id: uuid.UUID, data: bytes) -> tuple[str, str]:
     return key, digest
 
 
+async def lock_active_owner(db: AsyncSession, owner_id: uuid.UUID) -> bool:
+    """The account-closure fence. Share-locks the owner's row until the caller commits and says whether the account
+    is still active. Closure locks the same row FOR UPDATE before collecting the account's files, so any file
+    attached under this lock is seen and deleted by the closure; once the closure has started, this returns False.
+
+    Lock order everywhere: the owner's row first, then job rows (closure deletes jobs by cascade after locking the
+    owner), so taking this before `_hold` cannot deadlock with a closure."""
+    active = (
+        await db.execute(select(User.is_active).where(User.id == owner_id).with_for_update(read=True))
+    ).scalar_one_or_none()
+    return bool(active)
+
+
 async def attach_pdf(db: AsyncSession, paper: Paper, key: str, digest: str, size: int) -> None:
-    """Point the paper at a written object (caller commits). A replaced object is queued for deletion."""
+    """Point the paper at a written object (caller commits). A replaced object is queued for deletion.
+    A private paper is attached only under the closure fence (re-taking it in the same transaction is free)."""
+    if paper.owner_id is not None and not await lock_active_owner(db, paper.owner_id):
+        raise AccountClosed("This account has been closed.")
     if paper.storage_path and paper.storage_path != key:
         await schedule_deletion(db, paper.storage_path)
     paper.storage_path, paper.file_sha256, paper.file_size = key, digest, size
@@ -264,14 +287,22 @@ async def _obtain_pdf(db: AsyncSession, paper: Paper, attempt: Attempt) -> bytes
         return await get_storage().get(paper.storage_path)
     errors: list[str] = []
     transient = False
-    for url, origin in await pdf_candidates(paper):
+    async for url, origin in pdf_candidates(paper):
         try:
             data = await fetch_pdf(url)
         except AppError as exc:
+            # A refusal (403, not a PDF, too large) is this location's final answer: try the next one. Only
+            # transient trouble (timeouts, 5xx, 429) makes the whole job worth retrying if nothing else works.
             errors.append(f"{origin}: {exc.message}")
             transient = transient or isinstance(exc, UpstreamError)
             continue
         key, digest = await put_pdf(paper.id, data)
+        # Closure fence BEFORE the job lock (same order as a closure: owner row, then job rows by cascade).
+        if paper.owner_id is not None and not await lock_active_owner(db, paper.owner_id):
+            await schedule_deletion(db, key)
+            await db.commit()
+            await delete_now_or_later(db, key)
+            raise AccountClosed("This account has been closed; the fetched PDF was discarded.")
         await _hold(db, attempt)
         await attach_pdf(db, paper, key, digest, len(data))
         if not paper.oa_pdf_url:
@@ -287,9 +318,13 @@ async def _obtain_pdf(db: AsyncSession, paper: Paper, attempt: Attempt) -> bytes
 
 async def _ingest(db: AsyncSession, paper: Paper, attempt: Attempt) -> None:
     """Extract and stage the results. Does NOT commit: run_job publishes them together with the job outcome."""
+    owner_id = paper.owner_id
     data = await _obtain_pdf(db, paper, attempt)
     pages = await asyncio.to_thread(extract_pages, data)
     chunks = await asyncio.to_thread(chunk_pages, pages)
+    # Same lock order as a closure (owner row, then job, then paper): never job-then-owner, which could deadlock.
+    if owner_id is not None and not await lock_active_owner(db, owner_id):
+        raise AccountClosed("This account has been closed.")
     await _hold(db, attempt)
     await db.execute(delete(PaperChunk).where(PaperChunk.paper_id == attempt.paper_id))
     db.add_all(

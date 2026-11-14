@@ -420,6 +420,9 @@ async def _build_export(db: AsyncSession, user: User) -> tempfile.SpooledTempora
                     for r in revisions
                 ],
             )
+            # End the archive's transaction first, so this export never holds two connections at once (two exports
+            # on a small pool could otherwise each hold one and wait forever for a second). Values stay loaded.
+            await db.commit()
             try:
                 # A short-lived session per document: a failed statement here cannot abort the archive's own
                 # transaction, and the connection is released before the Word file is built.

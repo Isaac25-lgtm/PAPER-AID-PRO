@@ -185,15 +185,13 @@ async def upload_paper(
     await db.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"upload:{user.id}:{digest}"}
     )
-    # Fence against account closure: hold a share lock on the account row until this paper is committed. A
-    # closure locks the row for update before collecting the account's files, so it either sees this paper or this
-    # upload sees the account closed and abandons its object.
-    active = (
-        await db.execute(select(User.is_active).where(User.id == user.id).with_for_update(read=True))
-    ).scalar_one_or_none()
-    if not active:
+    # Fence against account closure (shared with the full-text worker): a share lock on the account row until this
+    # paper is committed. A closure locks the row for update before collecting the account's files, so it either
+    # sees this paper or this upload sees the account closed and abandons its object.
+    if not await processing.lock_active_owner(db, user.id):
         await schedule_deletion(db, key)
         await db.commit()
+        await delete_now_or_later(db, key)
         raise Forbidden("This account has been closed.")
     existing = await _owned_upload(db, user, digest)
     if existing is not None:

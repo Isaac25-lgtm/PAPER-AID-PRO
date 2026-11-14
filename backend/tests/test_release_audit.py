@@ -230,7 +230,7 @@ async def test_a_stale_worker_cannot_get_the_published_pdf_deleted(client, monke
             return data
 
         async def candidates(p):
-            return [("https://example.org/paper.pdf", "test")]
+            yield "https://example.org/paper.pdf", "test"
 
         monkeypatch.setattr(processing, "pdf_candidates", candidates)
         monkeypatch.setattr(processing, "fetch_pdf", same_bytes)
@@ -338,10 +338,19 @@ echo "gcloud $*" >> "$CALLS"
 case "$*" in
   *"storage cp"*) [[ -n "${LOCK_HELD:-}" ]] && exit 1; exit 0 ;;
   *"artifacts docker images describe"*) echo "sha256:0123abcd" ;;
+  *"jobs describe"*)
+    printf '{"spec": {"template": {"spec": {"template": {"spec": '
+    printf '{"serviceAccountName": "%s", "containers": [{"env": [' "$FAKE_JOB_SA"
+    printf '{"name": "DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": "%s", "key": "latest"}}}' "$FAKE_JOB_SECRET"
+    printf ']}]}}}}}}' ;;
   *"services describe"*)
     tag=$(grep -o -- '--tag [^ ]*' "$CALLS" | tail -1 | cut -d' ' -f2)
+    printf '{"spec": {"template": {"spec": {"serviceAccountName": "%s", "containers": [{"env": [' "$FAKE_SA"
+    printf '{"name": "DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": "%s", "key": "latest"}}},' "$FAKE_SECRET"
+    printf '{"name": "GCS_BUCKET", "value": "%s"}, {"name": "TASKS_QUEUE", "value": "%s"},' "$FAKE_BUCKET" "$FAKE_QUEUE"
+    printf '{"name": "FIREBASE_PROJECT_ID", "value": "%s"}]}]}}},' "$FAKE_FIREBASE"
     # Another release created rev-B after ours: latestCreatedRevisionName is NOT our revision.
-    printf '{"status": {"latestCreatedRevisionName": "rev-B", "traffic": ['
+    printf '"status": {"latestCreatedRevisionName": "rev-B", "traffic": ['
     printf '{"revisionName": "rev-live", "percent": 100},'
     printf '{"revisionName": "rev-A", "tag": "%s", "url": "https://%s.example"},' "$tag" "$tag"
     printf '{"revisionName": "rev-B", "tag": "rc-other", "url": "https://other.example"}]}}' ;;
@@ -371,7 +380,27 @@ def _bash() -> str | None:
     return None
 
 
-def run_release(tmp_path, ready_revision="rev-A", lock_held=False):
+PROFILES = {
+    "production": {
+        "FAKE_SA": "paperaid-api@paperaid.iam.gserviceaccount.com",
+        "FAKE_SECRET": "paperaid-database-url",
+        "FAKE_BUCKET": "paperaid-papers-307658066472",
+        "FAKE_QUEUE": "paper-processing",
+        "FAKE_FIREBASE": "paperaid",
+    },
+    "staging": {
+        "FAKE_SA": "paperaid-staging-api@paperaid.iam.gserviceaccount.com",
+        "FAKE_SECRET": "paperaid-staging-database-url",
+        "FAKE_BUCKET": "paperaid-staging-files-307658066472",
+        "FAKE_QUEUE": "paper-processing-staging",
+        "FAKE_FIREBASE": "paperaid-staging",
+    },
+}
+
+
+def run_release(tmp_path, ready_revision="rev-A", lock_held=False, deploy_env="production", live=None, extra_env=None):
+    """Run deploy/release.sh against fake gcloud/curl/git. `live` describes what the cloud really has (defaults to
+    the profile of `deploy_env`); `extra_env` adds or overrides variables (e.g. SERVICE)."""
     bash = _bash()
     if bash is None:
         pytest.skip("bash is not available")
@@ -397,6 +426,17 @@ def run_release(tmp_path, ready_revision="rev-A", lock_held=False):
     }
     if lock_held:
         env["LOCK_HELD"] = "1"
+    env.pop("SERVICE", None)
+    env.pop("MIGRATE_JOB", None)
+    env.pop("DEPLOY_ENV", None)
+    if deploy_env is not None:
+        env["DEPLOY_ENV"] = deploy_env
+    cloud = dict(PROFILES.get(deploy_env or "production"))
+    cloud.update(live or {})
+    cloud.setdefault("FAKE_JOB_SA", cloud["FAKE_SA"])
+    cloud.setdefault("FAKE_JOB_SECRET", cloud["FAKE_SECRET"])
+    env.update(cloud)
+    env.update(extra_env or {})
     script = Path(__file__).parents[2] / "deploy" / "release.sh"
     result = subprocess.run([bash, str(script)], env=env, capture_output=True, text=True, timeout=120, check=False)
     return result, calls.read_text(encoding="utf-8")
@@ -423,6 +463,51 @@ def test_releases_of_the_same_service_are_serialized(tmp_path):
     result, calls = run_release(tmp_path, lock_held=True)
     assert result.returncode != 0 and "another release" in result.stderr
     assert "builds submit" not in calls and "update-traffic" not in calls
+
+
+# --- staging audit H1: one explicit environment; the service and migration job can never point at different ones
+MUTATING = ("storage cp", "builds submit", "jobs update", "jobs execute", "run deploy", "update-traffic")
+
+
+def test_a_release_without_an_explicit_environment_is_refused_before_any_cloud_call(tmp_path):
+    result, calls = run_release(tmp_path, deploy_env=None)
+    assert result.returncode != 0 and "DEPLOY_ENV=production or DEPLOY_ENV=staging" in result.stderr
+    assert calls == ""
+
+
+@pytest.mark.parametrize("override", [{"SERVICE": "paperaid-api-staging"}, {"MIGRATE_JOB": "paperaid-migrate-staging"}])
+def test_service_or_migration_job_cannot_be_chosen_separately(tmp_path, override):
+    result, calls = run_release(tmp_path, deploy_env="staging", extra_env=override)
+    assert result.returncode != 0 and "derived from DEPLOY_ENV" in result.stderr
+    assert calls == ""
+
+
+def test_a_staging_release_only_touches_staging_resources(tmp_path):
+    result, calls = run_release(tmp_path, deploy_env="staging")
+    assert result.returncode == 0, result.stdout + result.stderr
+    mutations = [line for line in calls.splitlines() if any(m in line for m in MUTATING)]
+    jobs = [line for line in mutations if " jobs " in line]
+    assert jobs and all("paperaid-migrate-staging" in line for line in jobs)
+    deploys = [line for line in mutations if "run deploy" in line or "update-traffic" in line]
+    assert deploys and all("paperaid-api-staging" in line for line in deploys)
+    assert "release-locks/paperaid-api-staging.lock" in calls
+
+
+@pytest.mark.parametrize(
+    "live, problem",
+    [
+        ({"FAKE_JOB_SECRET": "paperaid-database-url"}, "migration job DATABASE_URL"),  # staging job on the prod DB
+        ({"FAKE_JOB_SA": "paperaid-api@paperaid.iam.gserviceaccount.com"}, "migration job runs as"),
+        ({"FAKE_SECRET": "paperaid-database-url"}, "service DATABASE_URL"),
+        ({"FAKE_BUCKET": "paperaid-papers-307658066472"}, "GCS_BUCKET"),
+        ({"FAKE_QUEUE": "paper-processing"}, "TASKS_QUEUE"),
+        ({"FAKE_FIREBASE": "paperaid"}, "FIREBASE_PROJECT_ID"),
+    ],
+)
+def test_a_staging_release_against_mismatched_live_configuration_changes_nothing(tmp_path, live, problem):
+    result, calls = run_release(tmp_path, deploy_env="staging", live=live)
+    assert result.returncode != 0 and problem in result.stderr
+    assert not [line for line in calls.splitlines() if any(m in line for m in MUTATING)]
 
 
 # ------------------------------------------------------------------------ 9. highlights match each claim

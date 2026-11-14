@@ -61,6 +61,41 @@ describe("request tokens", () => {
     firebase.currentUser = null;
     await expect(tokenGetter()).resolves.toBeNull();
   });
+
+  it("refuses A's token when B is signed in by the time it arrives (staging audit)", async () => {
+    let finish: ((t: string) => void) | null = null;
+    firebase.currentUser = { uid: "A", getIdToken: () => new Promise((resolve) => (finish = resolve)) };
+    const token = tokenGetter();
+    await vi.waitFor(() => expect(finish).not.toBeNull()); // A's token is being fetched
+    firebase.currentUser = { uid: "B", getIdToken: async () => "token-of-B" };
+    finish!("token-of-A");
+    await expect(token).rejects.toMatchObject({ code: "SESSION_CHANGED" });
+    firebase.currentUser = null;
+  });
+
+  it("refuses the token when the person signs out during a token refresh", async () => {
+    let finish: ((t: string) => void) | null = null;
+    firebase.currentUser = { uid: "A", getIdToken: () => new Promise((resolve) => (finish = resolve)) };
+    const token = tokenGetter();
+    await vi.waitFor(() => expect(finish).not.toBeNull()); // A's token is being fetched
+    firebase.currentUser = null;
+    finish!("token-of-A");
+    await expect(token).rejects.toMatchObject({ code: "SESSION_CHANGED" });
+  });
+
+  it("fails (never goes out anonymously) when sign-in restoration stalls", async () => {
+    vi.useFakeTimers();
+    try {
+      firebase.ready = new Promise<void>(() => undefined); // never settles
+      firebase.currentUser = null;
+      const token = tokenGetter().catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(15_001);
+      expect(await token).toMatchObject({ code: "AUTH_TIMEOUT" });
+    } finally {
+      vi.useRealTimers();
+      firebase.ready = Promise.resolve();
+    }
+  });
 });
 
 function Who() {

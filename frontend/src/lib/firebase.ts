@@ -1,5 +1,5 @@
 import { initializeApp } from "@firebase/app";
-import { browserLocalPersistence, getAuth, setPersistence } from "@firebase/auth";
+import { browserLocalPersistence, browserPopupRedirectResolver, initializeAuth } from "@firebase/auth";
 
 const app = initializeApp({
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -8,5 +8,11 @@ const app = initializeApp({
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 });
 
-export const auth = getAuth(app);
-void setPersistence(auth, browserLocalPersistence);
+// The persistence is chosen when Auth is created, not changed afterwards: Firebase registers its cross-tab listener
+// on the persistence it starts with, and `setPersistence()` later does not move it. Calling `getAuth()` (IndexedDB)
+// and then `setPersistence(local)` left every tab deaf to sign-outs and account switches in other tabs; a tab kept
+// acting as the previous account (found in the staging account-switch check). localStorage keeps existing sessions.
+export const auth = initializeAuth(app, {
+  persistence: browserLocalPersistence,
+  popupRedirectResolver: browserPopupRedirectResolver,
+});

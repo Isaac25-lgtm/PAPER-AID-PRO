@@ -19,6 +19,22 @@ export function setTokenGetter(getter: TokenGetter): void {
   getToken = getter;
 }
 
+// Each signed-in identity is a session. When the account changes (sign-out, or another account in another tab),
+// requests started under the old identity are aborted, and anything they return is discarded instead of reaching
+// the page. Errors from them carry code SESSION_CHANGED.
+let session = 0;
+const inFlight = new Set<AbortController>();
+export const SESSION_CHANGED = "SESSION_CHANGED";
+const sessionChanged = () =>
+  new ApiError(0, SESSION_CHANGED, "Your sign-in changed while this was running, so it was stopped. Nothing from the previous account was kept.");
+
+/** Start a new session: call when the signed-in identity changes. Aborts every request of the previous one. */
+export function beginSession(): void {
+  session += 1;
+  for (const controller of inFlight) controller.abort();
+  inFlight.clear();
+}
+
 let onConsentRequired: () => void = () => undefined;
 /** Called when the API says the current notices must be accepted (e.g. the policy changed while the page was open). */
 export function setConsentRequiredHandler(handler: () => void): void {
@@ -58,8 +74,10 @@ export interface Page<T> {
 }
 
 async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
+  const started = session;
   const headers: Record<string, string> = {};
   const token = await getToken();
+  if (started !== session) throw sessionChanged(); // the identity changed while the token was being fetched
   if (token) headers.Authorization = `Bearer ${token}`;
   let body: BodyInit | undefined;
   if (options.form) body = options.form;
@@ -67,13 +85,37 @@ async function request<T>(method: string, path: string, options: RequestOptions 
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(options.body);
   }
+  const controller = new AbortController();
+  const forward = () => controller.abort();
+  if (options.signal?.aborted) controller.abort();
+  options.signal?.addEventListener("abort", forward);
+  inFlight.add(controller);
+  try {
+    return await send<T>(method, path, options, headers, body, controller.signal, started);
+  } finally {
+    inFlight.delete(controller);
+    options.signal?.removeEventListener("abort", forward);
+  }
+}
+
+async function send<T>(
+  method: string,
+  path: string,
+  options: RequestOptions,
+  headers: Record<string, string>,
+  body: BodyInit | undefined,
+  signal: AbortSignal,
+  started: number,
+): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(buildUrl(path, options.query), { method, headers, body, signal: options.signal });
+    response = await fetch(buildUrl(path, options.query), { method, headers, body, signal });
   } catch {
-    if (options.signal?.aborted) throw new ApiError(0, "ABORTED", "Request cancelled.");
+    if (started !== session) throw sessionChanged();
+    if (signal.aborted) throw new ApiError(0, "ABORTED", "Request cancelled.");
     throw new ApiError(0, "NETWORK", "Could not reach PaperAid Pro. Check your connection and try again.");
   }
+  if (started !== session) throw sessionChanged(); // never hand the old account's answer to the new page
   if (!response.ok) {
     let code = "HTTP_ERROR";
     let message = `Request failed (HTTP ${response.status}).`;
@@ -84,17 +126,20 @@ async function request<T>(method: string, path: string, options: RequestOptions 
     } catch {
       /* non-JSON error body */
     }
-    if (code === "CONSENT_REQUIRED") onConsentRequired();
+    if (started !== session) throw sessionChanged();
+    if (code === "CONSENT_REQUIRED") onConsentRequired(); // only for the identity that is still signed in
     throw new ApiError(response.status, code, message, details);
   }
-  if (options.raw) return (await response.blob()) as T;
-  if (options.paged) {
+  let result: T;
+  if (options.raw) result = (await response.blob()) as T;
+  else if (options.paged) {
     const items = (await response.json()) as unknown[];
     const total = Number(response.headers.get("X-Total-Count") ?? items.length);
-    return { items, total: Number.isFinite(total) ? total : items.length } as T;
-  }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+    result = { items, total: Number.isFinite(total) ? total : items.length } as T;
+  } else if (response.status === 204) result = undefined as T;
+  else result = (await response.json()) as T;
+  if (started !== session) throw sessionChanged(); // the body arrived after the identity changed
+  return result;
 }
 
 export const api = {

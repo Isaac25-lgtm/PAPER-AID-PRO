@@ -161,6 +161,6 @@ Staging would add $0–5. Launch-grade infrastructure is estimated at $250–500
 cd backend && .venv/Scripts/python -m pytest -q && .venv/Scripts/ruff check app tests alembic scripts
 cd frontend && npx tsc -b --noEmit && npx vitest run
 # release (after CI is green on the commit)
-PYTHON="$PWD/backend/.venv/Scripts/python.exe" deploy/release.sh
+DEPLOY_ENV=production PYTHON="$PWD/backend/.venv/Scripts/python.exe" deploy/release.sh
 cd frontend && npm run build && cd .. && firebase deploy --only hosting --project paperaid
 ```

@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { useLibrarySearch } from "@/components/papers";
 import { Alert } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
-import { ANCHOR_LOST, trackPosition, useEditGate } from "@/lib/editGate";
+import { ANCHOR_LOST, trackPosition, useEditGate, type TrackedPosition } from "@/lib/editGate";
 import { PROVIDER_LABELS, type Citation, type Paper, type SearchResponse, type Work } from "@/lib/types";
 
 export interface CiteRequest {
@@ -19,7 +19,12 @@ export interface CiteRequest {
    * library only; it is sent to the external scholarly indexes only after they review it and choose to.
    */
   origin?: "selection" | "typed";
+  /** Identifies this request: the palette is re-created (fresh bookmark, query and focus) for each new one. */
+  id?: number;
 }
+
+/** A citation still in flight when the palette was closed: it is not inserted. */
+export const CITE_CANCELLED = "The citation was cancelled because the search was closed.";
 
 type Option = { kind: "library"; paper: Paper } | { kind: "work"; work: Work };
 
@@ -31,20 +36,28 @@ function byline(authors: string[], year: number | null): string {
   return `${first}${authors.length > 1 ? " et al." : ""} · ${year ?? "n.d."}`;
 }
 
+/** Whether something inserted at `at` needs a space to separate it from what comes right before. */
+function needsLeadingSpace(editor: Editor, at: number): boolean {
+  const before = editor.state.doc.resolve(at).nodeBefore;
+  if (!before) return false; // start of a paragraph or cell
+  if (before.isText) return !/[\s([{“‘"'/-]$/.test(before.text ?? "");
+  return before.type.name === "citation"; // after another citation: separate it (a line break needs no space)
+}
+
 /**
  * Insert a citation node (optionally preceded by a quotation) at `pos`: a space before it when it directly follows a
- * word or punctuation, and a space after it unless punctuation or a space already follows.
+ * word, punctuation or another citation, and a space after it unless punctuation or a space already follows.
+ * The inserted words and citation never take on surrounding formatting (bold, italics, links): quotations and
+ * citations are always plain, whatever they are typed into.
  */
 export function insertCitationAt(editor: Editor, pos: number, citationId: string, options: { before?: string } = {}): void {
   const at = Math.max(0, Math.min(pos, editor.state.doc.content.size));
   const next = editor.state.doc.textBetween(at, Math.min(at + 1, editor.state.doc.content.size), "", "");
-  const previous = at > 0 ? editor.state.doc.textBetween(at - 1, at, "", "") : "";
   const content: Array<Record<string, unknown>> = [];
-  const lead = previous && !/[\s([{“‘"'/-]/.test(previous) ? " " : "";
-  const before = `${lead}${options.before ?? ""}`;
-  if (before) content.push({ type: "text", text: before });
+  const before = `${needsLeadingSpace(editor, at) ? " " : ""}${options.before ?? ""}`;
+  if (before) content.push({ type: "text", text: before, marks: [] });
   content.push({ type: "citation", attrs: { citationIds: [citationId] } });
-  if (!/^[\s.,;:!?)\]]/.test(next)) content.push({ type: "text", text: " " });
+  if (!/^[\s.,;:!?)\]]/.test(next)) content.push({ type: "text", text: " ", marks: [] });
   // One transaction: a quotation and its citation can never be separated or interleaved with another edit.
   editor.chain().focus().insertContentAt(at, content).run();
 }
@@ -109,13 +122,27 @@ export function CitePalette({
   useEffect(() => setActive(0), [debounced]);
 
   const gate = useEditGate();
-  // Bookmark the insertion point now, when the target is chosen, and follow every later edit.
-  const [target] = useState(() => trackPosition(editor, request.pos));
-  useEffect(() => () => target.stop(), [target]);
+  // Bookmark the insertion point when the palette opens (a layout effect runs before any further input) and follow
+  // every later edit. Setup and cleanup are symmetrical, so StrictMode's mount/unmount/mount leaves exactly one live
+  // tracker. Closing the palette stops it and cancels any citation still in flight: nothing is inserted later at a
+  // position that is no longer being followed.
+  const targetRef = useRef<TrackedPosition | null>(null);
+  const closedRef = useRef(false);
+  useLayoutEffect(() => {
+    const tracker = trackPosition(editor, request.pos);
+    targetRef.current = tracker;
+    closedRef.current = false;
+    return () => {
+      closedRef.current = true;
+      tracker.stop();
+    };
+  }, [editor, request.pos]);
   const cite = useMutation({
     // Part of the export/restore gate; the insertion point follows any edits made while the request runs.
     mutationFn: (option: Option) =>
       gate.run(async () => {
+        const target = targetRef.current;
+        if (!target || closedRef.current) throw new Error(CITE_CANCELLED);
         if (target.deleted) throw new Error(ANCHOR_LOST);
         {
           let paperId: string;
@@ -127,6 +154,7 @@ export function CitePalette({
             void queryClient.invalidateQueries({ queryKey: ["library"] });
           }
           const citation = await api.post<Citation>(`/documents/${documentId}/citations`, { paper_id: paperId, locator: locator.trim() || null });
+          if (closedRef.current) throw new Error(CITE_CANCELLED); // closed while waiting: insert nothing
           if (target.deleted) throw new Error(ANCHOR_LOST);
           insertCitationAt(editor, target.pos, citation.id);
           return citation;

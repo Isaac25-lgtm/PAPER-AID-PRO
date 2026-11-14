@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 
 from app.config import get_settings
 from app.db.models import Paper
@@ -27,27 +28,37 @@ async def _unpaywall_pdf(doi: str) -> tuple[str | None, str | None]:
     return best.get("url_for_pdf"), best.get("license")
 
 
-async def pdf_candidates(paper: Paper) -> list[tuple[str, str]]:
-    """Ordered (url, origin) candidates. Callers try each until one returns a real PDF."""
-    candidates: list[tuple[str, str]] = []
-    if paper.oa_pdf_url:
-        candidates.append((paper.oa_pdf_url, "recorded"))
-    if paper.arxiv_id:
-        candidates.append((f"https://arxiv.org/pdf/{paper.arxiv_id}", "arxiv"))
-    if paper.pmcid:
-        candidates.append(
-            (f"https://europepmc.org/backend/ptpmcrender.fcgi?accid={paper.pmcid}&blobtype=pdf", "europepmc")
-        )
-    if paper.doi:
-        url, license_ = await _unpaywall_pdf(paper.doi)
-        if url:
-            candidates.append((url, "unpaywall"))
-            paper.oa_license = paper.oa_license or license_
-        try:
-            work = await OpenAlex.lookup("doi", paper.doi)
-        except AppError:
-            work = None
-        if work and work.oa_pdf_url:
-            candidates.append((work.oa_pdf_url, "openalex"))
+async def pdf_candidates(paper: Paper) -> AsyncIterator[tuple[str, str]]:
+    """(url, origin) candidates in order, produced lazily: the locations already known are offered first, and the
+    DOI lookups (Unpaywall, then OpenAlex) run only if none of those gave a PDF. Each URL is offered once."""
     seen: set[str] = set()
-    return [(u, o) for u, o in candidates if not (u in seen or seen.add(u))]
+
+    def fresh(url: str | None) -> bool:
+        if not url or url in seen:
+            return False
+        seen.add(url)
+        return True
+
+    known = [
+        (paper.oa_pdf_url, "recorded"),
+        (f"https://arxiv.org/pdf/{paper.arxiv_id}" if paper.arxiv_id else None, "arxiv"),
+        (
+            f"https://europepmc.org/backend/ptpmcrender.fcgi?accid={paper.pmcid}&blobtype=pdf" if paper.pmcid else None,
+            "europepmc",
+        ),
+    ]
+    for url, origin in known:
+        if fresh(url):
+            yield url, origin  # type: ignore[misc]
+    if not paper.doi:
+        return
+    url, license_ = await _unpaywall_pdf(paper.doi)
+    if fresh(url):
+        paper.oa_license = paper.oa_license or license_
+        yield url, "unpaywall"  # type: ignore[misc]
+    try:
+        work = await OpenAlex.lookup("doi", paper.doi)
+    except AppError:
+        work = None
+    if work and fresh(work.oa_pdf_url):
+        yield work.oa_pdf_url, "openalex"  # type: ignore[misc]

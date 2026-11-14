@@ -20,12 +20,19 @@ high availability, worker split, Redis) are in the recommendations report and HA
 ## Release the API (gated)
 
 ```bash
-PYTHON="$PWD/backend/.venv/Scripts/python.exe" deploy/release.sh
+DEPLOY_ENV=production PYTHON="$PWD/backend/.venv/Scripts/python.exe" deploy/release.sh
+DEPLOY_ENV=staging    PYTHON="$PWD/backend/.venv/Scripts/python.exe" deploy/release.sh
 # optional settings that should ride through the same gate:
-PYTHON=... EXTRA_DEPLOY_FLAGS="--update-env-vars=KEY=value" deploy/release.sh
+DEPLOY_ENV=production PYTHON=... EXTRA_DEPLOY_FLAGS="--update-env-vars=KEY=value" deploy/release.sh
 ```
 
 `deploy/release.sh` (fail-fast, `set -euo pipefail`) refuses to run with uncommitted backend changes, then:
+
+- **one explicit environment:** `DEPLOY_ENV` is required (`production` or `staging`). The service, migration job,
+  database secret, runtime service account, bucket, queue and Firebase project all come from it; `SERVICE` and
+  `MIGRATE_JOB` cannot be set separately. Before any change, it reads the live service and migration job and
+  refuses if either runs as another identity, uses another database secret, or (service) points at another
+  bucket, queue or Firebase project. A staging release can therefore never run the production migration;
 
 0. takes a per-service **release lock** (`gs://paperaid_cloudbuild/release-locks/<service>.lock`, created only if
    absent) so two releases can never interleave; the lock is removed when the script exits;
@@ -101,7 +108,9 @@ test-phase staging uses free tiers and the production project's billing for the 
 Isolation (verified): in `paperaid` the staging service account holds only `roles/logging.logWriter` plus access to
 its own secret, bucket and queue; it has no binding on the production database secret, bucket or queue. Staging
 sign-in tokens are rejected by the production API (401). To release the API to staging, deploy the image digest that
-production runs (or a candidate) to `paperaid-api-staging` and run `paperaid-migrate-staging` first. At launch,
+production runs (or a candidate) with `DEPLOY_ENV=staging deploy/release.sh`, which migrates with
+`paperaid-migrate-staging` and checks every staging binding first. The staging frontend deploy refuses to publish
+if any production origin survives in its generated Content-Security-Policy. At launch,
 replace this with the full separate-project setup below.
 
 **Staging — isolated from production.** Staging must not be able to reach production data, sign-ins or
@@ -131,8 +140,9 @@ linking billing is the maintainer's decision; the steps are:
    | `CONTACT_EMAIL` | the public contact for the scholarly APIs |
    | AI and provider keys | **unset** (AI off) unless a restricted test key is created for staging |
 
-5. Release with `PROJECT=paperaid-staging REPO=<staging registry> SERVICE=paperaid-api MIGRATE_JOB=paperaid-migrate
-   deploy/release.sh`, and deploy the frontend to a staging Hosting site built with the staging Firebase config.
+5. Add a `DEPLOY_ENV` profile for the new project in `deploy/release.sh` (service, job, secret, identity, bucket,
+   queue, Firebase project) and release with it; deploy the frontend to a staging Hosting site built with the
+   staging Firebase config.
 6. Verify isolation before use: the staging service account has **no** role in the `paperaid` project
    (`gcloud projects get-iam-policy paperaid | grep staging` returns nothing), and a staging sign-in token is
    rejected by the production API.

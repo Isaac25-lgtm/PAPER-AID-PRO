@@ -16,7 +16,10 @@ export interface RewriteSegment {
   /** The words to rewrite (trimmed). */
   core: string;
   trail: string;
-  /** Citations that directly follow this text, kept in place. */
+  /**
+   * Inline nodes that directly follow this text and are kept exactly in place: citations, and also line breaks and
+   * any other non-text inline node (never sent to the model, never dropped).
+   */
   citations: JSONNode[];
   /** Whether this piece has words worth rewriting (not just punctuation between citations). */
   rewrite: boolean;
@@ -45,10 +48,12 @@ export const MAX_REWRITE_SEGMENTS = 6;
 
 const WORDS = /\p{L}/u;
 
+function identityOf(node: JSONNode): unknown {
+  return node.type === "citation" ? ["citation", (node.attrs as { citationIds?: string[] } | undefined)?.citationIds ?? []] : [node.type, node.attrs ?? null];
+}
+
 function signatureOf(segments: RewriteSegment[]): string {
-  return JSON.stringify(
-    segments.map((s) => [s.lead, s.core, s.trail, s.citations.map((c) => (c.attrs as { citationIds?: string[] } | undefined)?.citationIds ?? [])]),
-  );
+  return JSON.stringify(segments.map((s) => [s.lead, s.core, s.trail, s.citations.map(identityOf)]));
 }
 
 export function buildRewriteInput(editor: Editor, from: number, to: number): RewriteInput | RewriteProblem {
@@ -65,7 +70,9 @@ export function buildRewriteInput(editor: Editor, from: number, to: number): Rew
       if (current.citations.length) raw.push({ text: piece, citations: [] });
       else current.text += piece;
       if (node.marks.length) hasFormatting = true;
-    } else if (node.type.name === "citation") {
+    } else if (node.isInline && node.isLeaf) {
+      // A citation, line break or other inline node: kept in place after the text before it (staging audit:
+      // line breaks used to be dropped, joining "First line" and "Second line").
       current.citations.push(node.toJSON() as JSONNode);
     }
     return true;
@@ -106,8 +113,10 @@ export function fitToSegment(segment: RewriteSegment, rewritten: string): string
   return text || segment.core;
 }
 
-function labelOf(citation: JSONNode): string {
-  return String((citation.attrs as { label?: string } | undefined)?.label ?? "[citation]");
+function labelOf(node: JSONNode): string {
+  if (node.type === "hardBreak") return "\n";
+  if (node.type !== "citation") return "";
+  return String((node.attrs as { label?: string } | undefined)?.label ?? "[citation]");
 }
 
 /** The proposal as readable text, citations shown as their labels, for the writer to review. */

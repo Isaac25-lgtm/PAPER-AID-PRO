@@ -3,18 +3,39 @@
 # under a unique candidate tag -> readiness gate on that exact revision (it must report its own name) -> promote
 # that exact revision. Any failure stops the release; production traffic is never moved to an unverified revision.
 #
-#   deploy/release.sh                    # release to production (service paperaid-api)
-#   SERVICE=paperaid-api-staging MIGRATE_JOB=paperaid-migrate-staging deploy/release.sh   # staging
+#   DEPLOY_ENV=production deploy/release.sh
+#   DEPLOY_ENV=staging    deploy/release.sh
 #
-# Releases to the same service are serialized by a lock object in Cloud Storage (created only if absent). If a
+# The environment is ONE required choice. The service, migration job, database secret, runtime identity, bucket,
+# queue and Firebase project all come from it, and the live service and migration job are checked against that
+# profile before anything is changed, so a staging release can never run the production migration (or the
+# reverse). SERVICE and MIGRATE_JOB cannot be set separately.
+#
+# Releases to the same environment are serialized by a lock object in Cloud Storage (created only if absent). If a
 # release was killed and left its lock, check nobody is releasing, then remove it:
 #   gcloud storage rm gs://$LOCK_BUCKET/release-locks/$SERVICE.lock
 set -euo pipefail
 
+if [[ -n "${SERVICE:-}" || -n "${MIGRATE_JOB:-}" ]]; then
+  echo "Refusing to release: SERVICE and MIGRATE_JOB are derived from DEPLOY_ENV; unset them." >&2
+  exit 1
+fi
+case "${DEPLOY_ENV:-}" in
+  production)
+    SERVICE=paperaid-api; MIGRATE_JOB=paperaid-migrate
+    RUNTIME_SA=paperaid-api@paperaid.iam.gserviceaccount.com; DB_SECRET=paperaid-database-url
+    BUCKET=paperaid-papers-307658066472; QUEUE=paper-processing; FIREBASE_PROJECT=paperaid ;;
+  staging)
+    SERVICE=paperaid-api-staging; MIGRATE_JOB=paperaid-migrate-staging
+    RUNTIME_SA=paperaid-staging-api@paperaid.iam.gserviceaccount.com; DB_SECRET=paperaid-staging-database-url
+    BUCKET=paperaid-staging-files-307658066472; QUEUE=paper-processing-staging; FIREBASE_PROJECT=paperaid-staging ;;
+  *)
+    echo "Refusing to release: set DEPLOY_ENV=production or DEPLOY_ENV=staging." >&2
+    exit 1 ;;
+esac
+
 PROJECT="${PROJECT:-paperaid}"
 REGION="${REGION:-europe-west4}"
-SERVICE="${SERVICE:-paperaid-api}"
-MIGRATE_JOB="${MIGRATE_JOB:-paperaid-migrate}"
 REPO="${REPO:-europe-west4-docker.pkg.dev/paperaid/cloud-run-source-deploy}"
 LOCK_BUCKET="${LOCK_BUCKET:-${PROJECT}_cloudbuild}"
 GCLOUD="${GCLOUD:-gcloud}"   # overridable for the fake-cloud tests
@@ -42,6 +63,45 @@ print(ScriptDirectory.from_config(config).get_current_head())
 PY
 )"
 EXPECTED_SCHEMA="$(printf '%s' "$EXPECTED_SCHEMA" | tr -d '\r')"   # Windows Python ends lines with CR
+
+echo "check: $SERVICE and $MIGRATE_JOB belong to $DEPLOY_ENV (read-only)"
+SERVICE_JSON="$("$GCLOUD" run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format=json)"
+JOB_JSON="$("$GCLOUD" run jobs describe "$MIGRATE_JOB" --project "$PROJECT" --region "$REGION" --format=json)"
+export SERVICE_JSON JOB_JSON
+"$PYTHON" - "$RUNTIME_SA" "$DB_SECRET" "$BUCKET" "$QUEUE" "$FIREBASE_PROJECT" <<'PY'
+import json, os, sys
+service, job = json.loads(os.environ["SERVICE_JSON"]), json.loads(os.environ["JOB_JSON"])
+runtime_sa, db_secret, bucket, queue, firebase = sys.argv[1:6]
+
+def container_spec(spec):
+    return spec, spec["containers"][0]
+
+def env_of(container):
+    out = {}
+    for e in container.get("env", []):
+        ref = (e.get("valueFrom") or {}).get("secretKeyRef") or {}
+        out[e["name"]] = f"secret:{ref['name']}" if ref else e.get("value")
+    return out
+
+problems = []
+for label, spec in (
+    ("service", service["spec"]["template"]["spec"]),
+    ("migration job", job["spec"]["template"]["spec"]["template"]["spec"]),
+):
+    _, container = container_spec(spec)
+    env = env_of(container)
+    if spec.get("serviceAccountName") != runtime_sa:
+        problems.append(f"{label} runs as {spec.get('serviceAccountName')!r}, expected {runtime_sa!r}")
+    if env.get("DATABASE_URL") != f"secret:{db_secret}":
+        problems.append(f"{label} DATABASE_URL is {env.get('DATABASE_URL')!r}, expected secret {db_secret!r}")
+    if label == "service":
+        for key, expected in (("GCS_BUCKET", bucket), ("TASKS_QUEUE", queue), ("FIREBASE_PROJECT_ID", firebase)):
+            if env.get(key) != expected:
+                problems.append(f"service {key} is {env.get(key)!r}, expected {expected!r}")
+if problems:
+    sys.exit("Refusing to release: the live configuration does not match this environment:\n  " + "\n  ".join(problems))
+print("environment verified")
+PY
 
 echo "0/6 lock $SERVICE"
 LOCKFILE="$(mktemp)"

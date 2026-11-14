@@ -220,6 +220,22 @@ describe("rewrite helpers", () => {
     expect(rewriteContent(input, { texts: ["A clearer passage."], model: "m" })).toEqual([{ type: "text", text: "A clearer passage. " }]);
   });
 
+  it("keeps explicit line breaks in place instead of joining the lines (staging audit)", async () => {
+    calls.post = async (_path, body) => ({ text: `${(body as { text: string }).text} (revised)`, model: "m" });
+    const editor = makeEditor({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "First line" }, { type: "hardBreak" }, { type: "text", text: "Second line" }] }],
+    });
+    const input = buildRewriteInput(editor, 1, endOf(editor));
+    if (typeof input === "string") throw new Error(input);
+    const proposal = await requestRewrite(input, "academic");
+    expect(calls.posts.map((p) => (p.body as { text: string }).text)).toEqual(["First line", "Second line"]); // never merged
+    expect(proposalText(input, proposal)).toBe("First line (revised)\nSecond line (revised)");
+    expect(applyRewrite(editor, input, proposal)).toBeNull();
+    const nodes = (editor.getJSON() as J).content?.[0]?.content ?? [];
+    expect(nodes.map((n) => n.type)).toEqual(["text", "hardBreak", "text"]);
+  });
+
   it("builds a short search from a selected sentence without citation labels", () => {
     expect(queryFromSelection("Households smoothed consumption after shocks (Jack & Suri, 2014), especially in rural areas.")).toBe(
       "Households smoothed consumption after shocks , especially in rural areas.",

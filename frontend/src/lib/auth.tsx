@@ -13,7 +13,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { api, ApiError, setConsentRequiredHandler, setTokenGetter } from "./api";
+import { api, ApiError, beginSession, SESSION_CHANGED, setConsentRequiredHandler, setTokenGetter } from "./api";
 import { auth } from "./firebase";
 import type { User } from "./types";
 
@@ -37,13 +37,38 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
-// Wait until Firebase has restored any saved session before deciding whether a request is signed in. Otherwise a
-// public page (catalog, paper page) loaded directly fires its first request anonymously and shows the signed-out
-// view (e.g. "Save to library" for a paper already saved): found in the signed-in staging run.
-setTokenGetter(async () => {
-  await auth.authStateReady?.();
-  return auth.currentUser ? auth.currentUser.getIdToken() : null;
-});
+/** How long a request waits for sign-in to be restored, or for a fresh token, before failing (never anonymously). */
+export const AUTH_WAIT_MS = 15_000;
+
+function within<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new ApiError(0, "AUTH_TIMEOUT", message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * The token for a request, bound to the identity that was signed in when the request asked for it.
+ * - Waits (bounded) until Firebase has restored a saved session, so a page opened directly is not fetched
+ *   anonymously and shown signed out (found in the staging run). If that never settles, the request fails rather
+ *   than going out anonymously.
+ * - If the account changes or signs out while the token is being fetched, the request is refused instead of
+ *   being sent with the previous account's token (staging audit).
+ */
+export async function currentToken(): Promise<string | null> {
+  if (auth.authStateReady) {
+    await within(auth.authStateReady(), AUTH_WAIT_MS, "Sign-in is taking longer than usual. Reload the page to try again.");
+  }
+  const user = auth.currentUser;
+  if (!user) return null;
+  const token = await within(user.getIdToken(), AUTH_WAIT_MS, "Could not refresh your sign-in. Check your connection and try again.");
+  if (auth.currentUser?.uid !== user.uid) {
+    throw new ApiError(0, SESSION_CHANGED, "Your sign-in changed while this was running, so it was stopped. Nothing from the previous account was kept.");
+  }
+  return token;
+}
+setTokenGetter(currentToken);
 
 const FRIENDLY: Record<string, string> = {
   "auth/invalid-credential": "Incorrect email or password.",
@@ -123,7 +148,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       onIdTokenChanged(auth, async (next) => {
         const uid = next?.uid ?? null;
         if (cachedUid.current !== undefined && cachedUid.current !== uid) {
-          // Signed out or a different account (possibly in another tab): no private data may outlive it.
+          // Signed out or a different account (possibly in another tab): no private data may outlive it, and no
+          // request started for the previous account may complete into this one.
+          beginSession();
           queryClient.clear();
           setUser(null);
         }

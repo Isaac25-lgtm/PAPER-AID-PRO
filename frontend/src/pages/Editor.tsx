@@ -26,6 +26,7 @@ import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
 import { applyRenderIfCurrent } from "@/lib/citationLabels";
 import { CitationNode, LABEL_META } from "@/lib/citationNode";
 import { CiteTrigger } from "@/lib/citeTrigger";
+import { useConsentParking } from "@/lib/consentParking";
 import { ANCHOR_LOST, EditGate, EditGateContext, trackPosition, useEditGate, type TrackedPosition } from "@/lib/editGate";
 import { GhostText } from "@/lib/ghostText";
 import { usePreference } from "@/lib/preferences";
@@ -46,7 +47,7 @@ const PANEL_TITLES: Record<Panel, string> = {
   history: "Version history",
 };
 
-type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error";
+type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error" | "consent";
 
 function Toolbar({
   editor,
@@ -348,13 +349,17 @@ export default function EditorPage() {
   const suggestionsAvailable = Boolean(aiStatus.data?.autocomplete);
   const gate = useRef(new EditGate()).current;
   const renderGeneration = useRef(0);
-  const [citeRequest, setCiteRequest] = useState<CiteRequest | null>(null);
+  const [citeRequest, setCiteRequestState] = useState<CiteRequest | null>(null);
+  // Every request gets its own id, so the palette is re-created (fresh bookmark, query and focus) for each one.
+  const citeSeq = useRef(0);
+  const setCiteRequest = (request: CiteRequest | null) => setCiteRequestState(request && { ...request, id: ++citeSeq.current });
   const [checkSpan, setCheckSpan] = useState<Span | null>(null);
   const openCiteRef = useRef<(pos: number) => void>(() => undefined);
   const [rendered, setRendered] = useState<RenderedCitations | null>(null);
   const versionRef = useRef<number>(1);
   const timer = useRef<number | undefined>(undefined);
   const retryTimer = useRef<number | undefined>(undefined);
+  const parkRef = useRef<(error: unknown) => boolean>(() => false);
   const scheduleRef = useRef<() => void>(() => undefined);
   const sendRef = useRef<(fields: Fields) => Promise<void>>(async () => undefined);
   // One serial queue per editor: saves never overlap, failures keep their edits, conflicts stop autosave.
@@ -369,7 +374,13 @@ export default function EditorPage() {
           setSaveState(hasMore ? "dirty" : "saved");
           if (hasMore) scheduleRef.current(); // edits made while the request was in flight
         },
-        onError: (_error, conflict) => {
+        onError: (error, conflict) => {
+          if (parkRef.current(error)) {
+            // Parked (no retry timer): the edits are kept and saved once the updated terms are accepted.
+            window.clearTimeout(retryTimer.current);
+            setSaveState("consent");
+            return;
+          }
           setSaveState(conflict ? "conflict" : "error");
           if (!conflict) {
             window.clearTimeout(retryTimer.current);
@@ -447,6 +458,9 @@ export default function EditorPage() {
     editor.commands.setContent(docQuery.data.content, { emitUpdate: false });
     void refreshCitations();
   }, [editor, docQuery.data, refreshCitations]);
+
+  // Edits parked by a consent requirement are saved once, as soon as this account's consent is current.
+  parkRef.current = useConsentParking(flush);
 
   // Save on tab close / navigation; warn while anything is unsaved OR still being sent.
   useEffect(() => {
@@ -547,7 +561,7 @@ export default function EditorPage() {
   if (docQuery.isLoading || !editor) return <Spinner label="Opening document" />;
   if (docQuery.error) return <div className="p-8"><Alert kind="error">{errorMessage(docQuery.error)}</Alert></div>;
 
-  const status = { saved: ["Saved", "green"], dirty: ["Unsaved changes", "slate"], saving: ["Saving…", "blue"], conflict: ["Conflict", "red"], error: ["Save failed — retrying on next edit", "red"] } as const;
+  const status = { saved: ["Saved", "green"], dirty: ["Unsaved changes", "slate"], saving: ["Saving…", "blue"], conflict: ["Conflict", "red"], error: ["Save failed — retrying on next edit", "red"], consent: ["Will save once you accept the updated terms", "slate"] } as const;
   return (
     <EditGateContext.Provider value={gate}>
     <div className="min-h-screen bg-slate-100">
@@ -670,7 +684,7 @@ export default function EditorPage() {
         }}
       />
       {citeRequest && (
-        <CitePalette editor={editor} documentId={id} request={citeRequest} onClose={() => setCiteRequest(null)} onInserted={() => void flush()} />
+        <CitePalette key={citeRequest.id} editor={editor} documentId={id} request={citeRequest} onClose={() => setCiteRequest(null)} onInserted={() => void flush()} />
       )}
       {aiOpen && <AIAssistModal editor={editor} documentId={id} open={aiOpen} onClose={() => setAiOpen(false)} />}
     </div>

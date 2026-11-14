@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api, ApiError, setTokenGetter } from "@/lib/api";
+import { api, ApiError, beginSession, SESSION_CHANGED, setConsentRequiredHandler, setTokenGetter } from "@/lib/api";
 import { authorLine, sanitizeHtml } from "@/lib/format";
 
 describe("sanitizeHtml", () => {
@@ -56,5 +56,50 @@ describe("api client", () => {
   it("returns undefined for 204 responses", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
     await expect(api.delete("/library/1")).resolves.toBeUndefined();
+  });
+});
+
+describe("api client sessions (staging audit: identity switch)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setTokenGetter(async () => null);
+    setConsentRequiredHandler(() => undefined);
+  });
+
+  it("does not send a request whose token arrived after the account changed", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    let release: (token: string) => void = () => undefined;
+    setTokenGetter(() => new Promise((resolve) => (release = resolve)));
+    const pending = api.get("/library").catch((e: unknown) => e);
+    await Promise.resolve();
+    beginSession(); // account A signs out / B signs in while A's token is still being fetched
+    release("token-of-A");
+    expect(await pending).toMatchObject({ code: SESSION_CHANGED });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("aborts an in-flight request and never delivers its answer or its consent prompt to the new account", async () => {
+    let reply: (r: Response) => void = () => undefined;
+    let aborted = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
+      init?.signal?.addEventListener("abort", () => (aborted = true));
+      return new Promise((resolve) => (reply = resolve));
+    });
+    const consent = vi.fn();
+    setConsentRequiredHandler(consent);
+    setTokenGetter(async () => "token-of-A");
+    const pending = api.get("/documents").catch((e: unknown) => e);
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    beginSession();
+    reply(new Response(JSON.stringify({ error: { code: "CONSENT_REQUIRED", message: "x" } }), { status: 403 }));
+    expect(await pending).toMatchObject({ code: SESSION_CHANGED });
+    expect(aborted).toBe(true);
+    expect(consent).not.toHaveBeenCalled();
+  });
+
+  it("leaves requests of the current session alone", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ ok: 1 }), { status: 200 }));
+    beginSession();
+    await expect(api.get("/me")).resolves.toEqual({ ok: 1 });
   });
 });

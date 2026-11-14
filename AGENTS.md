@@ -50,8 +50,9 @@ npm ci && npx tsc -b --noEmit && npx vitest run && npx vite build
 - Every change ships with tests; keep backend and frontend suites green, and the CI container job green.
 - **Tests never reach production Google services.** Tests use `FIREBASE_PROJECT_ID=paperaid-test-local` and the
   `identity_admin` fixture stubs Firebase account administration; never call real Identity Toolkit/Cloud APIs.
-- **Release only through `deploy/release.sh`** (locked per service, digest-pinned, gated on `/ready` reporting the
-  exact revision that is then promoted).
+- **Release only through `deploy/release.sh` with an explicit `DEPLOY_ENV=production|staging`** (environment
+  bindings verified before any change, locked per service, digest-pinned, gated on `/ready` reporting the exact
+  revision that is then promoted).
 - **Shared catalog = registry metadata only.** Anything a person types or uploads is private with
   `metadata_source="user"` and shown as "User-supplied details".
 - **Policies:** changing Terms/Privacy/AI notice text materially → bump `POLICY_VERSION` in
@@ -60,4 +61,5 @@ npm ci && npx tsc -b --noEmit && npx vitest run && npx vite build
   sources are queried only for health/life-science subjects.
 - Audit history: `docs/PAPERAID_V2_AUDIT.md` → `docs/AUDIT_RESPONSE.md`; `docs/PAPERAID_V2_REAUDIT.md` →
   `docs/REAUDIT_RESPONSE.md`; `docs/PAPERAID_V2_RELEASE_AUDIT.md` → `docs/RELEASE_AUDIT_RESPONSE.md`; `docs/PAPERAID_V2_SYSTEM_REAUDIT.md` →
-  `docs/SYSTEM_REAUDIT_RESPONSE.md`; `docs/PAPERAID_V2_HARDENING_AUDIT.md` → `docs/HARDENING_AUDIT_RESPONSE.md`.
+  `docs/SYSTEM_REAUDIT_RESPONSE.md`; `docs/PAPERAID_V2_HARDENING_AUDIT.md` → `docs/HARDENING_AUDIT_RESPONSE.md`;
+  `docs/PAPERAID_V2_STAGING_AUDIT.md` → `docs/STAGING_AUDIT_RESPONSE.md`.

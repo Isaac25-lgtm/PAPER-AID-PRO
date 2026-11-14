@@ -17,8 +17,10 @@ from sqlalchemy import select, text
 from app.config import get_settings
 from app.db.models import ClosedAccount, DocumentSource, Paper, StorageDeletion, User
 from app.db.session import get_sessionmaker
+from app.errors import NotFound
 from app.services import accounts, processing, tasks
 from app.services.ai.providers import set_llm
+from app.services.storage import get_storage
 from tests.conftest import ALICE, STUDY_SECTIONS, make_pdf
 from tests.test_ai import FakeLLM, answer, claim, results_evidence_key, upload_study
 
@@ -54,7 +56,13 @@ async def test_an_upload_racing_account_closure_never_leaves_an_orphaned_file(cl
     async with get_sessionmaker()() as db:
         assert (await db.execute(select(Paper).where(Paper.title == "Racing upload"))).first() is None
         queued = {d.key for d in (await db.execute(select(StorageDeletion))).scalars()}
-        assert written[0] in queued  # the racing object is scheduled for deletion, not orphaned
+        # The racing object is deleted at once (staging audit), or at least still queued: never orphaned.
+        try:
+            await get_storage().get(written[0])
+            still_stored = True
+        except NotFound:
+            still_stored = False
+        assert not still_stored or written[0] in queued
         assert (await db.get(ClosedAccount, "alice")).completed_at is not None
 
 

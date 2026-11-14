@@ -50,10 +50,15 @@ AMBIGUOUS_STATUSES = {"DEADLINE_EXCEEDED", "UNAVAILABLE", "INTERNAL", "UNKNOWN",
 
 
 def _error_status(response: httpx.Response) -> str:
+    """The structured status (e.g. "ALREADY_EXISTS") of an error response, or "" for any other body shape:
+    invalid JSON, null, a list, or an `error` that is not an object (proxies and load balancers send such bodies)."""
     try:
-        return str(response.json().get("error", {}).get("status", ""))
+        body = response.json()
     except ValueError:
         return ""
+    error = body.get("error") if isinstance(body, dict) else None
+    status = error.get("status") if isinstance(error, dict) else None
+    return status if isinstance(status, str) else ""
 
 
 class DispatchRejected(UpstreamError):
@@ -106,15 +111,17 @@ async def enqueue_job(job_id: uuid.UUID) -> None:
         raise DispatchRejected("Could not reach the processing queue. Please retry.") from exc
     except httpx.TransportError as exc:  # sent, but the outcome is unknown (e.g. the response timed out)
         raise DispatchUncertain("The processing queue did not confirm the job in time.") from exc
-    if response.status_code == 409:  # ALREADY_EXISTS: an earlier attempt for this job was accepted
+    if response.status_code < 300:
         return
-    if response.status_code >= 300:
-        status = _error_status(response)
-        log.error("tasks.enqueue_failed", extra={"status": response.status_code, "rpc_status": status})
-        if response.status_code >= 500 or status in AMBIGUOUS_STATUSES:
-            # The create may have taken effect (e.g. DEADLINE_EXCEEDED after acceptance): never fail the job here.
-            raise DispatchUncertain("The processing queue did not confirm the job.")
-        raise DispatchRejected("Could not queue the processing job. Please retry.")
+    status = _error_status(response)
+    if response.status_code == 409 and status == "ALREADY_EXISTS":  # an earlier attempt for this job was accepted
+        return
+    log.error("tasks.enqueue_failed", extra={"status": response.status_code, "rpc_status": status})
+    if response.status_code >= 500 or response.status_code == 409 or status in AMBIGUOUS_STATUSES:
+        # The create may have taken effect (DEADLINE_EXCEEDED after acceptance, ABORTED, or a 409 that is not a
+        # recognisable ALREADY_EXISTS): never fail the job here; lease recovery re-queues it if no task exists.
+        raise DispatchUncertain("The processing queue did not confirm the job.")
+    raise DispatchRejected("Could not queue the processing job. Please retry.")
 
 
 _oidc_request = google.auth.transport.requests.Request(session=requests.Session())

@@ -141,7 +141,8 @@ Secrets live in Secret Manager and Cloud Run, never in the repository.
 
 ## Deploying
 
-The backend is released only through `deploy/release.sh`. It takes a per-service lock, builds the image and pins
+The backend is released only through `deploy/release.sh`, with an explicit `DEPLOY_ENV=production` or
+`DEPLOY_ENV=staging`; it checks that environment's live bindings before changing anything. It takes a per-service lock, builds the image and pins
 its digest, runs expand-only migrations, deploys a candidate revision with no traffic, and checks that `/ready`
 reports the expected schema **and that exact revision**. Only then does it move traffic to it. The frontend deploys
 to Firebase Hosting. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full runbook, including isolated staging
