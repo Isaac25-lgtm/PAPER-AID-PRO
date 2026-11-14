@@ -55,6 +55,9 @@ async def run(email: str, purge_public: bool, confirmed: bool, *, delete_identit
             print("Dry run. Re-run with --yes to delete.")
             return 0
         result = await close_account(db, user, purge_public=purge_public, delete_identity=delete_identity)
+    if result.pending:
+        print("The account is closed and locked, but a step failed; maintenance will finish it (see logs).")
+        return 1
     print(
         f"Closed account: Firebase identity {'deleted' if result.identity_deleted else 'already gone/kept'}, "
         f"{result.papers_deleted} papers and {result.files_deleted} stored PDFs removed now."

@@ -23,6 +23,7 @@ import { HelpButton, SectionGuide } from "@/components/Guidance";
 import { StyleOptions, useLibrarySearch, useStyles } from "@/components/papers";
 import { Alert, Badge, Button, Input, Modal, Select, Spinner, useDialogFocus } from "@/components/ui";
 import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
+import { applyCitationLabels } from "@/lib/citationLabels";
 import { CitationNode, LABEL_META } from "@/lib/citationNode";
 import { CiteTrigger } from "@/lib/citeTrigger";
 import { GhostText } from "@/lib/ghostText";
@@ -44,28 +45,6 @@ const PANEL_TITLES: Record<Panel, string> = {
 };
 
 type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error";
-
-function applyCitationLabels(editor: Editor, rendered: RenderedCitations) {
-  const labels = new Map(
-    rendered.clusters.map((c) => [
-      c.citation_ids.join(","),
-      c.text ? (c.missing_ids.length ? `${c.text} [missing source]` : c.text) : "[missing source]",
-    ]),
-  );
-  const tr = editor.state.tr;
-  let changed = false;
-  editor.state.doc.descendants((node, pos) => {
-    if (node.type.name !== "citation") return;
-    const key = (node.attrs.citationIds as string[]).join(",");
-    const html = labels.get(key) ?? "[missing source]";
-    const label = new DOMParser().parseFromString(html, "text/html").body.textContent ?? html;
-    if (node.attrs.label !== label) {
-      tr.setNodeMarkup(pos, undefined, { ...node.attrs, label });
-      changed = true;
-    }
-  });
-  if (changed) editor.view.dispatch(tr.setMeta(LABEL_META, true).setMeta("addToHistory", false));
-}
 
 function Toolbar({
   editor,

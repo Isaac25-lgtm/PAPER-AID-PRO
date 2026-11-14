@@ -53,6 +53,8 @@ class ConsentIn(BaseModel):
     age_18: bool
     product_emails: bool = False
     analytics: bool = False
+    # The version of the notices the browser displayed. Acceptance is recorded only for that exact version.
+    policy_version: str | None = Field(default=None, max_length=20)
 
 
 class PreferencesIn(BaseModel):
@@ -466,6 +468,7 @@ class MaintenanceOut(BaseModel):
     storage_objects_deleted: int
     rate_buckets_purged: int
     jobs_reclaimed: int
+    closures_completed: int = 0
 
 
 class SearchFilters(BaseModel):

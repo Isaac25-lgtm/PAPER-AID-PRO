@@ -264,6 +264,8 @@ export interface AnswerCitation {
   quotes?: QuoteSpan[];
   excerpt_truncated_start?: boolean;
   excerpt_truncated_end?: boolean;
+  /** Unit of the quote positions: UTF-16 code units, the unit of JavaScript string slicing. */
+  offset_unit?: "utf16";
 }
 
 export interface GroundedAnswer {

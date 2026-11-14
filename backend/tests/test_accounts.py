@@ -15,7 +15,7 @@ from app.db.session import get_sessionmaker
 from app.policy import POLICY_VERSION
 from tests.conftest import ALICE, STUDY_SECTIONS, make_pdf
 
-ALL_REQUIRED = {"terms": True, "privacy": True, "ai_processing": True, "age_18": True}
+ALL_REQUIRED = {"terms": True, "privacy": True, "ai_processing": True, "age_18": True, "policy_version": POLICY_VERSION}
 
 
 @pytest.fixture

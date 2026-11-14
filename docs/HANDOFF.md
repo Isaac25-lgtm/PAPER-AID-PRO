@@ -44,6 +44,23 @@ yet").
 
 ## 3. What was done in this phase
 
+- **Writing tools (Jenni-style):** cite while writing (`/cite`, searching the library and every index), a selection
+  menu (find a source; with AI on: rewrite, shorten, check against my sources), the PDF beside the draft (select
+  words to cite the page or quote them) and grey AI suggestions (Tab/Esc). The AI parts stay hidden until an AI key
+  is added.
+- **Design directions:** three options (Scholar's Desk, Graphite, Night Library) on a private design canvas,
+  waiting for your choice before the app is restyled.
+- **Release follow-up audit (Codex):** 12 findings, 3 of them high severity, all fixed with tests
+  (`docs/RELEASE_AUDIT_RESPONSE.md`):
+  - the account ZIP applies the privacy check and is complete
+  - PDF objects are owned per write and are never deleted while in use
+  - releases are locked, digest-pinned and promote only the probed revision
+  - account closure finishes automatically after an outage
+  - consent is bound to the version shown
+  - highlights are exact for every quote
+  - concurrent uploads are deduplicated, with a retry for private uploads
+  - staging is defined in isolation
+  - editor citation labels are applied by occurrence
 - **First audit:** 28 findings fixed (`docs/AUDIT_RESPONSE.md`).
 - **Codex follow-up audit:** 24 findings, 7 of them high severity, all fixed with regression tests
   (`docs/REAUDIT_RESPONSE.md`). Highlights:
@@ -75,9 +92,9 @@ yet").
 
 | Check | Result |
 |---|---|
-| Backend tests (real PostgreSQL + pgvector) | **205 passed** locally and in GitHub CI |
+| Backend tests (real PostgreSQL + pgvector) | **235 passed** locally and in GitHub CI |
 | Live checks against real scholarly APIs | **7 passed** (OpenAlex, Crossref, PubMed, arXiv, DOAJ, Europe PMC, Crossref verification) |
-| Frontend tests + strict type-check + build | **44 passed**, clean |
+| Frontend tests + strict type-check + build | **68 passed**, clean |
 | Production image smoke test (CI container job) | fonts, all 18 styles, migrations, readiness: **passed** |
 | Migration on existing rows | upgrade from the previous schema with seeded legacy-policy rows; repairs verified |
 | Dependency audits | npm: 0 vulnerabilities; pip-audit: no known vulnerabilities |
@@ -90,15 +107,15 @@ in production). Please sign in once, accept the consent screen, and try each sec
 
 | # | Item | Why it matters | How |
 |---|---|---|---|
-| 1 | **Privacy contact address** | The Terms and Privacy pages need a contact; they show "being finalised" until set | Send the address (ideally a dedicated mailbox). It goes in `VITE_PRIVACY_CONTACT_EMAIL`. |
+| 1 | **Design direction** | The premium redesign needs your choice | Open the design canvas and pick A, B, C or a mix |
 | 2 | **Legal review** | The Terms, Privacy and AI notices are careful drafts, not legal advice. One data-protection lawyer can cover all your markets | Share the three pages with counsel. Bump `POLICY_VERSION` after changes. |
 | 3 | **Registrations** | Uganda: register with the Personal Data Protection Office. South Africa: register an Information Officer. Kenya: confirm whether education-related services need ODPC registration regardless of size. EU: an Article 27 representative once EU use is regular | With counsel, before inviting testers from each country |
-| 4 | **Scheduled maintenance, uptime alert, staging** | Commands are prepared. They were not created automatically: they add standing infrastructure, and staging copies the database credentials into a new secret | Approve and I'll run them, or use DEPLOYMENT.md, "Pending infrastructure" |
+| 4 | **Scheduled maintenance, uptime alert, staging** | Commands are prepared. Maintenance now also finishes interrupted account closures, and PDF cleanup is safe to schedule. Staging is defined as a separate project, which needs your approval (it adds a project and billing) | Approve and I'll run them, or use DEPLOYMENT.md, "Pending infrastructure" |
 | 5 | **Free API keys** | Semantic Scholar (stops HTTP 429), CORE (all-discipline open-access source), NCBI (faster PubMed) | Sign up and send them, or add them as secrets |
 | 6 | **AI keys** | Turns on Q&A, summaries, overviews and writing help | Start with a small tester group and a spending cap |
 | 7 | **Legacy data** | Nothing from the original Supabase app is migrated | Decide whether anything must carry over |
 | 8 | **Landing-page claims** | "Start writing — it's free" leads to an invite-only sign-up, and AI is described before it is on | Fine for a private beta; revisit before public launch |
-| 9 | **Design direction** | Premium redesign (restrained palette, strong typography, real product imagery) is planned, not built | I'll present 2–3 directions for you to choose |
+| 9 | **Signed-in end-to-end check** | The auditor recommends a full signed-in run in isolated staging before widening the beta | After staging exists, or sign in on production once with a test account |
 | 10 | **Budget alert** | The $10/month alert will fire monthly once usage grows | Raise to about $20 in Billing → Budgets |
 
 ## 6. Known limitations (deliberate, documented)
@@ -110,8 +127,8 @@ in production). Please sign in once, accept the consent screen, and try each sec
   handles every language).
 - **Footnote-only styles:** Bluebook law review has no reference list by design.
 - **Search without an embedding provider:** retrieval is full-text search, which suits keyword-style questions.
-- **Not built yet** (features Jenni has): inline AI autocomplete, cite-while-writing search inside the editor, PDF
-  beside the draft, AI draft review, sharing and comments, plans and payments. These are the next product phase.
+- **Not built yet** (features Jenni has): AI draft review, sharing and comments, plans and payments. Inline AI
+  suggestions and AI rewrite are built but wait for an AI key and a small pilot.
 
 ## 7. Costs (approximate)
 

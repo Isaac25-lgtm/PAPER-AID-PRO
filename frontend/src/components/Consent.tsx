@@ -3,8 +3,10 @@ import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 
-import { api, errorMessage } from "@/lib/api";
+import { api, ApiError, errorMessage } from "@/lib/api";
+import { POLICY_VERSION } from "@/pages/Static";
 import { useAuth } from "@/lib/auth";
+import { DataRightsPanel } from "./DataRights";
 import { Alert, Button, Card } from "./ui";
 
 const REQUIRED = [
@@ -43,7 +45,9 @@ export function ConsentGate() {
     product_emails: false,
     analytics: false,
   });
-  const accept = useMutation({ mutationFn: () => api.post("/me/consent", choices), onSuccess: () => refresh() });
+  // Acceptance is bound to the version shown on this page; the API refuses it if the notices changed meanwhile.
+  const accept = useMutation({ mutationFn: () => api.post("/me/consent", { ...choices, policy_version: POLICY_VERSION }), onSuccess: () => refresh() });
+  const outdated = accept.error instanceof ApiError && accept.error.code === "POLICY_OUTDATED";
   const ready = REQUIRED.every((item) => choices[item.key]);
   const updated = Boolean(user?.accepted_policy_version);
   const toggle = (key: Key) => setChoices((current) => ({ ...current, [key]: !current[key] }));
@@ -86,12 +90,20 @@ export function ConsentGate() {
               </label>
             ))}
           </fieldset>
-          {accept.error && <Alert kind="error">{errorMessage(accept.error)}</Alert>}
+          {outdated ? (
+            <Alert kind="warning" title="These documents have just been updated">
+              Reload the page to review the current version before agreeing.
+              <div className="mt-2"><Button size="sm" variant="secondary" type="button" onClick={() => window.location.reload()}>Reload</Button></div>
+            </Alert>
+          ) : (
+            accept.error && <Alert kind="error">{errorMessage(accept.error)}</Alert>
+          )}
           <div className="flex items-center justify-between pt-3">
             <Button type="button" variant="ghost" onClick={() => void signOut()}>Sign out</Button>
             <Button type="submit" disabled={!ready} loading={accept.isPending}>Agree and continue</Button>
           </div>
         </form>
+        {user?.email && <DataRightsPanel email={user.email} />}
       </Card>
     </div>
   );

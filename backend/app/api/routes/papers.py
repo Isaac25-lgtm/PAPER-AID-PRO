@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from starlette.background import BackgroundTask
 
 from app.api.deps import DB, AppSettings
@@ -23,8 +23,9 @@ from app.db.models import (
     PaperSummary,
     PaperVisibility,
     ProcessingJob,
+    User,
 )
-from app.errors import AppError, Forbidden, NotFound, PayloadTooLarge, ValidationFailed
+from app.errors import AppError, Conflict, Forbidden, NotFound, PayloadTooLarge, ValidationFailed
 from app.schemas import (
     AskRequest,
     GroundedAnswerOut,
@@ -168,37 +169,67 @@ async def upload_paper(
         if name.lower().endswith(".pdf"):
             name = name[:-4]
         work = ScholarlyWork(title=name[:500] or "Uploaded document", work_type="article")
-    # Re-uploading the same file is idempotent: return the paper it already created.
+    # Re-uploading the same file is idempotent: return the paper it already created (and retry its extraction
+    # if that never succeeded, so a re-upload is a way to recover).
     digest = sha256_hex(data)
-    existing = (
-        await db.execute(select(Paper.id).where(Paper.owner_id == user.id, Paper.file_sha256 == digest).limit(1))
-    ).scalar_one_or_none()
+    existing = await _owned_upload(db, user, digest)
     if existing is not None:
-        await _ensure_library(db, user.id, existing)
-        return PaperOut.build(await get_paper_for_user(db, existing, user), user_id=user.id, in_library=True)
+        return await _reuse_upload(db, user, existing)
     await db.commit()  # no DB connection is held while the object is written
     # The object is written first (after a durable upload intent), then ONE transaction creates the paper with
     # its PDF pointer and library entry and clears the intent. Any failure leaves the intent for cleanup.
     paper_id = uuid.uuid4()
     key, digest = await processing.put_pdf(paper_id, data)
+    # Concurrent uploads of the same file by the same person are serialized here, and the duplicate check is
+    # repeated under the lock: exactly one paper is created; the loser's object is queued for deletion.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"upload:{user.id}:{digest}"}
+    )
+    existing = await _owned_upload(db, user, digest)
+    if existing is not None:
+        await schedule_deletion(db, key)
+        await db.commit()
+        return await _reuse_upload(db, user, existing)
     paper = await create_private_paper(
         db, owner=user, work=work, source=PaperSource.UPLOAD, commit=False, paper_id=paper_id
     )
     await processing.attach_pdf(db, paper, key, digest, len(data))
     db.add(LibraryItem(user_id=user.id, paper_id=paper.id, tags=[]))
     await db.commit()
+    await _start_extraction(db, paper, user)
+    paper = await get_paper_for_user(db, paper_id, user)
+    return PaperOut.build(paper, user_id=user.id, in_library=True)
+
+
+EXTRACTION_NOT_STARTED = "Text extraction could not be started. Use “Retry text extraction” on this page."
+
+
+async def _owned_upload(db: DB, user: User, digest: str) -> uuid.UUID | None:
+    return (
+        await db.execute(select(Paper.id).where(Paper.owner_id == user.id, Paper.file_sha256 == digest).limit(1))
+    ).scalar_one_or_none()
+
+
+async def _start_extraction(db: DB, paper: Paper, user: User) -> None:
+    """Queue text extraction. If it cannot start, the upload still stands: the reason is shown on the paper,
+    which offers a retry (failing the upload would only invite a duplicate re-upload)."""
+    paper_id = paper.id
     try:
         await processing.queue_ingest(db, paper, user)
+    except Conflict:
+        pass  # already queued or running
     except AppError:
-        # The upload itself succeeded; only processing could not start. Report that on the paper (it can be
-        # retried from its page) instead of failing the upload, which would invite a duplicate re-upload.
-        await db.execute(
-            update(Paper)
-            .where(Paper.id == paper_id)
-            .values(status_detail="Text extraction could not be started. Use “Retrieve full text” to retry.")
-        )
+        await db.execute(update(Paper).where(Paper.id == paper_id).values(status_detail=EXTRACTION_NOT_STARTED))
         await db.commit()
+    db.expunge_all()  # queue_ingest may have rolled back: re-read rows fresh instead of using expired objects
+
+
+async def _reuse_upload(db: DB, user: User, paper_id: uuid.UUID) -> PaperOut:
+    await _ensure_library(db, user.id, paper_id)
     paper = await get_paper_for_user(db, paper_id, user)
+    if paper.status == PaperStatus.FAILED or paper.status_detail == EXTRACTION_NOT_STARTED:
+        await _start_extraction(db, paper, user)
+        paper = await get_paper_for_user(db, paper_id, user)
     return PaperOut.build(paper, user_id=user.id, in_library=True)
 
 

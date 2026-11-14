@@ -41,6 +41,7 @@ const { HighlightedExcerpt } = await import("@/components/GroundedAnswerView");
 const { default: DashboardPage } = await import("@/pages/Dashboard");
 const { HomePage } = await import("@/pages/Home");
 const { default: CitationToolsPage } = await import("@/pages/CitationTools");
+const { FullTextPanel } = await import("@/pages/PaperDetail");
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -140,8 +141,16 @@ describe("Consent gate", () => {
     await userEvent.click(submit);
     expect(apiData.posts.at(-1)).toEqual({
       path: "/me/consent",
-      body: { terms: true, privacy: true, ai_processing: true, age_18: true, product_emails: false, analytics: false },
+      body: { terms: true, privacy: true, ai_processing: true, age_18: true, product_emails: false, analytics: false, policy_version: "2026-11-14" },
     });
+  });
+
+  it("lets the person download or delete their data without accepting", async () => {
+    authState.user = { ...authState.user!, accepted_policy_version: "2020-01-01" };
+    wrap(<ConsentGate />);
+    await userEvent.click(screen.getByText("Download or delete your data without continuing"));
+    expect(screen.getByRole("button", { name: "Download my data" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Delete my account…" })).toBeVisible();
   });
 });
 
@@ -162,6 +171,23 @@ describe("Evidence excerpts", () => {
     const mark = document.querySelector("mark");
     expect(mark?.textContent).toBe("malaria incidence was 31 percent lower");
     expect(document.body.textContent?.startsWith("“…")).toBe(true);
+  });
+
+  it("uses the server's UTF-16 offsets, so emoji before a quote do not shift the highlight", () => {
+    // The API sends UTF-16 offsets (offset_unit "utf16"); "😀" is two UTF-16 units but one code point.
+    const excerpt = "Rated 😀😀 highly. Incidence fell by 31 percent.";
+    const start = excerpt.indexOf("Incidence");
+    const end = start + "Incidence fell by 31 percent".length;
+    render(
+      <HighlightedExcerpt
+        citation={{
+          key: "E1", paper_id: "p", title: "t", authors: [], year: 2021, doi: null, kind: "passage", chunk_id: null,
+          section: null, page_start: 1, page_end: 1, excerpt, offset_unit: "utf16",
+          quotes: [{ text: "Incidence fell by 31 percent", start, end }],
+        }}
+      />,
+    );
+    expect(document.querySelector("mark")?.textContent).toBe("Incidence fell by 31 percent");
   });
 });
 
@@ -186,5 +212,19 @@ describe("Landing page", () => {
     expect(screen.getByText(/Only you\./)).toBeInTheDocument();
     const text = document.body.textContent ?? "";
     expect(text).not.toMatch(/\d[\d,.]*\s*(million|k\b|users|researchers|universities)/i);
+  });
+});
+
+describe("Private uploads", () => {
+  it("offer a retry when text extraction could not start", async () => {
+    const paper = {
+      id: "p9", title: "My upload", authors: [], year: null, doi: null, pmid: null, arxiv_id: null, visibility: "private",
+      status: "metadata_only", has_pdf: true, status_detail: "Text extraction could not be started. Use “Retry text extraction” on this page.",
+    };
+    wrap(<FullTextPanel paper={paper as never} />);
+    expect(screen.getByText(/could not be started/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retrieve open-access PDF" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Retry text extraction" }));
+    expect(apiData.posts.at(-1)?.path).toBe("/papers/p9/full-text");
   });
 });

@@ -214,8 +214,20 @@ def _is_verified(user: User) -> bool:
 async def get_optional_user(user: Annotated[User | None, Depends(get_token_user)]) -> User | None:
     """Principal for public endpoints. Only an invited, verified account widens what is visible (its own
     private papers); anyone else is served exactly as an anonymous visitor."""
-    if user is None or not _is_invited(user) or not _is_verified(user):
+    if user is None or not _is_invited(user) or not _is_verified(user) or not _has_current_consent(user):
         return None
+    return user
+
+
+def _has_current_consent(user: User) -> bool:
+    return not get_settings().require_policy_acceptance or user.accepted_policy_version == POLICY_VERSION
+
+
+async def get_account_user(user: Annotated[User | None, Depends(get_token_user)]) -> User:
+    """Principal for data-rights requests (download my data, delete my account): any active signed-in account,
+    including one that has not accepted updated notices or is no longer on the tester list."""
+    if user is None:
+        raise Unauthenticated("Sign in to continue.")
     return user
 
 
@@ -230,7 +242,7 @@ async def get_current_user(user: Annotated[User | None, Depends(get_token_user)]
 async def get_verified_user(user: Annotated[User, Depends(get_current_user)]) -> User:
     if not _is_verified(user):
         raise EmailNotVerified("Verify your email address to use this feature.")
-    if get_settings().require_policy_acceptance and user.accepted_policy_version != POLICY_VERSION:
+    if not _has_current_consent(user):
         raise ConsentRequired("Please review and accept the Terms of Service and Privacy Notice to continue.")
     return user
 
@@ -247,4 +259,5 @@ def require_role(role: UserRole) -> Callable[..., Any]:
 CurrentUser = Annotated[User, Depends(get_current_user)]
 VerifiedUser = Annotated[User, Depends(get_verified_user)]
 OptionalUser = Annotated[User | None, Depends(get_optional_user)]
+AccountUser = Annotated[User, Depends(get_account_user)]
 AdminUser = Annotated[User, Depends(require_role(UserRole.ADMIN))]

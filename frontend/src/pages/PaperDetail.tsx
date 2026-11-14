@@ -12,7 +12,7 @@ import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { GroundedAnswer, Job, Paper, PaperSummary, Passage, SummaryPoint } from "@/lib/types";
 
-function FullTextPanel({ paper }: { paper: Paper }) {
+export function FullTextPanel({ paper }: { paper: Paper }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const active = paper.status === "queued" || paper.status === "processing";
@@ -64,12 +64,19 @@ function FullTextPanel({ paper }: { paper: Paper }) {
   return (
     <Card className="p-4">
       <p className="text-sm text-slate-700">
-        {paper.status === "failed" ? paper.status_detail : "Only metadata is available. Retrieve the open-access PDF to search its full text and ask detailed questions."}
+        {paper.status === "failed" || paper.status_detail
+          ? paper.status_detail
+          : paper.has_pdf
+            ? "The PDF is stored but its text has not been extracted yet."
+            : "Only metadata is available. Retrieve the open-access PDF to search its full text and ask detailed questions."}
       </p>
       {user ? (
         <div className="mt-3 flex flex-wrap gap-2">
-          {paper.visibility === "public" && (
+          {paper.visibility === "public" && !paper.has_pdf && (
             <Button size="sm" loading={retrieve.isPending} onClick={() => retrieve.mutate()}>Retrieve open-access PDF</Button>
+          )}
+          {paper.has_pdf && (
+            <Button size="sm" loading={retrieve.isPending} onClick={() => retrieve.mutate()}>Retry text extraction</Button>
           )}
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50">
             <FileUp className="h-4 w-4" /> {upload.isPending ? "Uploading…" : "Upload your copy (private)"}

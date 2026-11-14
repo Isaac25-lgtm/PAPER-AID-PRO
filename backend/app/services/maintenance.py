@@ -24,7 +24,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import StorageDeletion
+from app.db.models import Paper, StorageDeletion
 from app.db.session import get_sessionmaker
 from app.security.rate_limit import purge_expired_buckets
 from app.services.storage import get_storage
@@ -91,6 +91,12 @@ async def process_deletions(db: AsyncSession, limit: int = 100, *, keys: list[st
     storage = get_storage()
     done = 0
     for key in claimed:
+        # Defence in depth: an object that a paper currently points to is owned, never orphaned.
+        if (await db.execute(select(Paper.id).where(Paper.storage_path == key).limit(1))).first() is not None:
+            await db.execute(delete(StorageDeletion).where(StorageDeletion.key == key))
+            await db.commit()
+            log.warning("storage.deletion_skipped_live_object", extra={"key": key})
+            continue
         try:
             await storage.delete(key)  # idempotent: deleting a missing object succeeds
         except Exception as exc:
@@ -124,13 +130,16 @@ class MaintenanceReport:
     storage_objects_deleted: int = 0
     rate_buckets_purged: int = 0
     jobs_reclaimed: int = 0
+    closures_completed: int = 0
 
 
 async def run_maintenance() -> MaintenanceReport:
-    from app.services.processing import reclaim_abandoned_jobs  # local import: processing imports this module
+    from app.services.accounts import resume_closures  # local imports: these modules import this one
+    from app.services.processing import reclaim_abandoned_jobs
 
     report = MaintenanceReport()
     async with get_sessionmaker()() as db:
+        report.closures_completed = await resume_closures(db)
         report.storage_objects_deleted = await process_deletions(db, limit=500)
         report.rate_buckets_purged = await purge_expired_buckets(db)
         report.jobs_reclaimed = await reclaim_abandoned_jobs(db)

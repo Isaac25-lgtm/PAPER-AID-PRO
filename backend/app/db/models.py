@@ -178,7 +178,7 @@ class Paper(Base):
         _enum(PaperStatus, "paper_status"), default=PaperStatus.METADATA_ONLY, nullable=False
     )
     status_detail: Mapped[str | None] = mapped_column(Text)
-    storage_path: Mapped[str | None] = mapped_column(Text)
+    storage_path: Mapped[str | None] = mapped_column(Text, index=True)
     file_sha256: Mapped[str | None] = mapped_column(String(64))
     file_size: Mapped[int | None] = mapped_column(BigInteger)
     page_count: Mapped[int | None] = mapped_column(Integer)
@@ -490,6 +490,15 @@ class ClosedAccount(Base):
 
     firebase_uid: Mapped[str] = mapped_column(String(128), primary_key=True)
     closed_at: Mapped[datetime] = _created()
+    # Closure is a durable request: maintenance resumes any closure that has not completed (e.g. the identity
+    # provider timed out), so a person who asked to be deleted never depends on a manual recovery.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # no FK: the user row is deleted
+    purge_public: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    delete_identity: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    not_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ConsentRecord(Base):

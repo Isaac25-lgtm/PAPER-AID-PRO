@@ -62,6 +62,11 @@ class Conflict(AppError):
     code = "CONFLICT"
 
 
+class PolicyOutdated(AppError):
+    status_code = 409
+    code = "POLICY_OUTDATED"
+
+
 class PayloadTooLarge(AppError):
     status_code = 413
     code = "PAYLOAD_TOO_LARGE"

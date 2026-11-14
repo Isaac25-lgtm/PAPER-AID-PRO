@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 import json
+import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from fastapi import APIRouter, Response
-from fastapi.responses import StreamingResponse
-from sqlalchemy import Select, func, select, text
+from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy import Select, Text, cast, func, select, text, update
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.api.deps import DB, AppSettings
 from app.api.downloads import content_disposition
 from app.config import get_settings
 from app.db.models import Collection, Conversation, Document, LibraryItem, Paper, PaperStatus, User
-from app.errors import AppError, ValidationFailed
+from app.errors import AppError, PolicyOutdated, ValidationFailed
 from app.policy import OPTIONAL_CONSENTS, POLICY_VERSION, REQUIRED_CONSENTS
 from app.schemas import (
     AIStatus,
@@ -29,7 +33,7 @@ from app.schemas import (
     UserOut,
     UserUpdate,
 )
-from app.security.auth import CurrentUser, VerifiedUser
+from app.security.auth import AccountUser, CurrentUser, VerifiedUser
 from app.services.accounts import close_account, export_account, record_consents
 from app.services.ai.providers import ANTHROPIC_DEFAULT_MODEL
 from app.services.papers import visible_papers_clause
@@ -73,7 +77,8 @@ async def ready(db: DB) -> dict[str, str]:
         raise SchemaNotReady(
             "The database schema does not match this release.", details={"database": current, "expected": expected}
         )
-    return {"status": "ready", "schema": current}
+    # K_REVISION is set by Cloud Run: the release gate checks it probed the revision it is about to promote.
+    return {"status": "ready", "schema": current, "revision": os.environ.get("K_REVISION", "")}
 
 
 def _me(user: User) -> MeOut:
@@ -86,6 +91,26 @@ def _me(user: User) -> MeOut:
         needs_consent=needs,
         preferences=user.preferences or {},
     )
+
+
+MAX_PREFERENCES_BYTES = 20_000
+CONSENT_PREFIX = "consent_"
+
+
+async def _merge_preferences(db: DB, user: User, values: dict[str, Any], remove: list[str] = ()) -> None:  # type: ignore[assignment]
+    """Atomic JSONB update of only the given keys (never a read-modify-write of the whole object), so concurrent
+    saves from two tabs cannot undo each other. Not committed here: callers commit with their audit records."""
+    expr = func.coalesce(User.preferences, cast({}, JSONB))
+    if remove:
+        expr = expr.op("-")(cast(list(remove), ARRAY(Text)))
+    expr = expr.op("||")(cast(values, JSONB))
+    merged = (
+        await db.execute(update(User).where(User.id == user.id).values(preferences=expr).returning(User.preferences))
+    ).scalar_one()
+    if len(json.dumps(merged)) > MAX_PREFERENCES_BYTES:
+        await db.rollback()
+        raise ValidationFailed("Too many preferences stored.")
+    set_committed_value(user, "preferences", merged)
 
 
 @router.get("/me", response_model=MeOut, tags=["account"])
@@ -129,28 +154,34 @@ async def my_progress(user: VerifiedUser, db: DB) -> ProgressOut:
 async def give_consent(body: ConsentIn, user: CurrentUser, db: DB) -> MeOut:
     """Accept the current Terms, Privacy Notice and AI notice and confirm age (all required); optional choices
     are recorded separately. Every decision is stored in consent_records with the policy version and time."""
-    choices = body.model_dump()
+    if body.policy_version != POLICY_VERSION:
+        raise PolicyOutdated(
+            "The Terms, Privacy Notice or AI notice were updated after this page was opened. Reload the page to "
+            "review the current version.",
+            details={"current_version": POLICY_VERSION},
+        )
+    choices = body.model_dump(exclude={"policy_version"})
     missing = [name for name in REQUIRED_CONSENTS if not choices[name]]
     if missing:
         raise ValidationFailed("All required items must be accepted to use PaperAid Pro.", details={"missing": missing})
     await record_consents(db, user, {name: bool(choices[name]) for name in (*REQUIRED_CONSENTS, *OPTIONAL_CONSENTS)})
+    await _merge_preferences(db, user, {f"{CONSENT_PREFIX}{n}": bool(choices[n]) for n in OPTIONAL_CONSENTS})
     user.accepted_policy_version = POLICY_VERSION
-    user.preferences = {**(user.preferences or {}), **{f"consent_{n}": bool(choices[n]) for n in OPTIONAL_CONSENTS}}
     await db.commit()
     return _me(user)
 
 
 @router.patch("/me/preferences", response_model=MeOut, tags=["account"])
 async def update_preferences(body: PreferencesIn, user: CurrentUser, db: DB) -> MeOut:
-    merged = dict(user.preferences or {})
-    for key, value in body.values.items():
-        if value is None:
-            merged.pop(key, None)
-        else:
-            merged[str(key)[:100]] = value
-    if len(json.dumps(merged)) > 20_000:
-        raise ValidationFailed("Too many preferences stored.")
-    user.preferences = merged
+    reserved = sorted(k for k in body.values if str(k).startswith(CONSENT_PREFIX))
+    if reserved:
+        raise ValidationFailed(
+            "Optional consents are changed on the Account page, where each decision is recorded.",
+            details={"reserved": reserved},
+        )
+    values = {str(k)[:100]: v for k, v in body.values.items() if v is not None}
+    remove = [str(k)[:100] for k, v in body.values.items() if v is None]
+    await _merge_preferences(db, user, values, remove)
     await db.commit()
     return _me(user)
 
@@ -161,14 +192,15 @@ async def update_optional_consents(body: dict[str, bool], user: CurrentUser, db:
     unknown = set(body) - set(OPTIONAL_CONSENTS)
     if unknown:
         raise ValidationFailed("Unknown consent.", details={"unknown": sorted(unknown)})
+    # The decision and its audit record are written in one transaction.
     await record_consents(db, user, {k: bool(v) for k, v in body.items()})
-    user.preferences = {**(user.preferences or {}), **{f"consent_{k}": bool(v) for k, v in body.items()}}
+    await _merge_preferences(db, user, {f"{CONSENT_PREFIX}{k}": bool(v) for k, v in body.items()})
     await db.commit()
     return _me(user)
 
 
 @router.get("/me/export", tags=["account"])
-async def export_my_data(user: VerifiedUser, db: DB) -> StreamingResponse:
+async def export_my_data(user: AccountUser, db: DB) -> StreamingResponse:
     """Download everything you created (documents, library, research conversations, uploads, consents) as ZIP."""
     archive = await export_account(db, user)
     archive.seek(0, 2)
@@ -192,13 +224,23 @@ async def export_my_data(user: VerifiedUser, db: DB) -> StreamingResponse:
     )
 
 
-@router.delete("/me", status_code=204, tags=["account"])
-async def delete_me(body: DeleteAccountIn, user: CurrentUser, db: DB) -> Response:
+@router.delete("/me", status_code=204, tags=["account"], responses={202: {"description": "Closure finishing"}})
+async def delete_me(body: DeleteAccountIn, user: AccountUser, db: DB) -> Response:
     """Close your account: your sign-in, documents, library, conversations and uploads are deleted.
-    Confirm by typing your email address. This cannot be undone."""
+    Confirm by typing your email address. This cannot be undone. 204 when everything is deleted; 202 when the
+    account is already closed and locked but a step must be retried (it finishes automatically)."""
     if body.confirm_email.strip().lower() != user.email.lower():
         raise ValidationFailed("Type your account email address exactly to confirm.")
-    await close_account(db, user)
+    result = await close_account(db, user)
+    if result.pending:
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "pending",
+                "message": "Your account is closed and can no longer be used. Deleting your data is taking longer "
+                "than usual and will finish automatically.",
+            },
+        )
     return Response(status_code=204)
 
 

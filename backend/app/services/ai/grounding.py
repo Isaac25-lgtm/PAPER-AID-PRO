@@ -271,13 +271,22 @@ def check_claims(
             continue
         spans = []
         for quote in quotes:
+            if len(_normalise(quote)) < MIN_QUOTE_CHARS:
+                continue
             for key in ids:
                 position = locate_quote(quote, by_key[key].shown_text)
                 if position:
                     start, end = position
                     spans.append(QuoteSpan(key, by_key[key].shown_text[start:end], start, end))
                     break
-        kept.append(CheckedClaim(sentence, ids, starts_paragraph, spans))
+        # Every source a claim cites must show that claim's own supporting words; a cited source without an
+        # aligned quote is dropped from the claim (and a claim left with no source is removed).
+        aligned = [k for k in ids if any(span.key == k for span in spans)]
+        if not aligned:
+            log.info("grounding.claim_removed", extra={"reason": "no quote aligned with a cited source"})
+            removed += 1
+            continue
+        kept.append(CheckedClaim(sentence, aligned, starts_paragraph, spans))
     return kept, removed
 
 
@@ -288,7 +297,11 @@ async def verify_support(claims: list[CheckedClaim], items: list[EvidenceItem], 
     by_key = {item.key: item for item in items}
     blocks = []
     for index, claim in enumerate(claims, start=1):
-        evidence = "\n".join(f"[{k}] {by_key[k].shown_text}" for k in claim.evidence_ids)
+        # Judge each claim against exactly what the reader will be shown: its supporting words in context.
+        evidence = "\n".join(
+            f"[{k}] {evidence_excerpt(by_key[k].shown_text, [s for s in claim.quotes if s.key == k])['excerpt']}"
+            for k in claim.evidence_ids
+        )
         blocks.append(
             f'<claim number="{index}">\n<statement>{claim.text}</statement>\n<evidence>\n{evidence}\n'
             f"</evidence>\n</claim>"
@@ -351,23 +364,33 @@ async def validate_grounded(answer: GroundedAnswer, items: list[EvidenceItem], l
     return {"answer": assemble_answer(kept), "insufficient_evidence": False, "gaps": gaps, "claims": kept}
 
 
+def _utf16_len(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
 def evidence_excerpt(text: str, spans: list[QuoteSpan], *, fallback: int = 600) -> dict[str, Any]:
-    """An excerpt that always contains the verified supporting words, with their positions inside it."""
-    ordered = sorted(spans, key=lambda span: span.start)[:3]
+    """An excerpt that contains EVERY verified supporting span, with their positions inside it.
+
+    Positions are in UTF-16 code units (`offset_unit`), the unit browsers use for string slicing, so text with
+    emoji or other supplementary characters before a quote is still highlighted exactly."""
+    ordered = sorted(spans, key=lambda span: span.start)
     if ordered:
         begin = max(0, ordered[0].start - EXCERPT_CONTEXT)
         finish = min(len(text), max(span.end for span in ordered) + EXCERPT_CONTEXT)
     else:
         begin, finish = 0, min(len(text), fallback)
+    excerpt = text[begin:finish]
+    quotes = []
+    for span in ordered:
+        if begin <= span.start and span.end <= finish:
+            start = _utf16_len(excerpt[: span.start - begin])
+            quotes.append({"text": span.text, "start": start, "end": start + _utf16_len(span.text)})
     return {
-        "excerpt": text[begin:finish],
+        "excerpt": excerpt,
         "excerpt_truncated_start": begin > 0,
         "excerpt_truncated_end": finish < len(text),
-        "quotes": [
-            {"text": span.text, "start": span.start - begin, "end": span.end - begin}
-            for span in ordered
-            if begin <= span.start and span.end <= finish
-        ],
+        "offset_unit": "utf16",
+        "quotes": quotes,
     }
 
 
@@ -377,7 +400,9 @@ def citation_payload(claims: list[CheckedClaim], items: list[EvidenceItem]) -> l
     spans: dict[str, list[QuoteSpan]] = {}
     for claim in claims:
         for span in claim.quotes:
-            if all(existing.start != span.start for existing in spans.setdefault(span.key, [])):
+            if all(
+                (existing.start, existing.end) != (span.start, span.end) for existing in spans.setdefault(span.key, [])
+            ):
                 spans[span.key].append(span)
     payload = []
     for item in items:

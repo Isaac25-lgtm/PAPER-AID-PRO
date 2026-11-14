@@ -41,6 +41,7 @@ const { CitePalette, queryFromSelection } = await import("@/components/editor/Ci
 const { SelectionMenu, withCitations } = await import("@/components/editor/SelectionMenu");
 const { useAutocomplete } = await import("@/components/editor/useAutocomplete");
 const { cleanPdfQuote } = await import("@/components/editor/PdfPanel");
+const { applyCitationLabels } = await import("@/lib/citationLabels");
 
 // jsdom has no layout: give ranges empty rectangles so ProseMirror can "scroll the cursor into view".
 const emptyRects = () => Object.assign([], { item: () => null }) as unknown as DOMRectList;
@@ -374,5 +375,48 @@ describe("autocomplete", () => {
     });
     await act(async () => vi.advanceTimersByTimeAsync(150));
     expect(calls.posts).toHaveLength(1);
+  });
+});
+
+describe("citation labels", () => {
+  const cite = (id: string) => ({ type: "citation", attrs: { citationIds: [id] } });
+  const doc = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "First claim " }, cite("c1")] },
+      { type: "paragraph", content: [{ type: "text", text: "Later claim " }, cite("c1")] },
+    ],
+  };
+  const labels = (editor: InstanceType<typeof Editor>) => {
+    const out: string[] = [];
+    editor.state.doc.descendants((n) => {
+      if (n.type.name === "citation") out.push(n.attrs.label as string);
+    });
+    return out;
+  };
+
+  it("labels repeated citations by occurrence (full first note, short later note)", () => {
+    const editor = makeEditor(doc);
+    const applied = applyCitationLabels(editor, {
+      style: "chicago-note",
+      bibliography: [],
+      clusters: [
+        { citation_ids: ["c1"], text: "Tavneet Suri and William Jack, “The Long-Run Poverty…,” Science 354 (2016)", missing_ids: [] },
+        { citation_ids: ["c1"], text: "Suri and Jack, “Long-Run Poverty.”", missing_ids: [] },
+      ],
+    } as never);
+    expect(applied).toBe(true);
+    expect(labels(editor)).toEqual(["Tavneet Suri and William Jack, “The Long-Run Poverty…,” Science 354 (2016)", "Suri and Jack, “Long-Run Poverty.”"]);
+  });
+
+  it("ignores a stale render when the citations changed since it was requested", () => {
+    const editor = makeEditor(doc);
+    const applied = applyCitationLabels(editor, {
+      style: "apa",
+      bibliography: [],
+      clusters: [{ citation_ids: ["c1"], text: "(Suri & Jack, 2016)", missing_ids: [] }],
+    } as never);
+    expect(applied).toBe(false);
+    expect(labels(editor)).toEqual(["[…]", "[…]"]);
   });
 });

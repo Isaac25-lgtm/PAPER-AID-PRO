@@ -196,8 +196,11 @@ def set_storage(storage: ObjectStorage | None) -> None:
     _storage = storage
 
 
-def pdf_key(paper_id: str, sha256: str) -> str:
-    return f"papers/{paper_id}/{sha256}.pdf"
+def pdf_key(paper_id: str, sha256: str, nonce: str | None = None) -> str:
+    """Object key for a PDF. Every write gets its own key (the nonce), so two attempts that retrieve identical
+    bytes never share an object: abandoning one attempt's object can never delete the one another attempt
+    published. Keys written before the nonce was introduced (no suffix) remain valid."""
+    return f"papers/{paper_id}/{sha256}-{nonce}.pdf" if nonce else f"papers/{paper_id}/{sha256}.pdf"
 
 
 def sha256_hex(data: bytes) -> str:

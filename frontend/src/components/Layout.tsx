@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { BookOpen, FileText, FlaskConical, House, LibraryBig, LogOut, Menu, Quote, Search, Shield, UserRound, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router";
+import { DataRightsPanel } from "./DataRights";
 
 import { useAuth } from "@/lib/auth";
 import { ConsentGate } from "./Consent";
@@ -179,6 +180,7 @@ export function RequireAuth({ children, admin = false }: { children: ReactNode; 
             </Button>
           </div>
         </Alert>
+        {firebaseUser.email && <DataRightsPanel email={firebaseUser.email} />}
       </Container>
     );
   }

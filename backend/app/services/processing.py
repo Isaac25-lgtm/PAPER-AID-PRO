@@ -88,7 +88,7 @@ async def put_pdf(paper_id: uuid.UUID, data: bytes) -> tuple[str, str]:
     """Write the object, after durably recording the intent (so a failure anywhere later cannot orphan it).
     Returns (key, sha256). The caller must `attach_pdf` in the transaction that commits the paper."""
     digest = sha256_hex(data)
-    key = pdf_key(str(paper_id), digest)
+    key = pdf_key(str(paper_id), digest, uuid.uuid4().hex)  # unique per write: never shared across attempts
     await record_upload_intent(key)
     await get_storage().put(key, data, "application/pdf")
     return key, digest
@@ -173,7 +173,10 @@ async def queue_ingest(db: AsyncSession, paper: Paper, requested_by: User | None
             .values(status=previous_status, status_detail=previous_detail)
         )
         await db.commit()
-        raise
+        if isinstance(exc, AppError):
+            raise
+        # Transport failures (timeouts, connection errors) become the same known error as a refused request.
+        raise UpstreamError("Could not queue the processing job. Please retry.") from exc
     return (
         await db.execute(
             select(ProcessingJob).where(ProcessingJob.id == job_id).execution_options(populate_existing=True)
@@ -319,6 +322,11 @@ async def run_job(job_id: uuid.UUID) -> Outcome:
             await _finish(db, attempt, status=JobStatus.FAILED, error="Paper no longer exists.", finished_at=_now())
             await db.commit()
             return Outcome.DONE
+        try:
+            await _hold(db, attempt)  # fenced: a superseded attempt must not touch the paper at all
+        except LeaseLost:
+            await db.rollback()
+            return Outcome.SKIPPED
         paper.status = PaperStatus.PROCESSING
         await db.commit()
         try:

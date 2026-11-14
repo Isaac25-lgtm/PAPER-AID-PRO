@@ -574,7 +574,12 @@ async def test_failed_upload_leaves_no_paper(client):
 async def test_admin_maintenance_endpoint(client):
     response = await client.post("/api/v1/admin/maintenance", headers=ADMIN)
     assert response.status_code == 200
-    assert set(response.json()) == {"storage_objects_deleted", "rate_buckets_purged", "jobs_reclaimed"}
+    assert set(response.json()) == {
+        "storage_objects_deleted",
+        "rate_buckets_purged",
+        "jobs_reclaimed",
+        "closures_completed",
+    }
 
 
 # ------------------------------------------------------------------------- 19. relevance before pagination
