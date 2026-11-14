@@ -75,7 +75,7 @@ export function ConsentGate() {
           <fieldset className="space-y-3">
             <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Required</legend>
             {REQUIRED.map((item) => (
-              <label key={item.key} className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700 hover:border-brand-300">
+              <label key={item.key} className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700 hover:border-slate-300">
                 <input type="checkbox" className="mt-0.5 h-4 w-4" checked={choices[item.key]} onChange={() => toggle(item.key)} />
                 <span>{item.label}</span>
               </label>

@@ -82,7 +82,7 @@ export default function ResearchPage() {
           <ul className="space-y-1">
             {conversations.data?.map((c) => (
               <li key={c.id} className="group flex items-center">
-                <button onClick={() => { setSelected(null); setParams({ c: c.id }); }} className={`flex-1 rounded-lg px-2 py-1.5 text-left text-sm ${conversationId === c.id ? "bg-brand-50 text-brand-800" : "text-slate-700 hover:bg-slate-100"}`}>
+                <button onClick={() => { setSelected(null); setParams({ c: c.id }); }} className={`flex-1 rounded-lg px-2 py-1.5 text-left text-sm ${conversationId === c.id ? "bg-slate-100 text-slate-950" : "text-slate-700 hover:bg-slate-100"}`}>
                   <span className="line-clamp-2">{c.title}</span>
                   <span className="text-xs text-slate-400">{relativeTime(c.updated_at)}</span>
                 </button>
@@ -97,7 +97,7 @@ export default function ResearchPage() {
           {conversation.error && <Alert kind="error">{errorMessage(conversation.error)} <button className="underline" onClick={() => void conversation.refetch()}>Retry</button></Alert>}
           {conversation.data?.messages.map((m) =>
             m.role === "user" ? (
-              <div key={m.id} className="flex justify-end"><div className="max-w-[85%] rounded-2xl bg-brand-700 px-4 py-2 text-white">{m.content}</div></div>
+              <div key={m.id} className="flex justify-end"><div className="max-w-[85%] rounded-2xl bg-slate-900 px-4 py-2 text-white">{m.content}</div></div>
             ) : (
               <Card key={m.id} className="p-5">
                 <GroundedAnswerView answer={{ answer: m.content, citations: m.citations, model: m.model, insufficient_evidence: m.insufficient_evidence, gaps: m.gaps }} />
@@ -130,7 +130,7 @@ export default function ResearchPage() {
           <ul className="max-h-[60vh] space-y-1.5 overflow-y-auto">
             {papers.map((p) => (
               <li key={p.id}>
-                <label className="flex cursor-pointer gap-2 rounded-lg border border-slate-200 bg-white p-2 text-sm hover:border-brand-300">
+                <label className="flex cursor-pointer gap-2 rounded-lg border border-slate-200 bg-white p-2 text-sm hover:border-slate-300">
                   <input type="checkbox" className="mt-1" checked={effectiveSelection.has(p.id)} onChange={() => toggle(p.id)} />
                   <span>
                     <span className="line-clamp-2 font-medium text-slate-900">{p.title}</span>

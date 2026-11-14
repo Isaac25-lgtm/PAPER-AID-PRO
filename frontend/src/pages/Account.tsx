@@ -7,6 +7,7 @@ import { Container } from "@/components/Layout";
 import { Alert, Badge, Button, Card, Input, Label, PageHeader } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { ThemeSwitch } from "@/lib/theme";
 import type { AIStatus, User } from "@/lib/types";
 
 function PrivacyCard() {
@@ -80,6 +81,13 @@ export default function AccountPage() {
             </Button>
           </div>
         )}
+      </Card>
+      <Card className="mt-6 flex flex-wrap items-center justify-between gap-4 p-5 text-sm">
+        <div>
+          <h2 className="font-semibold text-slate-900">Appearance</h2>
+          <p className="mt-0.5 text-slate-600">Light, Night, or match your device. Saved to your account.</p>
+        </div>
+        <ThemeSwitch />
       </Card>
       <PrivacyCard />
       <Card className="mt-6 p-5 text-sm text-slate-700">

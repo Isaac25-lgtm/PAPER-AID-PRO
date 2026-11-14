@@ -16,6 +16,9 @@
   "dependencies": {
     "@firebase/app": "^0.16.6",
     "@firebase/auth": "^1.13.10",
+    "@fontsource-variable/inter-tight": "5.3.0",
+    "@fontsource-variable/source-serif-4": "5.3.1",
+    "@fontsource/jetbrains-mono": "5.3.0",
     "@tanstack/react-query": "^5.62.7",
     "@tiptap/extension-link": "^3.31.4",
     "@tiptap/extension-placeholder": "^3.31.4",

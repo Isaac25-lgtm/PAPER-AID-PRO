@@ -6,7 +6,13 @@ import { BrowserRouter } from "react-router";
 import { App } from "./App";
 import { ApiError } from "./lib/api";
 import { AuthProvider } from "./lib/auth";
+import "@fontsource-variable/inter-tight";
+import "@fontsource-variable/source-serif-4";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import "./theme.css";
 import "./styles.css";
+import { ThemeProvider } from "./lib/theme";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,7 +29,9 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
-          <App />
+          <ThemeProvider>
+            <App />
+          </ThemeProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

@@ -1,14 +1,25 @@
 /** @type {import('tailwindcss').Config} */
+// Every colour the app uses is a theme token (src/theme.css), so Night mode needs no per-component dark: classes.
+const scale = (name) =>
+  Object.fromEntries([50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((step) => [step, `rgb(var(--c-${name}-${step}) / <alpha-value>)`]));
+
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        brand: { 50: "#eff6ff", 100: "#dbeafe", 200: "#bfdbfe", 500: "#3b82f6", 600: "#2563eb", 700: "#1d4ed8", 800: "#1e40af", 900: "#1e3a8a" },
+        white: "rgb(var(--c-white) / <alpha-value>)",
+      slate: scale("slate"),
+      brand: scale("brand"),
+      red: scale("red"),
+      amber: scale("amber"),
+      emerald: scale("emerald"),
       },
       fontFamily: {
-        sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
-        serif: ["Georgia", "Cambria", "Times New Roman", "serif"],
+        sans: ["Inter Tight Variable", "Inter Tight", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+        serif: ["Source Serif 4 Variable", "Source Serif 4", "Georgia", "Cambria", "Times New Roman", "serif"],
+        mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
     },
   },

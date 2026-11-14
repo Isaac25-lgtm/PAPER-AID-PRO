@@ -1,177 +1,116 @@
 import clsx from "clsx";
-import {
-  ArrowRight, BadgeCheck, BookMarked, Check, ChevronDown, FileText, FlaskConical, LibraryBig, Lock, Quote, Search,
-} from "lucide-react";
+import { ArrowRight, Check, ChevronDown, FileText, LibraryBig, Lock, Quote, ScanSearch, Search, ShieldCheck } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 
 import { useAuth } from "@/lib/auth";
 
 /*
- * Landing page. Product visuals are abstract (skeleton lines, generic labels such as "Author, Year"): no invented
- * papers, statistics, testimonials or page numbers, in line with the project's no-fabrication rule.
+ * Landing page (Graphite). The product preview is built from the app's real interface elements and shows real,
+ * published papers with their real bibliographic details (Suri & Jack 2016, Science; Jack & Suri 2014, American
+ * Economic Review; Aker & Mbiti 2010, Journal of Economic Perspectives). No invented papers, numbers, users or
+ * testimonials, in line with the project's no-fabrication rule.
  */
 
-function Bar({ w, className }: { w: string; className?: string }) {
-  return <span className={clsx("block h-2 rounded-full bg-slate-200", className)} style={{ width: w }} />;
+const PAPERS = {
+  suri: { cite: "Suri & Jack, 2016", title: "The long-run poverty and gender impacts of mobile money", meta: "Suri & Jack · 2016 · Science" },
+  jack: { cite: "Jack & Suri, 2014", title: "Risk sharing and transactions costs: evidence from Kenya's mobile money revolution", meta: "Jack & Suri · 2014 · American Economic Review" },
+  aker: { cite: "Aker & Mbiti, 2010", title: "Mobile phones and economic development in Africa", meta: "Aker & Mbiti · 2010 · Journal of Economic Perspectives" },
+};
+
+function Chip({ children }: { children: ReactNode }) {
+  return <span className="mx-0.5 whitespace-nowrap rounded-[5px] bg-brand-50 px-1.5 py-0.5 align-[0.1em] font-mono text-[11.5px] text-brand-700">{children}</span>;
 }
 
-function Window({ children, className }: { children: ReactNode; className?: string }) {
+function Kbd({ children }: { children: ReactNode }) {
+  return <span className="rounded border border-slate-200 bg-white px-1.5 py-px font-mono text-[10.5px] text-slate-500">{children}</span>;
+}
+
+/** Hero preview: documents, the writing surface with citations, a /cite search and the reference check. */
+function ProductPreview() {
   return (
-    <div className={clsx("overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-brand-900/5", className)}>
-      <div className="flex items-center gap-1.5 border-b border-slate-100 bg-slate-50 px-4 py-2.5" aria-hidden>
-        <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
-        <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
-        <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+    <div aria-hidden className="mx-auto mt-14 w-full max-w-[1120px] overflow-hidden rounded-t-2xl border border-b-0 border-slate-200 bg-slate-50 text-left">
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />
+        <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />
+        <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />
+        <span className="ml-3 text-xs font-medium text-slate-500">Chapter 2 · Literature review</span>
+        <span className="ml-auto font-mono text-[11px] text-emerald-700">● saved</span>
       </div>
-      {children}
+      <div className="grid md:grid-cols-[200px_1fr_280px]">
+        <div className="hidden flex-col gap-1.5 border-r border-slate-200 p-4 text-[13px] text-slate-500 md:flex">
+          <span className="mb-1 font-semibold text-slate-900">Documents</span>
+          <span className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-slate-900">Chapter 2 · Literature review</span>
+          <span className="px-2.5 py-2">Research proposal</span>
+          <span className="px-2.5 py-2">Concept note</span>
+        </div>
+        <div className="relative bg-white px-6 pb-10 pt-7 sm:px-10">
+          <p className="text-[22px] font-semibold tracking-[-0.02em] text-slate-950">2.1 Access and adoption</p>
+          <p className="mt-3 font-serif text-[16.5px] leading-[1.75] text-slate-800">
+            Mobile money has changed how households in East Africa save, send and borrow <Chip>{PAPERS.suri.cite}</Chip>. Early studies linked access to
+            agent networks with smoother consumption after shocks <Chip>{PAPERS.jack.cite}</Chip>. Yet the benefits are not shared evenly across
+            <span className="text-slate-400"> rural and urban households…</span>
+            <span className="ml-0.5 inline-block h-[18px] w-[2px] translate-y-[3px] bg-brand-500" />
+          </p>
+          <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-slate-500">
+            Suggestion · <Kbd>Tab</Kbd> accept · <Kbd>Esc</Kbd> dismiss
+          </p>
+          <div className="mt-5 max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_48px_-24px_rgba(0,0,0,0.35)]">
+            <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5">
+              <span className="font-mono text-xs text-brand-600">/cite</span>
+              <span className="text-[14px] text-slate-900">mobile phones development Africa</span>
+            </div>
+            <div className="p-1.5">
+              <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-100 px-2.5 py-2">
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] text-slate-900">{PAPERS.aker.title}</span>
+                  <span className="block truncate text-[11.5px] text-slate-500">{PAPERS.aker.meta} · via OpenAlex, Crossref</span>
+                </span>
+                <span className="shrink-0 font-mono text-[11px] text-slate-500">↵ cite</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="hidden flex-col gap-2.5 border-l border-slate-200 p-4 md:flex">
+          <span className="font-mono text-[11px] tracking-wide text-slate-500">REFERENCE CHECK</span>
+          {[PAPERS.aker, PAPERS.jack, PAPERS.suri].map((p) => (
+            <div key={p.cite} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px]">
+              <span className="truncate text-slate-800">{p.cite.replace(", ", " (")})</span>
+              <span className="shrink-0 font-medium text-emerald-700">Matched</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-brand-200 bg-white px-3 py-2.5 text-[13px]">
+            <span className="truncate text-slate-500">A reference with the wrong year</span>
+            <span className="shrink-0 font-medium text-brand-700">Year differs</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function CiteChip({ children = "Author, Year" }: { children?: ReactNode }) {
-  return <span className="mx-1 inline-flex items-center rounded-md bg-brand-100 px-1.5 py-0.5 align-middle text-[11px] font-medium text-brand-800">({children})</span>;
-}
-
-/** Hero visual: the editor with the sources drawer and an auto-built reference list. */
-function EditorMock() {
-  return (
-    <Window>
-      <div className="grid grid-cols-1 sm:grid-cols-[1fr_200px]" aria-hidden>
-        <div className="space-y-4 p-6 text-left">
-          <p className="font-serif text-lg font-semibold text-slate-800">Introduction</p>
-          <div className="space-y-2.5">
-            <Bar w="95%" /><Bar w="88%" />
-            <p className="flex flex-wrap items-center gap-y-1"><Bar w="55%" className="inline-block" /><CiteChip /></p>
-            <Bar w="92%" /><Bar w="70%" />
-          </div>
-          <p className="pt-2 font-serif text-base font-semibold text-slate-800">Methods</p>
-          <div className="space-y-2.5">
-            <Bar w="90%" />
-            <p className="flex flex-wrap items-center gap-y-1"><Bar w="40%" className="inline-block" /><CiteChip>Author et al., Year</CiteChip></p>
-          </div>
-          <div className="mt-2 rounded-lg border border-dashed border-slate-200 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">References · generated automatically</p>
-            <div className="mt-2 space-y-2"><Bar w="85%" /><Bar w="78%" /></div>
-          </div>
-        </div>
-        <div className="hidden border-l border-slate-100 bg-slate-50/70 p-4 sm:block">
-          <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-600"><BookMarked className="h-3.5 w-3.5" /> Your library</p>
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="mt-3 rounded-lg border border-slate-200 bg-white p-2.5">
-              <Bar w="90%" /><Bar w="60%" className="mt-1.5 bg-slate-100" />
-              <span className={clsx("mt-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium", i === 0 ? "bg-brand-700 text-white" : "bg-slate-100 text-slate-500")}>Cite at cursor</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </Window>
-  );
-}
-
-function AnswerMock() {
-  return (
-    <Window>
-      <div className="space-y-4 p-5" aria-hidden>
-        <div className="ml-auto w-3/4 rounded-2xl bg-brand-700 p-3"><Bar w="90%" className="bg-white/50" /><Bar w="60%" className="mt-1.5 bg-white/50" /></div>
-        <div className="space-y-2.5 rounded-xl border border-slate-200 p-4">
-          {[["92%", "1"], ["80%", "2"], ["86%", "1"]].map(([w, n], i) => (
-            <p key={i} className="flex items-center gap-1.5"><Bar w={w!} /><span className="rounded bg-brand-100 px-1 text-[10px] font-semibold text-brand-800">{n}</span></p>
-          ))}
-        </div>
-        <div className="rounded-xl border-l-4 border-brand-500 bg-brand-50 p-3">
-          <p className="text-[11px] font-semibold text-brand-800">Source 1 · exact passage</p>
-          <Bar w="95%" className="mt-2 bg-brand-200" /><Bar w="75%" className="mt-1.5 bg-brand-200" />
-        </div>
-      </div>
-    </Window>
-  );
-}
-
-function StylesMock() {
-  const styles = ["APA", "MLA", "Chicago", "Vancouver", "IEEE"];
-  return (
-    <Window>
-      <div className="p-5" aria-hidden>
-        <div className="flex flex-wrap gap-1.5">
-          {styles.map((style, i) => (
-            <span key={style} className={clsx("rounded-full px-2.5 py-1 text-xs font-medium", i === 3 ? "bg-brand-700 text-white" : "bg-slate-100 text-slate-600")}>{style}</span>
-          ))}
-          <span className="rounded-full px-2.5 py-1 text-xs text-slate-400">+5 more</span>
-        </div>
-        <p className="mt-5 flex flex-wrap items-center gap-y-1"><Bar w="60%" className="inline-block" /><CiteChip>1</CiteChip></p>
-        <p className="mt-2.5 flex flex-wrap items-center gap-y-1"><Bar w="45%" className="inline-block" /><CiteChip>2, 3</CiteChip></p>
-        <div className="mt-5 space-y-2.5 rounded-lg bg-slate-50 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">References</p>
-          {[1, 2, 3].map((n) => (
-            <p key={n} className="flex items-center gap-2 text-xs text-slate-500">{n}.<Bar w={`${88 - n * 8}%`} /></p>
-          ))}
-        </div>
-      </div>
-    </Window>
-  );
-}
-
-function CheckerMock() {
-  const rows = [
-    { label: "Verified", tone: "bg-emerald-100 text-emerald-800" },
-    { label: "Likely match", tone: "bg-amber-100 text-amber-800" },
-    { label: "Not found", tone: "bg-red-100 text-red-800" },
-  ];
-  return (
-    <Window>
-      <ul className="divide-y divide-slate-100 p-2" aria-hidden>
-        {rows.map((row, i) => (
-          <li key={row.label} className="flex items-center gap-3 p-3">
-            <div className="flex-1 space-y-1.5"><Bar w={`${90 - i * 8}%`} /><Bar w={`${60 + i * 5}%`} className="bg-slate-100" /></div>
-            <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-medium", row.tone)}>{row.label}</span>
-          </li>
-        ))}
-      </ul>
-    </Window>
-  );
-}
-
-const STEPS = [
-  { icon: Search, title: "Find", body: "Search major scholarly databases in every field at once, filter by subject, then save what matters." },
-  { icon: LibraryBig, title: "Organise", body: "Keep papers, your own PDFs, notes and collections in one library. Import or export BibTeX and RIS." },
-  { icon: FileText, title: "Write & cite", body: "Start from a guided outline, cite at the cursor, and get a reference list in APA, Vancouver, IEEE and more." },
-];
-
 const FEATURES = [
-  {
-    label: "Write",
-    title: "Citations that format themselves",
-    body: "Cite from your library at the cursor, with page numbers if you want them. The reference list builds itself and lists only what you cite. Switch between 18 official styles in one click, then export to Word or PDF.",
-    visual: <StylesMock />,
-  },
-  {
-    label: "Understand",
-    title: "Answers that show their sources",
-    body: "Ask a question across the papers you choose. Each statement must quote the passage it relies on; anything the sources don't support is removed, and you can open every source in one click.",
-    visual: <AnswerMock />,
-  },
-  {
-    label: "Submit",
-    title: "Catch bad references before reviewers do",
-    body: "Paste your reference list and each entry is checked against Crossref by title, first author and year, so mistyped or invented citations stand out.",
-    visual: <CheckerMock />,
-  },
+  { icon: Quote, label: "Cite while you write", body: "Type /cite and search your library and the scholarly indexes at once. Pick a result and it is cited, formatted and added to the reference list." },
+  { icon: FileText, label: "Your PDF beside your draft", body: "Read a source next to your writing. Select words on the page to cite that page, or quote them with the citation." },
+  { icon: ScanSearch, label: "Check every reference", body: "Paste a reference list and see which entries match the registry record and where the title, first author or year differs." },
+  { icon: ShieldCheck, label: "Answers with their evidence", body: "Ask your sources a question. Every statement quotes the passage it relies on, and unsupported statements are removed." },
 ];
 
-const COMPARISON = [
+const STYLES = ["APA 7", "Harvard", "MLA 9", "Chicago", "OSCOLA", "Bluebook", "ASA", "APSA", "Vancouver", "AMA", "IEEE", "Nature", "Science", "ACS"];
+const SOURCES = ["OpenAlex", "Crossref", "Semantic Scholar", "DOAJ", "Europe PMC", "PubMed"];
+
+const PRINCIPLES = [
   "Metadata from scholarly registries, never guessed",
   "Every AI statement linked to a quoted source passage",
-  "Unsupported statements removed, not presented as fact",
-  "Official citation styles, used by Zotero and Mendeley",
+  "Official citation styles, the same ones Zotero and Mendeley use",
   "Your uploads and drafts private to you",
 ];
 
 const FAQ = [
   { q: "Is PaperAid Pro free?", a: "Yes. Searching, your library, documents, citation formatting and reference checking are free to use." },
-  { q: "Where do the papers come from?", a: "From OpenAlex, Crossref, Semantic Scholar, DOAJ, PubMed, Europe PMC and arXiv. When you save a paper, its details are fetched from the official registry record, so your citations are built from authoritative metadata." },
+  { q: "Where do the papers come from?", a: "From OpenAlex, Crossref, Semantic Scholar, DOAJ, Europe PMC and PubMed (arXiv on request). When you save a paper, its details are fetched from the official registry record, so your citations are built from authoritative metadata." },
   { q: "Can the AI make up references?", a: "Answers can only cite passages and abstracts from papers you selected. Each statement must quote its source, and statements the source doesn't support are removed. Always read the cited passage before relying on it." },
-  { q: "Which citation styles are supported?", a: "18 official CSL styles: APA 7, Harvard, MLA 9, Chicago 18 (author-date and notes), ASA, APSA, AAA, OSCOLA, Bluebook, Vancouver, AMA 11, Nature, Science, ACS, IEEE, Elsevier Harvard and Springer. Books, chapters, reports, court cases and statutes can be entered manually." },
+  { q: "Which citation styles are supported?", a: "18 official CSL styles, from APA 7, Harvard, MLA 9 and Chicago to OSCOLA and Bluebook for law, ASA and APSA for the social sciences, and Vancouver, AMA, IEEE, Nature, Science and ACS for the sciences. Books, chapters, reports, court cases and statutes can be entered manually." },
   { q: "Can I use my own PDFs and reference manager?", a: "Yes. Upload PDFs (kept private to you) and import BibTeX or RIS exports from Zotero, Mendeley or EndNote. You can export your library the same way." },
   { q: "Who can see my work?", a: "Only you. Uploads, notes, documents and research conversations are private to your account, and PDFs are stored privately and sent only to you." },
 ];
@@ -180,11 +119,11 @@ function FaqItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);
   return (
     <li className="border-b border-slate-200">
-      <button className="flex w-full items-center justify-between gap-4 py-4 text-left font-medium text-slate-900" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button className="flex w-full items-center justify-between gap-4 py-4 text-left font-medium text-slate-950" aria-expanded={open} onClick={() => setOpen(!open)}>
         {q}
-        <ChevronDown className={clsx("h-4 w-4 shrink-0 text-slate-500 transition", open && "rotate-180")} />
+        <ChevronDown className={clsx("h-4 w-4 shrink-0 text-slate-400 transition", open && "rotate-180")} />
       </button>
-      {open && <p className="pb-4 text-sm leading-relaxed text-slate-600">{a}</p>}
+      {open && <p className="pb-4 text-[15px] leading-relaxed text-slate-600">{a}</p>}
     </li>
   );
 }
@@ -194,7 +133,7 @@ function PrimaryCta({ className }: { className?: string }) {
   return (
     <Link
       to={user ? "/dashboard" : "/register"}
-      className={clsx("inline-flex items-center gap-2 rounded-xl bg-brand-700 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-brand-700/20 transition hover:bg-brand-800", className)}
+      className={clsx("inline-flex items-center justify-center gap-2 rounded-[10px] bg-brand-500 px-6 py-3.5 text-base font-semibold text-white transition hover:bg-brand-600", className)}
     >
       {user ? "Go to your workspace" : "Start writing — it's free"} <ArrowRight className="h-4 w-4" />
     </Link>
@@ -207,130 +146,120 @@ export function HomePage() {
   return (
     <div className="bg-white">
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-gradient-to-b from-brand-50 via-white to-white" aria-hidden />
-        <div className="relative mx-auto max-w-6xl px-4 pb-16 pt-16 text-center sm:pt-24">
-          <p className="mx-auto inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-white px-3 py-1 text-xs font-medium text-brand-800">
-            <BadgeCheck className="h-3.5 w-3.5" /> For students, researchers and academics
-          </p>
-          <h1 className="mx-auto mt-5 max-w-3xl font-serif text-4xl font-bold tracking-tight text-slate-900 sm:text-6xl">
-            Research you can <span className="text-brand-700">cite with confidence</span>
+      <section className="border-b border-slate-200">
+        <div className="mx-auto flex max-w-6xl flex-col items-center px-4 pt-16 text-center sm:pt-20">
+          <p className="rounded-full border border-slate-200 px-3 py-1.5 font-mono text-[11.5px] text-slate-500">Discover · Library · Write · Cite · Check</p>
+          <h1 className="mt-6 max-w-4xl text-[44px] font-semibold leading-[1] tracking-[-0.045em] text-slate-950 sm:text-[68px]">
+            From search to submission, every source accounted for.
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-slate-600">
-            Find the literature, keep it organised, and write with correctly formatted citations. Every AI answer shows exactly where it came from.
+          <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-500">
+            A writing workspace for researchers in every discipline. Cite while you write, check every reference, and see the exact words behind every AI answer.
           </p>
-          <div className="mt-8 flex flex-col items-center gap-3">
-            <PrimaryCta />
+          <div className="mt-8 flex w-full flex-col items-center justify-center gap-3 sm:flex-row">
+            <PrimaryCta className="w-full sm:w-auto" />
             <form
-              className="flex w-full max-w-md items-center gap-2 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm"
+              className="flex w-full items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 sm:w-[360px]"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (query.trim().length >= 2) navigate(`/discover?q=${encodeURIComponent(query.trim())}`);
               }}
             >
-              <Search className="ml-2 h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+              <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Or search the literature now…"
+                placeholder="Search the literature in any field"
                 aria-label="Search the literature"
-                className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-sm focus:outline-none"
+                className="min-w-0 flex-1 bg-transparent py-3.5 text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none"
               />
-              <button type="submit" className="rounded-lg px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50">Search</button>
+              <button type="submit" className="rounded-md px-2 py-1 text-sm font-medium text-slate-700 hover:bg-slate-100">Search</button>
             </form>
           </div>
-          <div className="mx-auto mt-14 max-w-4xl">
-            <EditorMock />
-          </div>
+          <ProductPreview />
         </div>
       </section>
 
-      {/* How it works */}
-      <section className="border-y border-slate-100 bg-slate-50/60">
-        <div className="mx-auto max-w-6xl px-4 py-16">
-          <h2 className="text-center font-serif text-3xl font-bold text-slate-900">From search to submission</h2>
-          <ol className="mt-10 grid gap-6 md:grid-cols-3">
-            {STEPS.map(({ icon: Icon, title, body }, index) => (
-              <li key={title} className="rounded-2xl border border-slate-200 bg-white p-6">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm font-semibold text-brand-700">0{index + 1}</span>
-                  <Icon className="h-5 w-5 text-slate-400" aria-hidden />
-                </div>
-                <h3 className="mt-3 text-lg font-semibold text-slate-900">{title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{body}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
-      {/* Features */}
-      <section className="mx-auto max-w-6xl space-y-20 px-4 py-20">
-        {FEATURES.map((feature, index) => (
-          <div key={feature.title} className="grid items-center gap-10 md:grid-cols-2">
-            <div className={clsx(index % 2 === 1 && "md:order-2")}>
-              <p className="text-sm font-semibold uppercase tracking-wide text-brand-700">{feature.label}</p>
-              <h2 className="mt-2 font-serif text-3xl font-bold text-slate-900">{feature.title}</h2>
-              <p className="mt-4 leading-relaxed text-slate-600">{feature.body}</p>
+      {/* What it does */}
+      <section className="mx-auto max-w-6xl px-4 py-20">
+        <h2 className="max-w-2xl text-[34px] font-semibold leading-tight tracking-[-0.03em] text-slate-950">The parts of academic writing that take the longest, done properly.</h2>
+        <div className="mt-10 grid gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 sm:grid-cols-2">
+          {FEATURES.map(({ icon: Icon, label, body }) => (
+            <div key={label} className="bg-white p-7">
+              <Icon className="h-5 w-5 text-brand-600" aria-hidden />
+              <h3 className="mt-4 text-lg font-semibold tracking-[-0.01em] text-slate-950">{label}</h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-slate-600">{body}</p>
             </div>
-            <div className={clsx(index % 2 === 1 && "md:order-1")}>{feature.visual}</div>
-          </div>
-        ))}
+          ))}
+        </div>
       </section>
 
-      {/* Why */}
-      <section className="bg-slate-900">
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 py-16 md:grid-cols-2 md:items-center">
+      {/* Every discipline */}
+      <section className="border-y border-slate-200 bg-slate-50">
+        <div className="mx-auto grid max-w-6xl gap-10 px-4 py-16 md:grid-cols-[1fr_1.3fr] md:items-center">
           <div>
-            <h2 className="font-serif text-3xl font-bold text-white">Built for academic integrity</h2>
-            <p className="mt-4 text-slate-300">
-              General-purpose chatbots can produce references that look real but aren't. PaperAid Pro is designed the other way round:
-              sources first, and nothing presented as fact without one.
+            <p className="font-mono text-[11.5px] tracking-wide text-slate-500">FOR EVERY FIELD</p>
+            <h2 className="mt-3 text-[30px] font-semibold leading-tight tracking-[-0.03em] text-slate-950">Humanities, law, social sciences, health, engineering.</h2>
+            <p className="mt-3 text-[15px] leading-relaxed text-slate-600">
+              Search the indexes that cover your subject, cite in the style your department asks for, and start from an outline that fits your
+              research approach.
             </p>
           </div>
-          <ul className="space-y-3">
-            {COMPARISON.map((item) => (
-              <li key={item} className="flex items-start gap-3 rounded-xl bg-white/5 p-3 text-slate-100">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" aria-hidden /> {item}
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-5">
+            <div>
+              <p className="mb-2 text-xs font-medium text-slate-500">Citation styles</p>
+              <div className="flex flex-wrap gap-1.5">
+                {STYLES.map((s) => <span key={s} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[13px] text-slate-700">{s}</span>)}
+                <span className="rounded-md px-2.5 py-1 text-[13px] text-slate-500">and more</span>
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-medium text-slate-500">Scholarly sources</p>
+              <div className="flex flex-wrap gap-1.5">
+                {SOURCES.map((s) => <span key={s} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[13px] text-slate-700">{s}</span>)}
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* More */}
-      <section className="mx-auto grid max-w-6xl gap-4 px-4 py-16 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { icon: FlaskConical, title: "Guided outlines", body: "Templates for manuscripts, proposals, reviews and theses, by study design." },
-          { icon: Quote, title: "18 citation styles", body: "From APA, Harvard and Chicago to OSCOLA for law and IEEE for engineering." },
-          { icon: LibraryBig, title: "Works with your tools", body: "Import and export BibTeX, RIS and CSL-JSON; export documents to Word." },
-          { icon: Lock, title: "Private by default", body: "Your uploads and drafts are visible only to you." },
-        ].map(({ icon: Icon, title, body }) => (
-          <div key={title} className="rounded-2xl border border-slate-200 p-5">
-            <Icon className="h-5 w-5 text-brand-700" aria-hidden />
-            <h3 className="mt-3 font-semibold text-slate-900">{title}</h3>
-            <p className="mt-1 text-sm text-slate-600">{body}</p>
+      {/* Principles */}
+      <section className="mx-auto grid max-w-6xl gap-10 px-4 py-20 md:grid-cols-2 md:items-start">
+        <div>
+          <h2 className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-slate-950">Built for academic integrity.</h2>
+          <p className="mt-3 text-[15px] leading-relaxed text-slate-600">
+            General-purpose chatbots can produce references that look real but aren't. PaperAid Pro works the other way round: sources first,
+            and nothing presented as fact without one.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-4 text-sm text-slate-600">
+            <span className="flex items-center gap-1.5"><LibraryBig className="h-4 w-4 text-slate-400" aria-hidden /> BibTeX, RIS, CSL-JSON</span>
+            <span className="flex items-center gap-1.5"><Lock className="h-4 w-4 text-slate-400" aria-hidden /> Private by default</span>
           </div>
-        ))}
+        </div>
+        <ul className="divide-y divide-slate-200 rounded-2xl border border-slate-200">
+          {PRINCIPLES.map((item) => (
+            <li key={item} className="flex items-start gap-3 px-5 py-4 text-[15px] text-slate-800">
+              <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" aria-hidden /> {item}
+            </li>
+          ))}
+        </ul>
       </section>
 
       {/* FAQ */}
       <section className="mx-auto max-w-3xl px-4 pb-20">
-        <h2 className="text-center font-serif text-3xl font-bold text-slate-900">Questions</h2>
-        <ul className="mt-8 border-t border-slate-200">
+        <h2 className="text-[30px] font-semibold tracking-[-0.03em] text-slate-950">Questions</h2>
+        <ul className="mt-6 border-t border-slate-200">
           {FAQ.map((item) => <FaqItem key={item.q} {...item} />)}
         </ul>
       </section>
 
       {/* Closing CTA */}
-      <section className="px-4 pb-20">
-        <div className="mx-auto max-w-5xl rounded-3xl bg-gradient-to-br from-brand-700 to-brand-900 px-6 py-14 text-center">
-          <h2 className="font-serif text-3xl font-bold text-white sm:text-4xl">Start your next paper on solid ground</h2>
-          <p className="mx-auto mt-3 max-w-xl text-brand-100">Set up your library and first document in a few minutes.</p>
-          <PrimaryCta className="mt-8 bg-white !text-brand-800 shadow-none hover:bg-brand-50" />
-          <ul className="mt-6 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-brand-100">
+      <section className="border-t border-slate-200">
+        <div className="mx-auto flex max-w-6xl flex-col items-center gap-6 px-4 py-16 text-center">
+          <h2 className="max-w-2xl text-[34px] font-semibold leading-tight tracking-[-0.03em] text-slate-950">Start your next paper on solid ground.</h2>
+          <PrimaryCta />
+          <ul className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-slate-500">
             {["Free to use", "No credit card", "Your work stays private"].map((point) => (
-              <li key={point} className="flex items-center gap-1.5"><Check className="h-4 w-4" /> {point}</li>
+              <li key={point} className="flex items-center gap-1.5"><Check className="h-4 w-4 text-slate-400" aria-hidden /> {point}</li>
             ))}
           </ul>
         </div>
@@ -338,4 +267,3 @@ export function HomePage() {
     </div>
   );
 }
-

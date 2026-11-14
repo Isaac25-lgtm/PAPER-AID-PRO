@@ -72,11 +72,11 @@ export function SectionGuide({ section, className }: { section: SectionKey; clas
   return (
     <section
       aria-label={`How to use ${guide.title}`}
-      className={clsx("mb-6 rounded-xl border border-brand-100 bg-brand-50/60", expanded ? "p-4" : "px-4 py-2", className)}
+      className={clsx("mb-6 rounded-xl border border-slate-200 bg-white", expanded ? "p-4" : "px-4 py-2", className)}
     >
       <button type="button" onClick={toggle} aria-expanded={expanded} className="flex w-full items-center gap-2 text-left">
         <CircleHelp className="h-4 w-4 shrink-0 text-brand-700" aria-hidden />
-        <span className="flex-1 text-sm font-medium text-brand-900">
+        <span className="flex-1 text-sm font-medium text-slate-900">
           {expanded ? `How to use ${guide.title}` : `New here? How ${guide.title} works`}
           {!expanded && <span className="ml-2 hidden font-normal text-slate-600 sm:inline">· {guide.summary}</span>}
         </span>
@@ -97,7 +97,7 @@ function GuideBody({ section }: { section: SectionKey }) {
         <ol className="mt-3 space-y-1.5">
           {guide.steps.map((step, index) => (
             <li key={step} className="flex gap-2.5">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-700 text-[11px] font-semibold text-white">{index + 1}</span>
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">{index + 1}</span>
               <span>{step}</span>
             </li>
           ))}
@@ -161,7 +161,7 @@ function HelpCenter({ open, initialSection, onClose }: { open: boolean; initialS
             role="tab"
             aria-selected={tab === key}
             onClick={() => setTab(key)}
-            className={clsx("-mb-px border-b-2 px-3 py-2 text-sm font-medium", tab === key ? "border-brand-700 text-brand-800" : "border-transparent text-slate-500 hover:text-slate-800")}
+            className={clsx("-mb-px border-b-2 px-3 py-2 text-sm font-medium", tab === key ? "border-brand-500 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-800")}
           >
             {label}
           </button>
@@ -175,7 +175,7 @@ function HelpCenter({ open, initialSection, onClose }: { open: boolean; initialS
               <li key={key}>
                 <button
                   onClick={() => setSection(key)}
-                  className={clsx("w-full whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-sm", key === section ? "bg-brand-50 font-medium text-brand-800" : "text-slate-600 hover:bg-slate-100")}
+                  className={clsx("w-full whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-sm", key === section ? "bg-slate-100 font-medium text-slate-950" : "text-slate-600 hover:bg-slate-100")}
                 >
                   {GUIDES[key].title}
                 </button>
@@ -252,7 +252,7 @@ function WelcomeTour({ open, name, onClose }: { open: boolean; name: string | nu
     <Modal open={open} onClose={onClose} title={step === 0 && name ? `Welcome, ${name.split(" ")[0]}` : "Getting started"}>
       <div className="flex gap-1.5" aria-hidden>
         {TOUR.map((_, index) => (
-          <span key={index} className={clsx("h-1.5 flex-1 rounded-full", index < step ? "bg-emerald-500" : index === step ? "bg-brand-700" : "bg-slate-200")} />
+          <span key={index} className={clsx("h-1.5 flex-1 rounded-full", index < step ? "bg-emerald-500" : index === step ? "bg-slate-900" : "bg-slate-200")} />
         ))}
       </div>
       <div className="mt-6 flex flex-col items-center text-center">

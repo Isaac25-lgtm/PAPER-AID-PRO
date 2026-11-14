@@ -76,7 +76,7 @@ function AddPaperModal({ open, onClose }: { open: boolean; onClose: () => void }
             ["manual", "Enter manually (books, law, reports…)"],
           ] as const
         ).map(([key, label]) => (
-          <button key={key} role="tab" aria-selected={mode === key} onClick={() => setMode(key)} className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${mode === key ? "border-brand-700 text-brand-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+          <button key={key} role="tab" aria-selected={mode === key} onClick={() => setMode(key)} className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${mode === key ? "border-brand-500 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
             {label}
           </button>
         ))}
@@ -238,12 +238,12 @@ export default function LibraryPage() {
       <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
         <aside className="space-y-4">
           <nav aria-label="Collections" className="space-y-1">
-            <button onClick={() => setParams({})} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${!collectionId && !tag ? "bg-brand-50 font-medium text-brand-800" : "text-slate-700 hover:bg-slate-100"}`}>
+            <button onClick={() => setParams({})} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${!collectionId && !tag ? "bg-slate-100 font-medium text-slate-950" : "text-slate-700 hover:bg-slate-100"}`}>
               <LibraryBig className="h-4 w-4" /> All papers
             </button>
             {collections.data?.map((c) => (
               <div key={c.id} className="group flex items-center">
-                <button onClick={() => setParams({ collection: c.id })} className={`flex-1 truncate rounded-lg px-3 py-2 text-left text-sm ${collectionId === c.id ? "bg-brand-50 font-medium text-brand-800" : "text-slate-700 hover:bg-slate-100"}`}>
+                <button onClick={() => setParams({ collection: c.id })} className={`flex-1 truncate rounded-lg px-3 py-2 text-left text-sm ${collectionId === c.id ? "bg-slate-100 font-medium text-slate-950" : "text-slate-700 hover:bg-slate-100"}`}>
                   {c.name} <span className="text-slate-400">({c.paper_count})</span>
                 </button>
                 <button className="p-1 text-slate-400 opacity-100 hover:text-slate-700 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" aria-label={`Rename ${c.name}`} onClick={() => setCollectionModal(c)}><Pencil className="h-3.5 w-3.5" /></button>
@@ -259,7 +259,7 @@ export default function LibraryPage() {
               <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Tags</p>
               <div className="flex flex-wrap gap-1 px-3">
                 {allTags.map((t) => (
-                  <button key={t} onClick={() => setParams(tag === t ? {} : { tag: t })} className={`rounded-full px-2 py-0.5 text-xs ${tag === t ? "bg-brand-700 text-white" : "bg-slate-100 text-slate-700"}`}>{t}</button>
+                  <button key={t} onClick={() => setParams(tag === t ? {} : { tag: t })} className={`rounded-full px-2 py-0.5 text-xs ${tag === t ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"}`}>{t}</button>
                 ))}
               </div>
             </div>
@@ -278,7 +278,7 @@ export default function LibraryPage() {
               title="Your library is empty"
               action={
                 <div className="flex flex-wrap justify-center gap-2">
-                  <Link to="/discover" className="rounded-lg bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800">Search for papers</Link>
+                  <Link to="/discover" className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800">Search for papers</Link>
                   <Button size="sm" variant="secondary" onClick={() => setAddOpen(true)}>Add by DOI, upload a PDF or enter a book</Button>
                   <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>Import from Zotero / Mendeley</Button>
                 </div>

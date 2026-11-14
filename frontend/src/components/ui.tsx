@@ -2,7 +2,8 @@ import clsx from "clsx";
 import { AlertTriangle, CheckCircle2, Info, Loader2, X } from "lucide-react";
 import { useEffect, useRef, type ButtonHTMLAttributes, type RefObject, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+/** primary = ink (the default action); accent = signal orange, used sparingly for the one main call to action. */
+type Variant = "primary" | "accent" | "secondary" | "ghost" | "danger";
 
 export function Button({
   variant = "primary",
@@ -18,11 +19,12 @@ export function Button({
       {...props}
       disabled={disabled || loading}
       className={clsx(
-        "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-50",
         size === "sm" ? "px-3 py-1.5 text-sm" : "px-4 py-2 text-sm",
         {
-          primary: "bg-brand-700 text-white hover:bg-brand-800",
-          secondary: "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50",
+          primary: "bg-slate-900 text-white hover:bg-slate-800",
+          accent: "bg-brand-500 text-white hover:bg-brand-600",
+          secondary: "border border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50",
           ghost: "text-slate-700 hover:bg-slate-100",
           danger: "bg-red-600 text-white hover:bg-red-700",
         }[variant],
@@ -36,7 +38,7 @@ export function Button({
 }
 
 const fieldClass =
-  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200";
+  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-100";
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={clsx(fieldClass, className)} />;
@@ -63,7 +65,7 @@ export function Label({ children, htmlFor }: { children: ReactNode; htmlFor?: st
 }
 
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={clsx("rounded-xl border border-slate-200 bg-white shadow-sm", className)}>{children}</div>;
+  return <div className={clsx("rounded-xl border border-slate-200 bg-white", className)}>{children}</div>;
 }
 
 export function Spinner({ label = "Loading" }: { label?: string }) {
@@ -81,7 +83,7 @@ export function Alert({ kind = "info", title, children }: { kind?: "info" | "err
     <div
       role={kind === "error" ? "alert" : "status"}
       className={clsx("flex gap-3 rounded-lg border p-3 text-sm", {
-        info: "border-blue-200 bg-blue-50 text-blue-900",
+        info: "border-slate-200 bg-slate-50 text-slate-800",
         error: "border-red-200 bg-red-50 text-red-900",
         success: "border-emerald-200 bg-emerald-50 text-emerald-900",
         warning: "border-amber-200 bg-amber-50 text-amber-900",
@@ -102,10 +104,10 @@ export function Badge({ children, tone = "slate" }: { children: ReactNode; tone?
       className={clsx("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", {
         slate: "bg-slate-100 text-slate-700",
         green: "bg-emerald-100 text-emerald-800",
-        blue: "bg-blue-100 text-blue-800",
+        blue: "bg-slate-100 text-slate-950",
         amber: "bg-amber-100 text-amber-800",
         red: "bg-red-100 text-red-800",
-        violet: "bg-violet-100 text-violet-800",
+        violet: "bg-slate-100 text-slate-800",
       }[tone])}
     >
       {children}
@@ -179,14 +181,14 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
   useDialogFocus(dialogRef, open, onClose);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 pt-20" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-20" onMouseDown={onClose}>
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={clsx("w-full rounded-xl bg-white shadow-xl focus:outline-none", wide ? "max-w-3xl" : "max-w-lg")}
+        className={clsx("w-full rounded-xl border border-slate-200 bg-white shadow-2xl focus:outline-none", wide ? "max-w-3xl" : "max-w-lg")}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
@@ -207,7 +209,7 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
+        <h1 className="text-[28px] font-semibold tracking-[-0.03em] text-slate-950">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-600">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}

@@ -48,8 +48,16 @@ yet").
   menu (find a source; with AI on: rewrite, shorten, check against my sources), the PDF beside the draft (select
   words to cite the page or quote them) and grey AI suggestions (Tab/Esc). The AI parts stay hidden until an AI key
   is added.
-- **Design directions:** three options (Scholar's Desk, Graphite, Night Library) on a private design canvas,
-  waiting for your choice before the app is restyled.
+- **Graphite redesign + Night mode:** the chosen direction (B) is applied app-wide:
+  - crisp neutrals and ink primary buttons, with one signal-orange accent for the main call to action, links and
+    citation chips (no blue)
+  - Inter Tight for the interface, Source Serif 4 for writing and JetBrains Mono for metadata, all self-hosted
+    (no external font requests)
+  - a rebuilt, compact landing page whose preview uses the real interface and real papers
+  - **Appearance** setting (Light / Night / Match device) in the top bar and on the Account page, saved to the
+    account and applied before the first paint
+  - every colour is a theme token (`frontend/src/theme.css`, generated light and dark palettes), so all screens
+    switch together
 - **Release follow-up audit (Codex):** 12 findings, 3 of them high severity, all fixed with tests
   (`docs/RELEASE_AUDIT_RESPONSE.md`):
   - the account ZIP applies the privacy check and is complete
@@ -107,7 +115,7 @@ in production). Please sign in once, accept the consent screen, and try each sec
 
 | # | Item | Why it matters | How |
 |---|---|---|---|
-| 1 | **Design direction** | The premium redesign needs your choice | Open the design canvas and pick A, B, C or a mix |
+| 1 | **Look and feel review** | Graphite and Night mode are live; the signed-in screens were checked through tests and the shared tokens, not screenshots | Sign in once in both modes and tell me anything that feels off |
 | 2 | **Legal review** | The Terms, Privacy and AI notices are careful drafts, not legal advice. One data-protection lawyer can cover all your markets | Share the three pages with counsel. Bump `POLICY_VERSION` after changes. |
 | 3 | **Registrations** | Uganda: register with the Personal Data Protection Office. South Africa: register an Information Officer. Kenya: confirm whether education-related services need ODPC registration regardless of size. EU: an Article 27 representative once EU use is regular | With counsel, before inviting testers from each country |
 | 4 | **Scheduled maintenance, uptime alert, staging** | Commands are prepared. Maintenance now also finishes interrupted account closures, and PDF cleanup is safe to schedule. Staging is defined as a separate project, which needs your approval (it adds a project and billing) | Approve and I'll run them, or use DEPLOYMENT.md, "Pending infrastructure" |

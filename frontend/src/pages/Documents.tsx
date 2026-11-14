@@ -153,7 +153,7 @@ export default function DocumentsPage() {
       )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {docs.data?.map((doc) => (
-          <div key={doc.id} className="group relative rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-brand-300">
+          <div key={doc.id} className="group relative rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300">
             <Link to={`/documents/${doc.id}`} className="block">
               <FileText className="h-5 w-5 text-brand-700" />
               <h2 className="mt-2 line-clamp-2 font-semibold text-slate-900">{doc.title}</h2>

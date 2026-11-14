@@ -69,6 +69,11 @@ status), `storage_deletions`, `rate_limit_buckets`, `audit_events`.
   selection menu replace the passage only if it is unchanged and keep its citation nodes. "Check against my
   sources" is `POST /documents/{id}/check` (the document's sources, else the library; the same grounded-answer
   validation). The PDF panel lazy-loads pdf.js (same-origin worker, no CSP change) and cites the PDF page.
+- **Design system (Graphite):** colours are CSS variables in `frontend/src/theme.css` (generated light and dark
+  palettes; Tailwind's `slate`, `white`, `brand` (orange accent), `red`, `amber` and `emerald` map to them), so
+  Night mode is a single `html.dark` class. `public/theme-init.js` applies the saved choice before first paint (no
+  inline scripts under the CSP); `src/lib/theme.tsx` stores it in the browser and on the account (`theme`
+  preference). Fonts are self-hosted via @fontsource.
 - **Accounts:** consent gate → recorded choices; self-service export (ZIP) and deletion (identity refused first).
 - **Maintenance:** on instance start, on demand (`POST /api/v1/admin/maintenance`) and, once scheduled, every
   15 minutes via `POST /internal/maintenance` (OIDC).

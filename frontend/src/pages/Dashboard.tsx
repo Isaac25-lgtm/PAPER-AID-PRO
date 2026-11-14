@@ -111,7 +111,7 @@ export default function DashboardPage() {
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Go to</h2>
       <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {QUICK.map(({ key, icon: Icon }) => (
-          <Link key={key} to={GUIDES[key].path} className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-300 hover:shadow">
+          <Link key={key} to={GUIDES[key].path} className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow">
             <Icon className="h-5 w-5 text-brand-700" aria-hidden />
             <p className="mt-2 font-medium text-slate-900">{GUIDES[key].title}</p>
             <p className="mt-1 line-clamp-3 text-xs text-slate-600">{GUIDES[key].summary}</p>
@@ -130,7 +130,7 @@ export default function DashboardPage() {
           <ul className="divide-y divide-slate-100">
             {documents.data?.slice(0, 5).map((doc) => (
               <li key={doc.id}>
-                <Link to={`/documents/${doc.id}`} className="flex items-center gap-3 py-2.5 hover:text-brand-800">
+                <Link to={`/documents/${doc.id}`} className="flex items-center gap-3 py-2.5 hover:text-slate-950">
                   <FileText className="h-4 w-4 shrink-0 text-slate-400" />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{doc.title}</span>
                   <span className="shrink-0 text-xs text-slate-500">{doc.word_count.toLocaleString()} words · {relativeTime(doc.updated_at)}</span>
@@ -149,7 +149,7 @@ export default function DashboardPage() {
           <ul className="divide-y divide-slate-100">
             {conversations.data?.slice(0, 5).map((c) => (
               <li key={c.id}>
-                <Link to={`/research?c=${c.id}`} className="flex items-center gap-3 py-2.5 hover:text-brand-800">
+                <Link to={`/research?c=${c.id}`} className="flex items-center gap-3 py-2.5 hover:text-slate-950">
                   <MessageSquare className="h-4 w-4 shrink-0 text-slate-400" />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{c.title}</span>
                   <span className="shrink-0 text-xs text-slate-500">{relativeTime(c.updated_at)}</span>

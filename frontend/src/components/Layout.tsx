@@ -7,6 +7,7 @@ import { DataRightsPanel } from "./DataRights";
 import { useAuth } from "@/lib/auth";
 import { ConsentGate } from "./Consent";
 import { HelpButton, useGuidance } from "./Guidance";
+import { ThemeSwitch } from "@/lib/theme";
 import { Alert, Button, Spinner } from "./ui";
 
 const NAV = [
@@ -19,14 +20,21 @@ const NAV = [
   { to: "/tools/citations", label: "Citations", icon: Quote, auth: false },
 ];
 
-function Logo() {
+/** Graphite mark: an ink tile with a signal-orange square. Theme-aware (the tile inverts in Night mode). */
+export function LogoMark({ className }: { className?: string }) {
+  return (
+    <span aria-hidden className={clsx("inline-flex items-center justify-center rounded-[7px] bg-slate-950", className ?? "h-6 w-6")}>
+      <span className="h-[38%] w-[38%] rounded-[3px] bg-brand-500" />
+    </span>
+  );
+}
+
+export function Logo() {
   const { user } = useAuth();
   return (
-    <Link to={user ? "/dashboard" : "/"} className="flex items-center gap-2 font-semibold text-slate-900">
-      <img src="/favicon.svg" alt="" className="h-7 w-7" />
-      <span>
-        PaperAid <span className="text-brand-700">Pro</span>
-      </span>
+    <Link to={user ? "/dashboard" : "/"} className="flex items-center gap-2.5 text-[17px] font-bold tracking-[-0.02em] text-slate-950">
+      <LogoMark />
+      PaperAid Pro
     </Link>
   );
 }
@@ -38,7 +46,7 @@ export function Layout() {
   const links = NAV.filter((item) => !item.auth || user);
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4">
           <Logo />
           <nav className="hidden flex-1 items-center gap-1 md:flex" aria-label="Main">
@@ -47,7 +55,7 @@ export function Layout() {
                 key={to}
                 to={to}
                 className={({ isActive }) =>
-                  clsx("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium", isActive ? "bg-brand-50 text-brand-800" : "text-slate-600 hover:bg-slate-100")
+                  clsx("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition", isActive ? "bg-slate-100 text-slate-950" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900")
                 }
               >
                 <Icon className="h-4 w-4" aria-hidden />
@@ -55,12 +63,13 @@ export function Layout() {
               </NavLink>
             ))}
             {user?.role === "admin" && (
-              <NavLink to="/admin" className={({ isActive }) => clsx("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium", isActive ? "bg-brand-50 text-brand-800" : "text-slate-600 hover:bg-slate-100")}>
+              <NavLink to="/admin" className={({ isActive }) => clsx("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition", isActive ? "bg-slate-100 text-slate-950" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900")}>
                 <Shield className="h-4 w-4" aria-hidden /> Admin
               </NavLink>
             )}
           </nav>
           <div className="ml-auto hidden items-center gap-2 md:flex">
+            <ThemeSwitch compact />
             {loading ? null : user ? (
               <>
                 <HelpButton />
@@ -77,7 +86,7 @@ export function Layout() {
                 <Link to="/login" className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-slate-900">
                   Sign in
                 </Link>
-                <Link to="/register" className="rounded-lg bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800">
+                <Link to="/register" className="rounded-lg bg-slate-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-slate-800">
                   Create account
                 </Link>
               </>
@@ -89,6 +98,9 @@ export function Layout() {
         </div>
         {open && (
           <nav className="border-t border-slate-200 px-4 py-2 md:hidden" aria-label="Mobile">
+            <div className="flex items-center justify-between px-2 py-2 text-sm text-slate-600">
+              Appearance <ThemeSwitch compact />
+            </div>
             {links.map(({ to, label }) => (
               <NavLink key={to} to={to} onClick={() => setOpen(false)} className="block rounded px-2 py-2 text-sm text-slate-700">
                 {label}
@@ -119,7 +131,7 @@ export function Layout() {
       </main>
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-sm text-slate-500">
-          <span>© {new Date().getFullYear()} PaperAid Pro · Silver</span>
+          <span className="flex items-center gap-2"><LogoMark className="h-4 w-4" /> © {new Date().getFullYear()} PaperAid Pro · Silver</span>
           <span className="flex gap-4">
             <Link to="/terms" className="hover:text-slate-800">
               Terms
