@@ -86,6 +86,24 @@ gcloud monitoring uptime create paperaid-api-ready --project paperaid \
 ```
 Errors logged with stack traces already appear in **Cloud Console → Error Reporting** (service `paperaid-api`).
 
+**Staging (live since 14 November 2026, test phase).** The billing account allows only three projects, so the
+test-phase staging uses free tiers and the production project's billing for the server only:
+
+| Piece | Where |
+|---|---|
+| Website | https://paperaid-staging.web.app (Firebase Hosting on `paperaid-staging`, Spark plan); deploy with `PYTHON=... bash deploy/deploy-staging-frontend.sh` (uses `frontend/.env.staging`) |
+| Sign-in | Firebase Authentication on `paperaid-staging` (separate users; email/password only) |
+| API | Cloud Run `paperaid-api-staging` in `paperaid` (europe-west4), service account `paperaid-staging-api` |
+| Database | Neon free tier (Postgres 16 + pgvector), URL in secret `paperaid-staging-database-url`; migrations via job `paperaid-migrate-staging` |
+| Files / jobs | bucket `paperaid-staging-files-307658066472`, queue `paper-processing-staging` (europe-west1) |
+| Test accounts | three verified `@staging.paperaid.test` accounts; credentials only in the git-ignored `deploy/staging-testers.local.txt` |
+
+Isolation (verified): in `paperaid` the staging service account holds only `roles/logging.logWriter` plus access to
+its own secret, bucket and queue; it has no binding on the production database secret, bucket or queue. Staging
+sign-in tokens are rejected by the production API (401). To release the API to staging, deploy the image digest that
+production runs (or a candidate) to `paperaid-api-staging` and run `paperaid-migrate-staging` first. At launch,
+replace this with the full separate-project setup below.
+
 **Staging — isolated from production.** Staging must not be able to reach production data, sign-ins or
 keys. Nothing is copied from the production service; staging is defined from its own allowlist.
 

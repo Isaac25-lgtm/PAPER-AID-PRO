@@ -5,3 +5,6 @@
 .firebase/
 firebase-debug*.log
 *.log
+frontend/dist-staging/
+firebase.staging.json
+deploy/staging-testers.local.txt
