@@ -41,8 +41,11 @@ gcloud run jobs update "$MIGRATE_JOB" --project "$PROJECT" --region "$REGION" --
 gcloud run jobs execute "$MIGRATE_JOB" --project "$PROJECT" --region "$REGION" --wait
 
 echo "3/5 deploy without traffic"
+# EXTRA_DEPLOY_FLAGS: optional settings that ride through the same gate, e.g.
+#   EXTRA_DEPLOY_FLAGS="--update-env-vars=DB_POOL_SIZE=3,DB_MAX_OVERFLOW=2"
+# shellcheck disable=SC2086
 gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --image "$IMAGE" \
-  --no-traffic --tag "$TAG" --quiet
+  --no-traffic --tag "$TAG" --quiet ${EXTRA_DEPLOY_FLAGS:-}
 REVISION="$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" \
   --format='value(status.latestCreatedRevisionName)')"
 URL="$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" \
