@@ -64,7 +64,9 @@ These were not created automatically because they add standing infrastructure. R
 
 **Scheduled maintenance (every 15 minutes)** — finishing interrupted account closures, storage cleanup with
 backoff (never deleting an object a paper points to; every PDF write has its own key), rate-limit purge,
-stuck-job recovery. Until this exists, maintenance runs when an instance starts and from Admin → Maintenance.
+stuck-job recovery. **Active since 14 November 2026** (job `paperaid-maintenance`, europe-west1; first run returned
+200). Check it with `gcloud scheduler jobs describe paperaid-maintenance --location europe-west1 --project paperaid`.
+It also runs when an instance starts and from Admin → Maintenance.
 ```bash
 gcloud services enable cloudscheduler.googleapis.com --project paperaid
 gcloud scheduler jobs create http paperaid-maintenance --project paperaid --location europe-west1 \
