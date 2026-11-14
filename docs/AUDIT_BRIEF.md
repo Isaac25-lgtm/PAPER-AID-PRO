@@ -1,84 +1,158 @@
-# Audit brief — hardening review of changes since `6db03b0`
+# Audit brief: changes since the hardening audit (`2248a45`)
 
 **For:** Codex (independent reviewer). Read `AGENTS.md` first.
-**Scope:** everything on `main` after `6db03b0` (your system re-audit snapshot) up to `eeff256`, 66 files changed.
-**Ask:** is this code hardened? Verify that each fix in `docs/SYSTEM_REAUDIT_RESPONSE.md` closes its failure scenario
-at the real entry points, and look for new defects the changes introduced. Report findings in the same format as
-`docs/PAPERAID_V2_SYSTEM_REAUDIT.md`. Do not touch production (Cloud Run, Cloud SQL, Firebase `paperaid`).
+**Scope:** everything on `main` after `2248a45` (your hardening audit snapshot) up to `5d2c565`. That is 5 commits,
+31 files.
+**Ask:** is it hardened now?
+1. Verify that each fix in `docs/HARDENING_AUDIT_RESPONSE.md` closes its failure scenario at the real entry
+   points, not only in the tests.
+2. Review the new staging environment for isolation from production.
+3. Check the three bugs found in the signed-in staging run and their fixes.
+4. Look for new defects.
+
+Report in the format of `docs/PAPERAID_V2_HARDENING_AUDIT.md`, as `docs/PAPERAID_V2_STAGING_AUDIT.md`.
 
 ## Commits in scope
 
 | Commit | What |
 |---|---|
-| `9387181` | Floating per-section guide with a ghost-cursor walkthrough; new logo; header no longer wraps |
-| `2ec2cf1` | Fixes for all 15 system re-audit findings; narrated walkthroughs; migration `f2a6c8e4b1d3`; policy version `2026-11-14.2` |
-| `15b2d0b` | README for GitHub with live screenshots; handoff update |
-| `eeff256` | Fonts never inlined as `data:` URLs (CSP `font-src 'self'`); consent screen appears when the policy changes mid-session; smaller guide panel |
+| `050521b` | Fixes for all 13 hardening findings (3 high) |
+| `35ab46e` | Handoff: production API revision `paperaid-api-00018-dul` |
+| `dbdab04` | Scheduled maintenance is live: Cloud Scheduler `paperaid-maintenance` (europe-west1, every 15 min, OIDC as `paperaid-tasks`) |
+| `918c174` | Isolated staging environment (free tiers) and `deploy/deploy-staging-frontend.sh` |
+| `5d2c565` | Three frontend bugs found in the signed-in staging run, with tests; `docs/STAGING_TEST_RUN.md` |
 
-Deployed: API `paperaid-api-00015-kaf` (schema `f2a6c8e4b1d3`, via `deploy/release.sh`), frontend on Firebase
-Hosting. AI is **not configured** in production. CI is green: 249 backend tests, 93 frontend tests, plus the container
-smoke test.
+**Deployed:**
+- Production API: `paperaid-api-00018-dul`, schema `f2a6c8e4b1d3`, released through `deploy/release.sh`. AI is
+  **not configured** in production.
+- Production frontend: has **not** been redeployed since `5d2c565`, so it still lacks those three fixes.
+- Staging frontend: runs `5d2c565`.
 
-## What changed, by finding (where to look)
+**Tests:** 255 backend, 108 frontend, all passing.
 
-| # | Fix | Main code | Tests |
-|---|---|---|---|
-| H1 | Draft text from "Find a source" is searched in the library only. External search requires an explicit button that shows the exact words and their destination. Typed queries still search externally. | `frontend/src/components/editor/CitePalette.tsx` (`origin`, `externalAllowed`), `pages/Editor.tsx` (`onFindSource`) | `src/test/reaudit.test.tsx` (H1) |
-| H2 | Quote and cite captures paper, words, start and end pages and insertion point at the click. The position is mapped through later transactions (`trackPosition`). Quote and citation are inserted in one transaction. Cross-page selections get a range locator. | `components/editor/PdfPanel.tsx`, `lib/editGate.ts` (`trackPosition`), `CitePalette.tsx` (`insertCitationAt` with `before`) | `reaudit.test.tsx` (H2: your exact scenario) |
-| H3 | Identity deletion fails closed outside `ENV=production`: it uses the Auth emulator if `FIREBASE_AUTH_EMULATOR_HOST` is set, otherwise skips the step. | `backend/app/services/identity.py`, README, DEPLOYMENT.md | `tests/test_system_reaudit.py` (identity) |
-| M4 | One rewrite path (selection menu and AI assist). Citations are sent as `[[C1]]`… placeholders, and a proposal applies only if every marker appears once and in order. An unchanged-passage check guards the replacement. Multi-paragraph selections are refused. The backend prompt was updated. | `frontend/src/lib/rewrite.ts`, `SelectionMenu.tsx`, `Editor.tsx` (`AIAssistModal`), `backend/app/services/ai/features.py` (`rewrite_text`) | `writing.test.tsx` (rewrite helpers, selection menu) |
-| M5 | AI cohort: `AI_ACCESS=pilot` (default) with `AI_PILOT_EMAILS` (admins always allowed), via an `AIUser` dependency on every AI route. Separate `AI_AUTOCOMPLETE_ENABLED` (default off), per-user opt-in (off by default) and per-account `/ai/status`. The AI notice describes suggestions. | `app/security/auth.py` (`ai_allowed_for`, `get_ai_user`), `config.py`, routes `discovery/papers/tools/documents.py`, `system.py` (`ai_status`), `Static.tsx` | `test_system_reaudit.py` (M5), `test_system_auth.py` |
-| M6 | A closure completes only when its files are deleted (`closed_accounts.pending_keys`), with back-off retries via `resume_closures`. The browser shows the 202 "finishing automatically" message. | `services/accounts.py` (`_finish_closure`, `_finish_files`, `resume_closures`), migration `f2a6c8e4b1d3`, `components/DataRights.tsx` | `test_system_reaudit.py` (M6), `test_release_audit.py` |
-| M7 | Edit gate: panel citations, PDF quotes, palette, rewrites and AI assist run through `EditGate.run`. Export and restore `pause()` (drain in-flight, then lock) and `resume()`. The toolbar is disabled while frozen. | `lib/editGate.ts`, `Editor.tsx` (`frozen`, `EditGateContext`), `SourcesPanel`, `PdfPanel`, `CitePalette`, `SelectionMenu` | `reaudit.test.tsx` (M7) |
-| M8 | Render generation counter. A render applies only if it is the newest and matches the current style and citation sequence; the reference list is published only with the labels. | `Editor.tsx` (`refreshCitations`), `lib/citationLabels.ts` (`applyRenderIfCurrent`) | `reaudit.test.tsx` (M8), `writing.test.tsx` (labels) |
-| M9 | Check refuses passages over 2,000 characters instead of truncating. The response `scope` lists the sources examined, the total and how many were not checked; the source query filters to visible papers. `gather_evidence` has an overall budget (`limit + EVIDENCE_COVERAGE_EXTRA`). | `routes/documents.py` (`check_passage`), `ai/features.py`, `schemas.py` (`GroundedAnswerOut.scope`), `Editor.tsx` (`CheckPanel`) | `test_system_reaudit.py` (M9) |
-| M10 | Quotes carry `claims` (statement indices). The UI numbers marker groups (`numberClaims`), merges overlapping spans and emphasises the clicked statement's words. Legacy code-point offsets are converted. | `ai/grounding.py` (`citation_payload`, `evidence_excerpt` owners), `components/GroundedAnswerView.tsx` | `test_system_reaudit.py` (M10), `reaudit.test.tsx` (M10) |
-| M11 | Export snapshots file metadata, commits to release the connection, then reads storage. DOCX is built in a thread. A render failure goes into the manifest. Limits: 5 per hour per account, `EXPORT_SLOTS = Semaphore(2)` per instance. | `services/accounts.py` (`export_account`, `_build_export`), `routes/system.py` | `test_system_reaudit.py` (M11) |
-| M12 | Stable Cloud Tasks name `job-<id>`, with 409 ALREADY_EXISTS treated as queued. `DispatchRejected` (connect errors, non-2xx) vs `DispatchUncertain` (other transport errors: the job stays queued for lease recovery). On rejection only an unclaimed queued job is failed, and the paper is restored only if no newer active job exists. | `services/tasks.py`, `services/processing.py` (`queue_ingest`) | `test_system_reaudit.py` (M12) |
-| M13 | Light `slate-500` and both `slate-400` tokens raised; small text moved off `slate-400`. An automated WCAG test computes ratios from `theme.css`. | `frontend/src/theme.css`, many `className`s | `contrast.test.ts` |
-| M14 | The landing demo is labelled, says what "Matched" means, has a keyboard Play/Pause and one pending timer. The trader claim cites Aker (2010, AEJ: Applied), verified matched by the live checker. Section walkthroughs also have pause. | `components/LiveDemo.tsx`, `SectionDemo.tsx` | `liveDemo.test.tsx`, `sectionDemo.test.tsx` |
-| L15 | PDF pages render only near the viewport and are released when far. The download is aborted on paper switch (`api.blob` signal). A searchable picker shows list errors. | `PdfPanel.tsx`, `lib/api.ts` | `reaudit.test.tsx` (H2 harness) |
+## 1. Hardening fixes (`050521b`)
 
-Not from the audit:
-- **Guides:** `components/Guidance.tsx` (`SectionGuide` dock with `guide_<section>_collapsed`), `components/SectionDemo.tsx`,
-  `lib/demos.ts` (scenes and one-line narration) and `lib/guides.ts` (structured steps).
-- **Logo:** `LogoMark` in `Layout.tsx`, `public/favicon.svg`.
-- **Fonts:** `vite.config.ts` `assetsInlineLimit` keeps fonts as files.
-- **Mid-session consent:** `lib/api.ts` `setConsentRequiredHandler`, registered in `lib/auth.tsx` to reload the profile on any `CONSENT_REQUIRED`.
+The fix-by-fix table, with file and test pointers, is in `docs/HARDENING_AUDIT_RESPONSE.md`. The main code:
+- Draft privacy: `CitePalette.tsx`, using `submitted` (an exact value, never the live debounce).
+- Re-consent overlay: `Layout.tsx` (`RequireAuth`: `workMounted`, `useInert`) and `auth.tsx` (`profileError`).
+- Closure fence:
+  - `routes/papers.py` `upload_paper` takes `FOR SHARE` on the user row and re-checks `is_active`.
+  - `services/accounts.py` `_finish_closure` takes `FOR UPDATE` before collecting paths.
+- Exclusive gate: `lib/editGate.ts` (`acquire`, `drain`, `isHeld`).
+- Anchor bookmarks: `trackPosition` / `ANCHOR_LOST` in the palette, sources panel and PDF panel.
+- Per-claim rewrite: `lib/rewrite.ts`. Citations are never sent to the model, and changes are detected with a
+  signature that includes citation identities.
+- Export render session: `services/accounts.py` `_build_export`.
+- Dispatch classification: `services/tasks.py` (`AMBIGUOUS_STATUSES`, `_error_status`).
+- Check scope: `routes/documents.py` `check_passage` (`in_evidence`) and `ai/features.py`
+  (`evidence_paper_ids`).
+- Citation upsert: `services/documents.py` `add_source(commit=False)`, `ON CONFLICT DO NOTHING`.
+- Library filter: `routes/library.py` `has_pdf`.
 
-## Where I am least certain (please probe)
+## 2. Staging environment (`918c174`): please review the isolation
 
-1. **Gate coverage.** Are there command paths that still change the document while frozen? Candidates:
-   - keyboard shortcuts such as undo/redo or Tab-accepting a ghost suggestion while `setEditable(false)`;
-   - paste;
-   - the citation-label refresh (it uses `LABEL_META` transactions, which are meant to be allowed).
-2. **`trackPosition` semantics.** It maps through `editor.on("transaction")`. Check transactions dispatched before
-   the listener attaches, and whether `deleted` should also refuse when the surrounding paragraph is replaced.
-3. **Rewrite markers.** Validation checks only marker count and order. Can a proposal still attach a citation to a
-   different sentence while keeping the order, for example by merging two claims? Is refusing that the right rule?
-4. **Export after a render failure.** I deliberately do not roll back (a rollback would expire the ORM objects still
-   in use), so a database-level error inside `render_citations` could still abort the whole archive.
-5. **Closure files.** `_finish_files` decides completion from the `storage_deletions` rows for `pending_keys`.
-   Check the interaction with the live-object guard in `process_deletions`, and with concurrent maintenance runs.
-6. **Dispatch classification.** `httpx.ConnectTimeout` is treated as "not sent". Confirm that holds for the
-   Cloud Tasks client path, and that name reuse cannot block a legitimate re-queue of the same job id.
-7. **AI cohort.** `/ai/status` uses `OptionalUser`. Confirm no AI route still uses `VerifiedUser` (grep), and that
-   admins bypassing the pilot list is acceptable.
-8. **Consent reload.** `setConsentRequiredHandler` is a module-level singleton. Look for loops (repeated 403 →
-   reload) and the behaviour when the consent screen itself makes requests.
-9. **Upload deduplication.** It uses `pg_advisory_xact_lock(hashtextextended(...))` across a commit boundary, with
-   a re-check under the lock. Look for any window where two papers can still be created.
-10. **Demos.** Every paper and number in `LiveDemo.tsx`, `lib/demos.ts` and the narration must be real and true to
-    the product (AGENTS rule "never fabricate").
+| Part | Staging | Production |
+|---|---|---|
+| Website | Firebase Hosting `paperaid-staging` → https://paperaid-staging.web.app | `paperaid` → paperaid.web.app |
+| Sign-in | Firebase Auth in project `paperaid-staging` (separate users) | Firebase Auth in `paperaid` |
+| API | Cloud Run `paperaid-api-staging` (europe-west4), same image digest as production, `ENV=production`, `FIREBASE_PROJECT_ID=paperaid-staging` | `paperaid-api` |
+| Database | Neon free tier (Postgres 16 + pgvector, us-east-2). Secret `paperaid-staging-database-url` | Cloud SQL `paperaid-db` |
+| Files / queue | bucket `paperaid-staging-files-307658066472`, queue `paper-processing-staging` | own bucket and queue |
+| Identity | service account `paperaid-staging-api` | `paperaid-api` runtime account |
+
+The staging service account has only these grants:
+- `logging.logWriter` (project);
+- `secretAccessor` on its own secret;
+- `objectAdmin` on its own bucket;
+- `enqueuer` on its own queue;
+- `actAs` itself (for OIDC tasks);
+- `firebaseauth.admin` in `paperaid-staging`.
+
+Isolation I verified:
+- There are no staging bindings on the production secret, bucket or queue.
+- A staging ID token gets 401 from the production API and 200 from staging.
+
+The staging frontend is built with `--mode staging` (`frontend/.env.staging`, public identifiers only). Its CSP is a
+generated copy of `firebase.json`, with the API and auth domains swapped. Neither the generated file nor the build
+output is committed.
+
+Please probe:
+- **Cross-environment paths:**
+  - Could a staging token, task or object ever reach production, or the reverse?
+  - The OIDC audience and target URL used by staging tasks (`TASKS_TARGET_URL`, `TASKS_SERVICE_ACCOUNT`).
+  - The CORS origins on each service.
+- **Staging runs `ENV=production`:** it follows the production code paths deliberately. Any production-only
+  behaviour that would be wrong against Neon? For example pool sizes, the `statement_timeout` / pgvector settings,
+  or region latency from europe-west4 to us-east-2.
+- **Generated staging CSP:** the replacement in `deploy/deploy-staging-frontend.sh` is a plain string replace.
+  Confirm it covers every production origin in `firebase.json`, and that nothing in it points back at production.
+
+## 3. Signed-in staging run (`5d2c565`)
+
+Results for every scenario are in `docs/STAGING_TEST_RUN.md`. All passed. It found three bugs, now fixed:
+
+| Bug | Fix | Tests |
+|---|---|---|
+| "Find a source" left the keyboard in the draft with the passage still selected, so typing replaced the writer's text. The palette focused its input while `visibility: hidden`: real browsers refuse that, jsdom does not. | Focus once the palette is placed and visible (`CitePalette.tsx`, `focused` ref plus an effect on `style`) | `reaudit.test.tsx`: records the palette's visibility at the moment of focus (fails on the old code) |
+| A reloaded public page showed signed-out data, e.g. "Save to library" for a saved paper. The first request went out before Firebase had restored the session. | The token getter awaits `auth.authStateReady()` (`lib/auth.tsx`); `AddToLibraryButton` follows `paper.in_library` | `auth.test.tsx` (restored-session token); `components.test.tsx` (button follows the prop) |
+| A quote or citation was inserted with no space after the preceding text | `insertCitationAt` adds a leading space after a word or punctuation | `reaudit.test.tsx` (spacing table) |
+
+## 4. Where I am least certain (please probe)
+
+1. **`authStateReady()` in every request.** Every API call now waits for it.
+   - Check sign-out, account switching in another tab, account deletion (the Firebase user disappears) and the
+     sign-up and verification flow.
+   - Can any request wait forever or carry the wrong account's token?
+   - In tests, `auth.authStateReady?.()` is optional-chained for mocks.
+2. **Closure race, which code path actually refused the upload.** On staging the racing upload got **401** (the
+   auth dependency, because the account was already gone). It never reached the `FOR SHARE` fence (403). The fence
+   is covered only by the deterministic PostgreSQL test in `test_hardening_audit.py`. Is there any ordering where
+   the request passes authentication, then the closure commits, and the object survives?
+3. **First Cloud Tasks delivery gets 503.** On staging a new job's first delivery returned 503, the retry ran it
+   2–5 s later, and the final call returned 204.
+   - Is the task enqueued before the job row is committed?
+   - If that commit then fails, does the task retry against a missing job until its attempts run out?
+   - See `processing.queue_ingest` and `routes/internal` `run-job`.
+4. **Retries behind the consent overlay.** While the overlay is open, the editor retries its failed save about
+   every 10 s. Each retry is a 403 plus a profile reload (`Editor.tsx` `retryTimer`, `auth.tsx`
+   `consentReload`). It is bounded, but should retries pause until consent is given?
+5. **Spacing rule edge cases.** `insertCitationAt` reads one character before the insertion point.
+   - After another citation node, `textBetween` yields `""`, so no space is added. Is that right for back-to-back
+     citations?
+   - Inside marks or links?
+6. **Palette focus.** The focus effect runs on `style` changes, with a ref so it fires once. Check the narrow
+   (mobile) layout and a palette re-opened for a new request.
+7. **Per-claim rewrite** (`lib/rewrite.ts`). It is untested live because AI is off.
+   - The `lead` regex absorbs `[\s.,;:!?)\]]*` after a citation.
+   - Can a claim's text start with something it wrongly swallows?
+   - Is `MAX_REWRITE_SEGMENTS = 6` enforced on the server too, or only in the client?
+8. **Native `confirm()`.** Restore, delete-upload, delete-collection and delete-document use `window.confirm`.
+   That isn't a security issue, but browser automation cannot click it. Is an in-app dialog worth it?
+9. **No `CONTACT_EMAIL` on staging.** Without it Unpaywall is skipped, so staging finds fewer open-access PDFs than
+   production. Europe PMC's renderer refused from Cloud Run (403). Is the candidate order in `open_access.py`
+   right, and should a 403 from one host be treated as transient?
+10. **Secrets.**
+    - Confirm that the repository and its history contain no credentials. Only public Firebase web identifiers are
+      in `frontend/.env.*`.
+    - The staging test-account passwords live in a git-ignored local file (`deploy/staging-testers.local.txt`).
+    - The Neon URL is only in Secret Manager.
 
 ## How to verify
 
 ```bash
-cd backend && .venv/Scripts/python -m pytest -q            # 249 (embedded Postgres; or TEST_PG_URL)
+cd backend && .venv/Scripts/python -m pytest -q            # 255 (embedded Postgres; or TEST_PG_URL)
 cd backend && .venv/Scripts/ruff check app tests alembic scripts
-cd frontend && npx tsc -b --noEmit && npx vitest run       # 93
-cd frontend && npx vite build && grep -c "url(data:font" dist/assets/*.css   # expect 0
+cd frontend && npx tsc -b --noEmit && npx vitest run       # 108
+git log -p --all | grep -nE 'npg_|sk-ant-|BEGIN .*PRIVATE KEY|ghp_|github_pat_'   # expect nothing
 ```
 
-Constraints that still apply: the beta stays invite-only, AI stays off in production, frontend and backend stay
-separate (the browser only calls `/api/v1`), and nothing is changed in production resources.
+## Constraints
+
+- **Production:** do not touch it (Cloud Run `paperaid-api`, Cloud SQL, Firebase `paperaid`).
+- **Staging:** you may read it. Ask the maintainer for test-account credentials; they are not in the repo. Do not
+  change staging infrastructure or IAM.
+- **Product rules:**
+  - the beta stays invite-only;
+  - AI stays off in production;
+  - frontend and backend stay separate (the browser only calls `/api/v1`);
+  - no secrets go in the repo.
