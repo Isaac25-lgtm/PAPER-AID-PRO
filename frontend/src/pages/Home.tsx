@@ -1,93 +1,16 @@
 import clsx from "clsx";
 import { ArrowRight, Check, ChevronDown, FileText, LibraryBig, Lock, Quote, ScanSearch, Search, ShieldCheck } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 
+import { LiveDemo } from "@/components/LiveDemo";
 import { useAuth } from "@/lib/auth";
 
 /*
- * Landing page (Graphite). The product preview is built from the app's real interface elements and shows real,
- * published papers with their real bibliographic details (Suri & Jack 2016, Science; Jack & Suri 2014, American
- * Economic Review; Aker & Mbiti 2010, Journal of Economic Perspectives). No invented papers, numbers, users or
- * testimonials, in line with the project's no-fabrication rule.
+ * Landing page (Graphite). The hero shows a live demo of the real interface with real, published papers
+ * (src/components/LiveDemo.tsx). No invented papers, numbers, users or testimonials, in line with the project's
+ * no-fabrication rule.
  */
-
-const PAPERS = {
-  suri: { cite: "Suri & Jack, 2016", title: "The long-run poverty and gender impacts of mobile money", meta: "Suri & Jack · 2016 · Science" },
-  jack: { cite: "Jack & Suri, 2014", title: "Risk sharing and transactions costs: evidence from Kenya's mobile money revolution", meta: "Jack & Suri · 2014 · American Economic Review" },
-  aker: { cite: "Aker & Mbiti, 2010", title: "Mobile phones and economic development in Africa", meta: "Aker & Mbiti · 2010 · Journal of Economic Perspectives" },
-};
-
-function Chip({ children }: { children: ReactNode }) {
-  return <span className="mx-0.5 whitespace-nowrap rounded-[5px] bg-brand-50 px-1.5 py-0.5 align-[0.1em] font-mono text-[11.5px] text-brand-700">{children}</span>;
-}
-
-function Kbd({ children }: { children: ReactNode }) {
-  return <span className="rounded border border-slate-200 bg-white px-1.5 py-px font-mono text-[10.5px] text-slate-500">{children}</span>;
-}
-
-/** Hero preview: documents, the writing surface with citations, a /cite search and the reference check. */
-function ProductPreview() {
-  return (
-    <div aria-hidden className="mx-auto mt-14 w-full max-w-[1120px] overflow-hidden rounded-t-2xl border border-b-0 border-slate-200 bg-slate-50 text-left">
-      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />
-        <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />
-        <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />
-        <span className="ml-3 text-xs font-medium text-slate-500">Chapter 2 · Literature review</span>
-        <span className="ml-auto font-mono text-[11px] text-emerald-700">● saved</span>
-      </div>
-      <div className="grid md:grid-cols-[200px_1fr_280px]">
-        <div className="hidden flex-col gap-1.5 border-r border-slate-200 p-4 text-[13px] text-slate-500 md:flex">
-          <span className="mb-1 font-semibold text-slate-900">Documents</span>
-          <span className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-slate-900">Chapter 2 · Literature review</span>
-          <span className="px-2.5 py-2">Research proposal</span>
-          <span className="px-2.5 py-2">Concept note</span>
-        </div>
-        <div className="relative bg-white px-6 pb-10 pt-7 sm:px-10">
-          <p className="text-[22px] font-semibold tracking-[-0.02em] text-slate-950">2.1 Access and adoption</p>
-          <p className="mt-3 font-serif text-[16.5px] leading-[1.75] text-slate-800">
-            Mobile money has changed how households in East Africa save, send and borrow <Chip>{PAPERS.suri.cite}</Chip>. Early studies linked access to
-            agent networks with smoother consumption after shocks <Chip>{PAPERS.jack.cite}</Chip>. Yet the benefits are not shared evenly across
-            <span className="text-slate-400"> rural and urban households…</span>
-            <span className="ml-0.5 inline-block h-[18px] w-[2px] translate-y-[3px] bg-brand-500" />
-          </p>
-          <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-slate-500">
-            Suggestion · <Kbd>Tab</Kbd> accept · <Kbd>Esc</Kbd> dismiss
-          </p>
-          <div className="mt-5 max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_48px_-24px_rgba(0,0,0,0.35)]">
-            <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5">
-              <span className="font-mono text-xs text-brand-600">/cite</span>
-              <span className="text-[14px] text-slate-900">mobile phones development Africa</span>
-            </div>
-            <div className="p-1.5">
-              <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-100 px-2.5 py-2">
-                <span className="min-w-0">
-                  <span className="block truncate text-[13px] text-slate-900">{PAPERS.aker.title}</span>
-                  <span className="block truncate text-[11.5px] text-slate-500">{PAPERS.aker.meta} · via OpenAlex, Crossref</span>
-                </span>
-                <span className="shrink-0 font-mono text-[11px] text-slate-500">↵ cite</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="hidden flex-col gap-2.5 border-l border-slate-200 p-4 md:flex">
-          <span className="font-mono text-[11px] tracking-wide text-slate-500">REFERENCE CHECK</span>
-          {[PAPERS.aker, PAPERS.jack, PAPERS.suri].map((p) => (
-            <div key={p.cite} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px]">
-              <span className="truncate text-slate-800">{p.cite.replace(", ", " (")})</span>
-              <span className="shrink-0 font-medium text-emerald-700">Matched</span>
-            </div>
-          ))}
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-brand-200 bg-white px-3 py-2.5 text-[13px]">
-            <span className="truncate text-slate-500">A reference with the wrong year</span>
-            <span className="shrink-0 font-medium text-brand-700">Year differs</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 const FEATURES = [
   { icon: Quote, label: "Cite while you write", body: "Type /cite and search your library and the scholarly indexes at once. Pick a result and it is cited, formatted and added to the reference list." },
@@ -175,7 +98,7 @@ export function HomePage() {
               <button type="submit" className="rounded-md px-2 py-1 text-sm font-medium text-slate-700 hover:bg-slate-100">Search</button>
             </form>
           </div>
-          <ProductPreview />
+          <LiveDemo />
         </div>
       </section>
 
