@@ -48,12 +48,26 @@ def _title_in_reference(reference: str, title: str) -> float:
     return _title_span(reference, title)[0]
 
 
-def _author_segment(reference: str, title: str) -> str:
-    """The text before the title: where references list their authors (APA, Vancouver, IEEE, Harvard, ...).
-    Searching only there stops a surname that happens to appear in a title or journal from counting."""
-    score, start, _ = _title_span(reference, title)
+def _reference_parts(reference: str, title: str) -> tuple[list[str], list[str]]:
+    """Split a free-form reference around the matched title: (words before the title, words outside the title).
+    Authors come before the title in APA, Vancouver, IEEE, Harvard, MLA and Chicago; the publication year is
+    anywhere OUTSIDE the title (a year inside a title must never count as the publication year)."""
+    score, start, end = _title_span(reference, title)
     words = normalize_title(reference).split()
-    return " ".join(words[:start]) if score >= 0.6 and start > 0 else ""
+    if score < 0.6:
+        return [], words
+    return words[:start], words[:start] + words[end:]
+
+
+def _first_author_matches(before_title: list[str], family: str) -> bool | None:
+    """Compare the FIRST listed author (skipping leading initials, e.g. IEEE "J. Smith") with the registry's."""
+    names = [w for w in before_title if len(w) > 1 or not w.isalpha()]
+    while names and len(names[0]) == 1:
+        names.pop(0)
+    family_words = family.split()
+    if not names or not family_words:
+        return None
+    return names[: len(family_words)] == family_words
 
 
 def _field(value: bool | None) -> str:
@@ -62,13 +76,11 @@ def _field(value: bool | None) -> str:
 
 def _assess(reference: str, work: ScholarlyWork, via_doi: bool) -> dict[str, Any]:
     title_score = _title_in_reference(reference, work.title)
-    years = {int(y) for y in _YEAR.findall(reference)}
+    before_title, outside_title = _reference_parts(reference, work.title)
+    years = {int(y) for y in _YEAR.findall(" ".join(outside_title))}
     year_ok: bool | None = (work.year in years) if (years and work.year) else None
     family = normalize_title((work.authors[0].family or work.authors[0].name.split(" ")[-1]) if work.authors else "")
-    segment = _author_segment(reference, work.title)
-    author_ok: bool | None = None
-    if family and segment:
-        author_ok = re.search(rf"(?<!\w){re.escape(family)}(?!\w)", segment) is not None
+    author_ok = _first_author_matches(before_title, family) if family else None
     checks = {
         "title_similarity": round(title_score, 2),
         "year_matches": year_ok,
@@ -83,11 +95,11 @@ def _assess(reference: str, work: ScholarlyWork, via_doi: bool) -> dict[str, Any
         verdict: Verdict = "verified"  # every field was actually compared and agreed
     elif title_score >= 0.6 and year_ok is not False and author_ok is not False:
         verdict = "likely_match"  # nothing contradicts it, but something could not be checked (or title is close)
-    elif via_doi:
-        verdict = "mismatch"  # DOI resolves, but to a different work than the text describes
+    elif via_doi or title_score >= 0.85:
+        verdict = "mismatch"  # a real publication, but the reference's author/year (or DOI target) disagree
     else:
         verdict = "not_found"
-    return {"verdict": verdict, "checks": checks}
+    return {"verdict": verdict, "checks": checks, "via_doi": via_doi}
 
 
 def _candidate_score(reference: str, work: ScholarlyWork) -> float:
@@ -107,7 +119,10 @@ def _explanation(assessment: dict[str, Any]) -> str:
         detail = f" Not checked: {', '.join(unchecked)} (missing from the reference)." if unchecked else ""
         return "A closely matching publication exists; check the details below." + detail
     if verdict == "mismatch":
-        return "The DOI resolves to a different publication than the reference describes."
+        if assessment.get("via_doi") and fields["title"] != "matched":
+            return "The DOI resolves to a different publication than the reference describes."
+        wrong = [name.replace("_", " ") for name, state in fields.items() if state == "does not match"]
+        return "This publication exists, but the reference gets its " + " and ".join(wrong or ["details"]) + " wrong."
     return "No registered publication closely matches this reference."
 
 

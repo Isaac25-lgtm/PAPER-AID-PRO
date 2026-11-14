@@ -11,10 +11,33 @@ export interface User {
   role: Role;
   email_verified: boolean;
   created_at: string;
+  /** Terms/Privacy version this account accepted; the app asks again when `policy_version` changes. */
+  accepted_policy_version?: string | null;
+  policy_version?: string;
+  needs_consent?: boolean;
+  /** Per-account settings that follow the person across devices (guide state, defaults). */
+  preferences?: Record<string, unknown>;
+}
+
+export interface Progress {
+  library: number;
+  full_text: number;
+  collections: number;
+  documents: number;
+  conversations: number;
+}
+
+export interface QuoteSpan {
+  text: string;
+  start: number;
+  end: number;
 }
 
 export interface Paper {
   id: string;
+  /** "registry" = verified from Crossref/PubMed/...; "user" = typed or uploaded by its private owner. */
+  metadata_source?: "registry" | "user" | "unverified";
+  csl_extra?: Record<string, unknown>;
   title: string;
   abstract: string | null;
   authors: string[];
@@ -186,7 +209,22 @@ export interface CitationStyle {
   id: string;
   title: string;
   kind: "author-date" | "numeric" | "note";
+  /** Discipline group shown in style menus. */
+  group?: string;
+  /** False for footnote-only styles (no reference list), e.g. Bluebook. */
+  has_bibliography?: boolean;
 }
+
+export type Subject = "all" | "health" | "life" | "physical" | "social" | "humanities";
+
+export const SUBJECTS: { value: Subject; label: string }[] = [
+  { value: "all", label: "All subjects" },
+  { value: "health", label: "Health & medicine" },
+  { value: "life", label: "Life sciences" },
+  { value: "physical", label: "Physical sciences, engineering & computing" },
+  { value: "social", label: "Social sciences, education, business & law" },
+  { value: "humanities", label: "Arts & humanities" },
+];
 
 export interface FormattedEntry {
   in_text: string;
@@ -222,6 +260,10 @@ export interface AnswerCitation {
   page_start: number | null;
   page_end: number | null;
   excerpt: string;
+  /** The verified supporting words, with positions inside `excerpt` (highlighted in the UI). */
+  quotes?: QuoteSpan[];
+  excerpt_truncated_start?: boolean;
+  excerpt_truncated_end?: boolean;
 }
 
 export interface GroundedAnswer {

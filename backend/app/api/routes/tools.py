@@ -6,7 +6,7 @@ import asyncio
 import uuid
 
 from fastapi import APIRouter, Request, Response
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 
 from app.api.deps import DB, AppSettings
 from app.db.models import Conversation, Message, MessageRole
@@ -41,12 +41,17 @@ router = APIRouter()
 ANON_MAX_IDENTIFIERS = 20
 HISTORY_MESSAGES = 6  # three question/answer turns
 MAX_THREAD_MESSAGES = 200
+# Within a turn the question comes before the answer.
+_ROLE_ORDER = case((Message.role == MessageRole.USER, 0), else_=1)
 
 
 # ----------------------------------------------------------------------------------------------- citations
 @router.get("/citations/styles", response_model=list[StyleOut], tags=["citations"])
 async def styles() -> list[StyleOut]:
-    return [StyleOut(id=s.id, title=s.title, kind=s.kind) for s in STYLES.values()]
+    return [
+        StyleOut(id=s.id, title=s.title, kind=s.kind, group=s.group, has_bibliography=s.has_bibliography)
+        for s in STYLES.values()
+    ]
 
 
 @router.post("/citations/format", response_model=FormatResponse, tags=["citations"])
@@ -148,24 +153,25 @@ async def research_ask(
         conversation = await db.get(Conversation, body.conversation_id)
         if conversation is None or conversation.user_id != user.id:
             raise NotFound("Conversation not found.")
-        # Bounded follow-up context: the last few turns, so "those studies" / "that outcome" resolve.
+        # Bounded follow-up context: the last complete turns, so "those studies" / "that outcome" resolve.
         recent = list(
             (
                 await db.execute(
                     select(Message)
                     .where(Message.conversation_id == conversation.id)
-                    .order_by(Message.created_at.desc())
+                    .order_by(Message.turn_index.desc(), _ROLE_ORDER)
                     .limit(HISTORY_MESSAGES)
                 )
             ).scalars()
-        )[::-1]
-        question: str | None = None
+        )
+        turns: dict[int, dict[MessageRole, str]] = {}
         for message in recent:
-            if message.role == MessageRole.USER:
-                question = message.content
-            elif question is not None:
-                history.append((question, message.content))
-                question = None
+            turns.setdefault(message.turn_index, {})[message.role] = message.content
+        history = [
+            (turn[MessageRole.USER], turn[MessageRole.ASSISTANT])
+            for _, turn in sorted(turns.items())
+            if MessageRole.USER in turn and MessageRole.ASSISTANT in turn
+        ]
     else:
         conversation = None
     result = await ai_features.research_synthesis(db, papers, body.question, history=history)
@@ -173,12 +179,35 @@ async def research_ask(
         conversation = Conversation(user_id=user.id, title=body.question[:120], paper_ids=[p.id for p in papers])
         db.add(conversation)
         await db.flush()
+        turn = 0
     else:
+        # Lock the thread so concurrent follow-ups get distinct, ordered turns.
+        conversation = (
+            await db.execute(
+                select(Conversation)
+                .where(Conversation.id == conversation.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
         conversation.paper_ids = [p.id for p in papers]
-    db.add(Message(conversation_id=conversation.id, role=MessageRole.USER, content=body.question, citations=[]))
+        latest = (
+            await db.execute(select(func.max(Message.turn_index)).where(Message.conversation_id == conversation.id))
+        ).scalar_one()
+        turn = 0 if latest is None else latest + 1
     db.add(
         Message(
             conversation_id=conversation.id,
+            role=MessageRole.USER,
+            content=body.question,
+            citations=[],
+            turn_index=turn,
+        )
+    )
+    db.add(
+        Message(
+            conversation_id=conversation.id,
+            turn_index=turn,
             role=MessageRole.ASSISTANT,
             content=result["answer"],
             citations=result["citations"],
@@ -208,7 +237,7 @@ async def conversation(conversation_id: uuid.UUID, db: DB, user: VerifiedUser) -
         await db.execute(
             select(Message)
             .where(Message.conversation_id == convo.id)
-            .order_by(Message.created_at.desc())
+            .order_by(Message.turn_index.desc(), _ROLE_ORDER.desc())
             .limit(MAX_THREAD_MESSAGES)
         )
     ).scalars()

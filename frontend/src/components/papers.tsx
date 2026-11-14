@@ -1,11 +1,11 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, Copy, ExternalLink, FileCheck2, Lock, Unlock } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import { api, errorMessage } from "@/lib/api";
 import { authorLine, sanitizeHtml } from "@/lib/format";
-import type { CitationStyle, Paper, PaperStatus } from "@/lib/types";
+import type { CitationStyle, LibraryItem, Paper, PaperStatus } from "@/lib/types";
 import { Alert, Badge, Button, Modal, Select, Spinner } from "./ui";
 
 export function StatusBadge({ status }: { status: PaperStatus }) {
@@ -45,6 +45,7 @@ export function PaperCard({ paper, actions }: { paper: Paper; actions?: React.Re
             <Unlock className="h-3 w-3" /> Open access
           </Badge>
         )}
+        <UserSuppliedBadge paper={paper} />
         {paper.visibility === "private" && (
           <Badge tone="violet">
             <Lock className="h-3 w-3" /> Private
@@ -94,11 +95,7 @@ export function CiteModal({ paperId, open, onClose }: { paperId: string; open: b
   return (
     <Modal open={open} onClose={onClose} title="Cite this paper">
       <Select value={style} onChange={(event) => setStyle(event.target.value)} aria-label="Citation style">
-        {(styles.data ?? []).map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.title}
-          </option>
-        ))}
+        <StyleOptions styles={styles.data} />
       </Select>
       {cite.isLoading && <Spinner label="Formatting" />}
       {cite.error && <div className="mt-3"><Alert kind="error">{errorMessage(cite.error)}</Alert></div>}
@@ -138,5 +135,51 @@ export function AddToLibraryButton({ paper, onDone }: { paper: Paper; onDone?: (
     <Button size="sm" variant="secondary" loading={mutation.isPending} onClick={() => mutation.mutate()}>
       Save to library
     </Button>
+  );
+}
+
+
+/** Search the whole library on the server (title match), newest first, one page at a time. */
+export function useLibrarySearch(filter: string, limit = 50) {
+  const [debounced, setDebounced] = useState(filter);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(filter.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [filter]);
+  return useQuery({
+    queryKey: ["library", "search", debounced, limit],
+    queryFn: () => api.page<LibraryItem>("/library", { q: debounced || undefined, limit }),
+  });
+}
+
+
+/** Style <option>s grouped by discipline (Widely used, Humanities, Social sciences, Law, Sciences, ...). */
+export function StyleOptions({ styles }: { styles: CitationStyle[] | undefined }) {
+  const list = styles ?? [{ id: "apa", title: "APA 7th edition", kind: "author-date" as const, group: "Widely used" }];
+  const groups = Array.from(new Set(list.map((s) => s.group || "Other")));
+  return (
+    <>
+      {groups.map((group) => (
+        <optgroup key={group} label={group}>
+          {list
+            .filter((s) => (s.group || "Other") === group)
+            .map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.title}
+              </option>
+            ))}
+        </optgroup>
+      ))}
+    </>
+  );
+}
+
+/** Marks records whose details were typed or uploaded by their owner rather than verified at a registry. */
+export function UserSuppliedBadge({ paper }: { paper: Pick<Paper, "metadata_source"> }) {
+  if (paper.metadata_source !== "user" && paper.metadata_source !== "unverified") return null;
+  return (
+    <span title="Details entered by you, not verified against a scholarly registry" className="inline-flex">
+      <Badge tone="amber">User-supplied details</Badge>
+    </span>
   );
 }

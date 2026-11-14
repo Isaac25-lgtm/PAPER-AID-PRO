@@ -3,7 +3,7 @@ quotes appear verbatim in the cited evidence, numbers match, an independent supp
 
 import re
 
-from app.services.ai.grounding import INSUFFICIENT_MESSAGE, GroundedAnswer, GroundedClaim
+from app.services.ai.grounding import INSUFFICIENT_MESSAGE, PARTIAL_COVERAGE, GroundedAnswer, GroundedClaim
 from app.services.ai.providers import LLMResult, set_llm
 from tests.conftest import ALICE, STUDY_SECTIONS, import_doi, make_pdf
 
@@ -47,7 +47,9 @@ def claim(text, ids=("E1",), quotes=(RESULT_QUOTE,), starts_paragraph=False):
 
 
 def answer(*claims, insufficient=False, gaps=""):
-    return GroundedAnswer(claims=list(claims), insufficient_evidence=insufficient, gaps=gaps)
+    """`gaps` imitates a model that adds free-text commentary anyway; it must never reach the user."""
+    payload = GroundedAnswer(claims=list(claims), insufficient_evidence=insufficient).model_dump()
+    return {**payload, "gaps": gaps}
 
 
 def results_evidence_key(prompt: str) -> str:
@@ -164,10 +166,12 @@ async def test_markers_in_model_text_cannot_smuggle_extra_citations(client):
 
 async def test_insufficient_evidence_uses_a_fixed_message(client):
     paper = await upload_study(client)
-    set_llm(FakeLLM(answer(insufficient=True, gaps="The paper reports no cost data.")))
+    set_llm(FakeLLM(answer(insufficient=True, gaps="The only trial was retracted in 2024.")))
     body = (await ask(client, paper, "What did it cost?")).json()
     assert body["insufficient_evidence"] is True and body["citations"] == []
-    assert body["answer"] == INSUFFICIENT_MESSAGE and body["gaps"] == "The paper reports no cost data."
+    assert body["answer"] == INSUFFICIENT_MESSAGE
+    # Model-written commentary is never shown (an unsupported allegation like "retracted" cannot leak through).
+    assert body["gaps"] == PARTIAL_COVERAGE and "retracted" not in body["gaps"]
 
 
 async def test_insufficient_evidence_with_partial_claims_still_verifies_them(client):
@@ -217,7 +221,7 @@ async def test_research_synthesis_persists_conversation_and_evidence_status(clie
     convo = (await client.get(f"/api/v1/research/conversations/{body['conversation_id']}", headers=ALICE)).json()
     assert [m["role"] for m in convo["messages"]] == ["user", "assistant"]
     assert convo["messages"][1]["citations"] == body["citations"]
-    assert convo["messages"][1]["gaps"] == "Costs are not reported."
+    assert convo["messages"][1]["gaps"] == ""
     assert convo["messages"][1]["insufficient_evidence"] is False
 
     # A follow-up carries bounded context from the earlier turn (marked as not-evidence).

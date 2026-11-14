@@ -41,7 +41,10 @@ async def test_every_bundled_style_formats(style):
         [ITEM], style=style, clusters=[[{"id": "x", "locator": "85", "label": "page"}]], output="text"
     )
     assert result.citations[0].strip()
-    assert "Journal of Imaging" in result.bibliography[0]
+    if STYLES[style].has_bibliography:
+        assert "Journal of Imaging" in result.bibliography[0]
+    else:  # footnote-only style: the full reference is in the note itself
+        assert result.bibliography == [] and "Journal of Imaging" in result.citations[0]
     if style in EXPECTED_IN_TEXT:
         assert result.citations[0] == EXPECTED_IN_TEXT[style]
 

@@ -42,6 +42,11 @@ class AccountConflict(AppError):
     code = "ACCOUNT_CONFLICT"
 
 
+class ConsentRequired(AppError):
+    status_code = 403
+    code = "CONSENT_REQUIRED"
+
+
 class Forbidden(AppError):
     status_code = 403
     code = "FORBIDDEN"

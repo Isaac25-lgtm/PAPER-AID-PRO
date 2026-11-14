@@ -6,7 +6,7 @@ import { Layout, RequireAuth } from "./components/Layout";
 import { Spinner } from "./components/ui";
 import { HomePage } from "./pages/Home";
 import { LoginPage, RegisterPage, ResetPasswordPage } from "./pages/Auth";
-import { NotFoundPage, PrivacyPage } from "./pages/Static";
+import { AINoticePage, NotFoundPage, PrivacyPage, TermsPage } from "./pages/Static";
 
 // Heavier screens are code-split so the landing page stays fast.
 const DiscoverPage = lazy(() => import("./pages/Discover"));
@@ -36,6 +36,8 @@ export function App() {
           <Route path="papers/:id" element={<PaperPage />} />
           <Route path="tools/citations" element={<CitationToolsPage />} />
           <Route path="privacy" element={<PrivacyPage />} />
+          <Route path="terms" element={<TermsPage />} />
+          <Route path="ai-notice" element={<AINoticePage />} />
           <Route path="dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
           <Route path="library" element={<RequireAuth><LibraryPage /></RequireAuth>} />
           <Route path="documents" element={<RequireAuth><DocumentsPage /></RequireAuth>} />

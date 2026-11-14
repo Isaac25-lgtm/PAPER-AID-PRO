@@ -15,9 +15,9 @@ from app.security.auth import OptionalUser, VerifiedUser
 from app.security.rate_limit import enforce_caller_limit, enforce_rate_limit
 from app.services.ai.features import discovery_snapshot
 from app.services.papers import upsert_public_paper
-from app.services.scholarly.aggregator import federated_search, resolve_identifier
+from app.services.scholarly.aggregator import default_providers, federated_search, resolve_identifier
 from app.services.scholarly.identifiers import parse_identifier
-from app.services.scholarly.models import ALL_PROVIDERS, ProviderName, ScholarlyWork
+from app.services.scholarly.models import ALL_PROVIDERS, ProviderName, ScholarlyWork, Subject
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
@@ -44,6 +44,7 @@ async def search(
     year_from: Annotated[int | None, Query(ge=1500, le=2100)] = None,
     year_to: Annotated[int | None, Query(ge=1500, le=2100)] = None,
     open_access_only: bool = False,
+    subject: Subject = "all",
 ) -> SearchResponse:
     if year_from and year_to and year_from > year_to:
         raise ValidationFailed("year_from must not be after year_to.")
@@ -58,11 +59,12 @@ async def search(
         action="search",
     )
     # Each provider is queried at most once, whatever the client sends.
-    selected = [p for p in ALL_PROVIDERS if p in set(providers or ALL_PROVIDERS)]
+    selected = [p for p in ALL_PROVIDERS if p in set(providers)] if providers else default_providers(subject)
     await db.commit()  # do not hold a DB connection while the providers are queried
     works, statuses = await federated_search(
         q.strip(),
         providers=selected,
+        subject=subject,
         limit=limit,
         year_from=year_from,
         year_to=year_to,

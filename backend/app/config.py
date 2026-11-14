@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     # --- Auth (Firebase Authentication) ---------------------------------------------------------------
     firebase_project_id: str = "paperaid"
     require_email_verified: bool = True
+    # Every account must accept the current Terms/Privacy notice (recorded in consent_records) before using the app.
+    require_policy_acceptance: bool = True
     # Comma-separated emails that are promoted to ADMIN on first sign-in (bootstrap only).
     admin_emails: str = ""
     # Invite-only mode: comma-separated emails allowed to use signed-in features (admins always allowed).
@@ -64,6 +66,7 @@ class Settings(BaseSettings):
     contact_email: str = ""
     ncbi_api_key: str = ""
     semantic_scholar_api_key: str = ""
+    core_api_key: str = ""  # free key from core.ac.uk; enables CORE (open-access papers in every discipline)
     http_timeout_seconds: float = 15.0
 
     # --- AI (configured later; every AI endpoint returns 503 AI_NOT_CONFIGURED until then) -----------

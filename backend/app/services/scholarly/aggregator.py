@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from app.errors import AppError
 from app.services.scholarly.identifiers import Identifier, normalize_title
 from app.services.scholarly.models import ALL_PROVIDERS, ProviderName, ProviderStatus, ScholarlyWork
-from app.services.scholarly.providers import PROVIDERS
+from app.services.scholarly.providers import DEFAULT_PROVIDERS, PROVIDERS, available
 
 log = logging.getLogger(__name__)
 
@@ -53,9 +53,13 @@ def _first_author_family(work: ScholarlyWork) -> str:
 
 
 def _same_by_title(a: ScholarlyWork, b: ScholarlyWork) -> bool:
-    """A weak (title + year) match additionally needs agreeing first authors when both list authors."""
+    """A weak (title + year) match must be CORROBORATED: the same first author, or (when a record lists no
+    authors) the same journal. Thin records never merge on title alone."""
     fa, fb = _first_author_family(a), _first_author_family(b)
-    return not (fa and fb and fa != fb)
+    if fa and fb:
+        return fa == fb
+    ja, jb = normalize_title(a.journal), normalize_title(b.journal)
+    return bool(ja and jb and ja == jb)
 
 
 def merge_works(primary: ScholarlyWork, other: ScholarlyWork) -> ScholarlyWork:
@@ -85,38 +89,53 @@ def merge_works(primary: ScholarlyWork, other: ScholarlyWork) -> ScholarlyWork:
 def merge_and_dedupe(result_lists: Sequence[list[ScholarlyWork]]) -> tuple[list[ScholarlyWork], dict[int, float]]:
     """Returns merged works and their fused reciprocal-rank score (keyed by list index).
 
-    Strong identifiers (DOI, PMID, arXiv) decide identity. Title + year is only a fallback, never merges records
-    whose identifiers conflict, and requires agreeing first authors."""
+    Records are grouped with a union-find. Two groups join when they share a strong identifier (DOI, PMID,
+    arXiv) - transitively, so a record carrying both a DOI and a PMID bridges the DOI group and the PMID group -
+    or when a corroborated title + year match links them. Groups whose identifiers conflict (two different DOIs)
+    never join."""
+    records: list[tuple[ScholarlyWork, int]] = [(w, rank) for works in result_lists for rank, w in enumerate(works)]
+    parent = list(range(len(records)))
+    group_work: dict[int, ScholarlyWork] = {i: w for i, (w, _) in enumerate(records)}
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra == rb or _conflicts(group_work[ra], group_work[rb]):
+            return
+        keep, drop = min(ra, rb), max(ra, rb)  # the earliest record (best-ranked provider list) stays primary
+        parent[drop] = keep
+        group_work[keep] = merge_works(group_work[keep], group_work[drop])
+
+    by_strong: dict[str, int] = {}
+    for index, (work, _) in enumerate(records):
+        for key in _strong_keys(work):
+            if key in by_strong:
+                union(by_strong[key], index)
+            else:
+                by_strong[key] = index
+    by_title: dict[str, list[int]] = {}
+    for index, (work, _) in enumerate(records):
+        if title_key := _title_key(work):
+            for other in by_title.get(title_key, []):
+                if _same_by_title(group_work[find(other)], work):
+                    union(other, index)
+            by_title.setdefault(title_key, []).append(index)
+
     merged: list[ScholarlyWork] = []
     scores: dict[int, float] = {}
-    by_strong: dict[str, int] = {}
-    by_title: dict[str, list[int]] = {}
-    for works in result_lists:
-        for rank, work in enumerate(works):
-            existing = next((by_strong[k] for k in _strong_keys(work) if k in by_strong), None)
-            if existing is not None and _conflicts(merged[existing], work):
-                existing = None
-            if existing is None and (title_key := _title_key(work)):
-                existing = next(
-                    (
-                        i
-                        for i in by_title.get(title_key, [])
-                        if not _conflicts(merged[i], work) and _same_by_title(merged[i], work)
-                    ),
-                    None,
-                )
-            if existing is None:
-                merged.append(work)
-                existing = len(merged) - 1
-                scores[existing] = 0.0
-            else:
-                merged[existing] = merge_works(merged[existing], work)
-            scores[existing] += 1.0 / (RRF_K + rank + 1)
-            for key in _strong_keys(merged[existing]):
-                by_strong.setdefault(key, existing)
-            if title_key := _title_key(merged[existing]):
-                if existing not in by_title.setdefault(title_key, []):
-                    by_title[title_key].append(existing)
+    slot: dict[int, int] = {}
+    for index, (_, rank) in enumerate(records):
+        root = find(index)
+        if root not in slot:
+            slot[root] = len(merged)
+            merged.append(group_work[root])
+            scores[slot[root]] = 0.0
+        scores[slot[root]] += 1.0 / (RRF_K + rank + 1)
     return merged, scores
 
 
@@ -139,12 +158,19 @@ def rank(works: list[ScholarlyWork], fused: dict[int, float], query: str) -> lis
 
 
 async def _run_provider(
-    name: ProviderName, query: str, limit: int, year_from: int | None, year_to: int | None, oa_only: bool
+    name: ProviderName,
+    query: str,
+    limit: int,
+    year_from: int | None,
+    year_to: int | None,
+    oa_only: bool,
+    subject: str | None = None,
 ) -> tuple[ProviderStatus, list[ScholarlyWork]]:
     provider = PROVIDERS[name]
     try:
         works = await asyncio.wait_for(
-            provider.search(query, limit, year_from, year_to, oa_only), timeout=PROVIDER_TIMEOUT_SECONDS
+            provider.search(query, limit, year_from, year_to, oa_only, subject=subject),
+            timeout=PROVIDER_TIMEOUT_SECONDS,
         )
         return ProviderStatus(provider=name, ok=True, count=len(works)), works
     except TimeoutError:
@@ -156,6 +182,10 @@ async def _run_provider(
         return ProviderStatus(provider=name, ok=False, error="unexpected response"), []
 
 
+def default_providers(subject: str = "all") -> list[ProviderName]:
+    return [p for p in DEFAULT_PROVIDERS.get(subject, DEFAULT_PROVIDERS["all"]) if available(p)]  # type: ignore[misc]
+
+
 async def federated_search(
     query: str,
     *,
@@ -164,11 +194,13 @@ async def federated_search(
     year_from: int | None = None,
     year_to: int | None = None,
     open_access_only: bool = False,
+    subject: str = "all",
 ) -> tuple[list[ScholarlyWork], list[ProviderStatus]]:
     per_provider = max(10, min(limit, 40))
-    selected = [p for p in dict.fromkeys(providers) if p in PROVIDERS]  # each provider at most once
+    # Each provider at most once, and only those that are configured (CORE needs a key).
+    selected = [p for p in dict.fromkeys(providers) if p in PROVIDERS and available(p)]
     outcomes = await asyncio.gather(
-        *(_run_provider(p, query, per_provider, year_from, year_to, open_access_only) for p in selected)
+        *(_run_provider(p, query, per_provider, year_from, year_to, open_access_only, subject) for p in selected)
     )
     statuses = [status for status, _ in outcomes]
     merged, fused = merge_and_dedupe([works for _, works in outcomes])
@@ -206,10 +238,13 @@ async def resolve_identifier(identifier: Identifier) -> ScholarlyWork | None:
         return None
     work = found[0]
     for extra in found[1:]:
+        if _conflicts(work, extra):  # a provider returned a different publication: never blend it in
+            log.info("scholarly.lookup_conflict", extra={"identifier": identifier.value})
+            continue
         work = merge_works(work, extra)
     # The arXiv/PubMed records may expose a DOI that unlocks richer Crossref/OpenAlex enrichment.
     if identifier.kind != "doi" and work.doi and "crossref" not in work.sources:
         enriched = await resolve_identifier(Identifier("doi", work.doi))
-        if enriched:
+        if enriched and not _conflicts(work, enriched):
             work = merge_works(work, enriched)
     return work

@@ -7,13 +7,16 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy import func, select, update
+from starlette.background import BackgroundTask
 
 from app.api.deps import DB, AppSettings
 from app.api.downloads import content_disposition
 from app.db.models import (
     LibraryItem,
     Paper,
+    PaperAuthor,
     PaperChunk,
     PaperSource,
     PaperStatus,
@@ -21,7 +24,7 @@ from app.db.models import (
     PaperVisibility,
     ProcessingJob,
 )
-from app.errors import Forbidden, NotFound, PayloadTooLarge, ValidationFailed
+from app.errors import AppError, Forbidden, NotFound, PayloadTooLarge, ValidationFailed
 from app.schemas import (
     AskRequest,
     GroundedAnswerOut,
@@ -34,11 +37,13 @@ from app.schemas import (
 )
 from app.security.auth import OptionalUser, VerifiedUser
 from app.security.rate_limit import enforce_rate_limit
-from app.services import processing
+from app.services import manual, processing
 from app.services.ai import features as ai_features
 from app.services.citations.csl import STYLES, format_citations
 from app.services.maintenance import delete_now_or_later, schedule_deletion
+from app.services.manual import ManualSourceIn
 from app.services.papers import (
+    author_rows,
     can_manage,
     create_private_paper,
     get_paper_for_user,
@@ -51,7 +56,7 @@ from app.services.scholarly.aggregator import resolve_identifier
 from app.services.scholarly.identifiers import parse_identifier
 from app.services.scholarly.models import ScholarlyWork
 from app.services.search import search_evidence
-from app.services.storage import get_storage
+from app.services.storage import get_storage, sha256_hex
 
 router = APIRouter(prefix="/papers", tags=["papers"])
 
@@ -163,22 +168,84 @@ async def upload_paper(
         if name.lower().endswith(".pdf"):
             name = name[:-4]
         work = ScholarlyWork(title=name[:500] or "Uploaded document", work_type="article")
-    # One transaction for the paper row, its stored PDF pointer and the library entry. The object is uploaded
-    # before the commit; if the commit fails the object is recorded for deletion instead of being orphaned.
-    paper = await create_private_paper(db, owner=user, work=work, source=PaperSource.UPLOAD, commit=False)
-    key = await processing.store_pdf(db, paper, data)
+    # Re-uploading the same file is idempotent: return the paper it already created.
+    digest = sha256_hex(data)
+    existing = (
+        await db.execute(select(Paper.id).where(Paper.owner_id == user.id, Paper.file_sha256 == digest).limit(1))
+    ).scalar_one_or_none()
+    if existing is not None:
+        await _ensure_library(db, user.id, existing)
+        return PaperOut.build(await get_paper_for_user(db, existing, user), user_id=user.id, in_library=True)
+    await db.commit()  # no DB connection is held while the object is written
+    # The object is written first (after a durable upload intent), then ONE transaction creates the paper with
+    # its PDF pointer and library entry and clears the intent. Any failure leaves the intent for cleanup.
+    paper_id = uuid.uuid4()
+    key, digest = await processing.put_pdf(paper_id, data)
+    paper = await create_private_paper(
+        db, owner=user, work=work, source=PaperSource.UPLOAD, commit=False, paper_id=paper_id
+    )
+    await processing.attach_pdf(db, paper, key, digest, len(data))
     db.add(LibraryItem(user_id=user.id, paper_id=paper.id, tags=[]))
+    await db.commit()
     try:
+        await processing.queue_ingest(db, paper, user)
+    except AppError:
+        # The upload itself succeeded; only processing could not start. Report that on the paper (it can be
+        # retried from its page) instead of failing the upload, which would invite a duplicate re-upload.
+        await db.execute(
+            update(Paper)
+            .where(Paper.id == paper_id)
+            .values(status_detail="Text extraction could not be started. Use “Retrieve full text” to retry.")
+        )
         await db.commit()
-    except Exception:
-        await db.rollback()
-        await schedule_deletion(db, key)
-        await db.commit()
-        await delete_now_or_later(db, key)
-        raise
-    await processing.queue_ingest(db, paper, user)
-    paper = await get_paper_for_user(db, paper.id, user)
+    paper = await get_paper_for_user(db, paper_id, user)
     return PaperOut.build(paper, user_id=user.id, in_library=True)
+
+
+@router.post("/manual", response_model=PaperOut, status_code=201)
+async def add_manual_source(body: ManualSourceIn, db: DB, user: VerifiedUser) -> PaperOut:
+    """Add a source that has no registry identifier (book, chapter, report, court case, statute, web page, ...).
+    It is private to you and labelled user-supplied; it never enters the shared catalog."""
+    await enforce_rate_limit(db, key=f"manual:{user.id}", limit=120, window_seconds=3600, action="manual entries")
+    work, extra = manual.to_work(body)
+    paper = await create_private_paper(db, owner=user, work=work, source=PaperSource.MANUAL, commit=False)
+    paper.csl_extra = extra
+    db.add(LibraryItem(user_id=user.id, paper_id=paper.id, tags=[]))
+    await db.commit()
+    return PaperOut.build(await get_paper_for_user(db, paper.id, user), user_id=user.id, in_library=True)
+
+
+@router.put("/{paper_id}/manual", response_model=PaperOut)
+async def edit_manual_source(paper_id: uuid.UUID, body: ManualSourceIn, db: DB, user: VerifiedUser) -> PaperOut:
+    """Correct a source you entered manually (only your own, user-supplied records can be edited)."""
+    paper = await get_paper_for_user(db, paper_id, user)
+    if not can_manage(paper, user) or paper.metadata_source != "user":
+        raise Forbidden("Only sources you entered yourself can be edited.")
+    work, extra = manual.to_work(body)
+    for field in ("title", "year", "journal", "publisher", "volume", "issue", "pages", "work_type", "url"):
+        setattr(paper, field, getattr(work, field))
+    paper.csl_extra = extra
+    paper.authors.clear()
+    await db.flush()
+    for position, author in enumerate(await author_rows(db, work)):
+        db.add(PaperAuthor(paper_id=paper.id, author_id=author.id, position=position))
+    await db.commit()
+    return PaperOut.build(await get_paper_for_user(db, paper.id, user), user_id=user.id, in_library=True)
+
+
+@router.get("/lookup/isbn/{isbn}")
+async def lookup_isbn(isbn: str, db: DB, user: VerifiedUser) -> dict[str, object]:
+    """Pre-fill a book from its ISBN (Open Library). Nothing is saved until you add the source."""
+    await enforce_rate_limit(db, key=f"isbn:{user.id}", limit=60, window_seconds=3600, action="ISBN lookups")
+    try:
+        cleaned = ManualSourceIn.model_validate({"type": "book", "title": "x", "isbn": isbn}).isbn
+    except PydanticValidationError as exc:
+        raise ValidationFailed("Enter a 10- or 13-digit ISBN.") from exc
+    await db.commit()
+    found = await manual.lookup_isbn(cleaned or "")
+    if found is None:
+        raise NotFound("No book with that ISBN was found in Open Library. You can still enter it manually.")
+    return found
 
 
 @router.get("/{paper_id}", response_model=PaperOut)
@@ -240,7 +307,10 @@ async def paper_pdf(paper_id: uuid.UUID, db: DB, user: VerifiedUser) -> Response
     }
     if size:
         headers["Content-Length"] = str(size)
-    return StreamingResponse(body, media_type="application/pdf", headers=headers)
+    # The stream is closed when the response finishes, fails or the client disconnects (background task).
+    return StreamingResponse(
+        body, media_type="application/pdf", headers=headers, background=BackgroundTask(body.aclose)
+    )
 
 
 @router.get("/{paper_id}/passages", response_model=list[PassageOut])

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import quote
@@ -25,14 +25,36 @@ from app.errors import NotFound, UpstreamError
 class ObjectStorage(Protocol):
     async def put(self, key: str, data: bytes, content_type: str) -> None: ...
     async def get(self, key: str) -> bytes: ...
-    async def open_stream(self, key: str) -> AsyncIterator[bytes]:
-        """Resolve the object (raising NotFound before any byte is sent) and return a chunk iterator."""
+    async def open_stream(self, key: str) -> StoredStream:
+        """Resolve the object (raising NotFound before any byte is sent) and return an owned stream."""
         ...
 
     async def delete(self, key: str) -> None: ...
 
 
 CHUNK_SIZE = 64 * 1024
+
+
+class StoredStream:
+    """An open object download. Whoever holds it must call `aclose()` (idempotent) on every exit path:
+    completed, failed or abandoned by a disconnecting client. The API attaches it as a response background task."""
+
+    def __init__(self, chunks: AsyncIterator[bytes], close: Callable[[], Awaitable[None]]) -> None:
+        self._chunks = chunks
+        self._close = close
+        self._closed = False
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        try:
+            async for chunk in self._chunks:
+                yield chunk
+        finally:
+            await self.aclose()
+
+    async def aclose(self) -> None:
+        if not self._closed:
+            self._closed = True
+            await self._close()
 
 
 def _safe_key(key: str) -> str:
@@ -63,20 +85,20 @@ class LocalStorage:
             raise NotFound("File not found in storage.")
         return await asyncio.to_thread(path.read_bytes)
 
-    async def open_stream(self, key: str) -> AsyncIterator[bytes]:
+    async def open_stream(self, key: str) -> StoredStream:
         path = self._path(key)
         if not path.exists():
             raise NotFound("File not found in storage.")
         handle = await asyncio.to_thread(path.open, "rb")
 
-        async def body() -> AsyncIterator[bytes]:
-            try:
-                while chunk := await asyncio.to_thread(handle.read, CHUNK_SIZE):
-                    yield chunk
-            finally:
-                await asyncio.to_thread(handle.close)
+        async def chunks() -> AsyncIterator[bytes]:
+            while chunk := await asyncio.to_thread(handle.read, CHUNK_SIZE):
+                yield chunk
 
-        return body()
+        async def close() -> None:
+            await asyncio.to_thread(handle.close)
+
+        return StoredStream(chunks(), close)
 
     async def delete(self, key: str) -> None:
         path = self._path(key)
@@ -119,14 +141,18 @@ class GCSStorage:
             raise UpstreamError(f"Storage download failed (HTTP {response.status_code}).")
         return response.content
 
-    async def open_stream(self, key: str) -> AsyncIterator[bytes]:
+    async def open_stream(self, key: str) -> StoredStream:
         name = quote(_safe_key(key), safe="")
         url = f"https://storage.googleapis.com/storage/v1/b/{self.bucket}/o/{name}"
         headers = {"Authorization": f"Bearer {await self._token()}"}
         client = httpx.AsyncClient(timeout=120)
-        response = await client.send(
-            client.build_request("GET", url, params={"alt": "media"}, headers=headers), stream=True
-        )
+        try:
+            response = await client.send(
+                client.build_request("GET", url, params={"alt": "media"}, headers=headers), stream=True
+            )
+        except BaseException:  # connection failure or cancellation while opening: nothing may leak
+            await client.aclose()
+            raise
         if response.status_code >= 300:
             status = response.status_code
             await response.aclose()
@@ -135,15 +161,11 @@ class GCSStorage:
                 raise NotFound("File not found in storage.")
             raise UpstreamError(f"Storage download failed (HTTP {status}).")
 
-        async def body() -> AsyncIterator[bytes]:
-            try:
-                async for chunk in response.aiter_bytes(CHUNK_SIZE):
-                    yield chunk
-            finally:  # also runs when the client disconnects mid-download
-                await response.aclose()
-                await client.aclose()
+        async def close() -> None:
+            await response.aclose()
+            await client.aclose()
 
-        return body()
+        return StoredStream(response.aiter_bytes(CHUNK_SIZE), close)
 
     async def delete(self, key: str) -> None:
         name = quote(_safe_key(key), safe="")

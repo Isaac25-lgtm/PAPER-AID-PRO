@@ -73,7 +73,9 @@ export function AnswerText({ text, citations }: { text: string; citations: Answe
                   {c.kind === "passage" ? `${c.section ?? "Full text"}${c.page_start ? `, p. ${c.page_start}` : ""}` : "Abstract"}
                 </Badge>
               </div>
-              <blockquote className="mt-2 border-l-2 border-slate-300 pl-3 text-slate-600">“{c.excerpt.slice(0, 420)}{c.excerpt.length > 420 ? "…" : ""}”</blockquote>
+              <blockquote className="mt-2 border-l-2 border-slate-300 pl-3 text-slate-600">
+                <HighlightedExcerpt citation={c} />
+              </blockquote>
             </li>
           ))}
         </ol>
@@ -116,4 +118,33 @@ export function AIError({ error }: { error: unknown }) {
     return <Alert kind="error">{error.message}</Alert>;
   }
   return <Alert kind="error">Something went wrong.</Alert>;
+}
+
+
+/** The excerpt with the verified supporting words highlighted (positions come from the server's checks). */
+export function HighlightedExcerpt({ citation }: { citation: AnswerCitation }) {
+  const text = citation.excerpt;
+  const spans = [...(citation.quotes ?? [])]
+    .filter((q) => q.start >= 0 && q.end <= text.length && q.start < q.end)
+    .sort((a, b) => a.start - b.start);
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  spans.forEach((span, index) => {
+    if (span.start < cursor) return; // overlapping quote: already highlighted
+    parts.push(text.slice(cursor, span.start));
+    parts.push(
+      <mark key={index} className="rounded bg-amber-100 px-0.5 text-slate-900" title="The words this statement relies on">
+        {text.slice(span.start, span.end)}
+      </mark>,
+    );
+    cursor = span.end;
+  });
+  parts.push(text.slice(cursor));
+  return (
+    <>
+      “{citation.excerpt_truncated_start ? "…" : ""}
+      {parts}
+      {citation.excerpt_truncated_end ? "…" : ""}”
+    </>
+  );
 }

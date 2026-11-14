@@ -9,6 +9,8 @@
  */
 export type Fields = Record<string, unknown>;
 
+const MAX_DRAIN_ROUNDS = 10;
+
 export interface SaveHooks {
   onStart?(): void;
   onSaved?(hasMore: boolean): void;
@@ -45,12 +47,20 @@ export class SaveQueue {
     this.conflicted = false;
   }
 
-  /** Queue a save behind any running save. Resolves true only when the server has every edit. */
+  /**
+   * Queue a save behind any running save and DRAIN: keep saving until nothing is pending (edits typed while a
+   * request was in flight go out too). Resolves true only when the server has every edit made before it settles.
+   * Callers that need a fixed snapshot (export, restore) should also stop editing while they wait.
+   */
   flush(): Promise<boolean> {
-    const next = this.chain.then(
-      () => this.saveOnce(),
-      () => this.saveOnce(),
-    );
+    const drain = async (): Promise<boolean> => {
+      for (let round = 0; round < MAX_DRAIN_ROUNDS; round += 1) {
+        if (!(await this.saveOnce())) return false;
+        if (!this.dirty) return true;
+      }
+      return !this.dirty;
+    };
+    const next = this.chain.then(drain, drain);
     this.chain = next.catch(() => false);
     return next;
   }

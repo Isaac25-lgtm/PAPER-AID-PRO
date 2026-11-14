@@ -58,6 +58,15 @@ _SAFE_HREF = re.compile(r"^(https?://|mailto:)", re.IGNORECASE)
 EMPTY_DOC: dict[str, Any] = {"type": "doc", "content": [{"type": "paragraph"}]}
 
 
+MAX_TEXT_NODE = 200_000
+
+
+def _kind(node: dict[str, Any]) -> str | None:
+    """A node's type, only if it is a string (JSON allows anything there)."""
+    kind = node.get("type")
+    return kind if isinstance(kind, str) else None
+
+
 def _int(value: Any, default: int, low: int, high: int) -> int:
     try:
         number = int(value)
@@ -91,7 +100,8 @@ class _Sanitizer:
             return marks
         seen: set[str] = set()
         for mark in raw:
-            if not isinstance(mark, dict) or mark.get("type") not in ALLOWED_MARKS or mark["type"] in seen:
+            mark_type = mark.get("type") if isinstance(mark, dict) else None
+            if not isinstance(mark_type, str) or mark_type not in ALLOWED_MARKS or mark_type in seen:
                 continue
             seen.add(mark["type"])
             if mark["type"] == "link":
@@ -110,11 +120,13 @@ class _Sanitizer:
             if not isinstance(node, dict):
                 continue
             self.tick(depth)
-            kind = node.get("type")
+            kind = _kind(node)
             if kind == "text":
                 text = node.get("text")
                 if isinstance(text, str) and text:
-                    item: dict[str, Any] = {"type": "text", "text": text[:100_000]}
+                    if len(text) > MAX_TEXT_NODE:
+                        raise ValidationFailed("A single block of text is too long; split it into paragraphs.")
+                    item: dict[str, Any] = {"type": "text", "text": text}
                     node_marks = [] if plain else self.marks(node.get("marks"))
                     if node_marks:
                         item["marks"] = node_marks
@@ -147,7 +159,7 @@ class _Sanitizer:
         for node in nodes:
             if not isinstance(node, dict):
                 continue
-            kind = node.get("type")
+            kind = _kind(node)
             if kind in INLINE_NODES:
                 loose.append(node)
                 continue
@@ -174,7 +186,7 @@ class _Sanitizer:
         out: dict[str, Any] = {"type": kind}
         if kind == "heading":
             out["attrs"] = {"level": _int(attrs.get("level"), 2, 1, 4)}
-        elif kind == "paragraph" and attrs.get("textAlign") in _ALIGN:
+        elif kind == "paragraph" and isinstance(attrs.get("textAlign"), str) and attrs["textAlign"] in _ALIGN:
             out["attrs"] = {"textAlign": attrs["textAlign"]}
         elif kind == "orderedList" and "start" in attrs:
             out["attrs"] = {"start": _int(attrs.get("start"), 1, 1, 10_000)}
@@ -197,7 +209,7 @@ class _Sanitizer:
             for child in children:
                 if not isinstance(child, dict):
                     continue
-                if child.get("type") == "listItem":
+                if _kind(child) == "listItem":
                     item = self.node(child, depth + 1)
                     if item is not None:
                         content.append(item)
@@ -211,7 +223,7 @@ class _Sanitizer:
                 return None
         elif rule == "tableRow":
             for child in children:
-                if isinstance(child, dict) and child.get("type") == "tableRow":
+                if isinstance(child, dict) and _kind(child) == "tableRow":
                     row = self.node(child, depth + 1)
                     if row is not None:
                         content.append(row)
@@ -221,7 +233,7 @@ class _Sanitizer:
             for child in children:
                 if not isinstance(child, dict):
                     continue
-                if child.get("type") in {"tableCell", "tableHeader"}:
+                if _kind(child) in {"tableCell", "tableHeader"}:
                     cell_node = self.node(child, depth + 1)
                     if cell_node is not None:
                         content.append(cell_node)
@@ -239,7 +251,7 @@ class _Sanitizer:
 
 def sanitize_content(node: Any) -> dict[str, Any] | None:
     """Keep only known node types, marks and attributes, in valid parent/child positions."""
-    if not isinstance(node, dict) or node.get("type") != "doc":
+    if not isinstance(node, dict) or _kind(node) != "doc":
         return None
     sanitizer = _Sanitizer()
     return {"type": "doc", "content": sanitizer.blocks(sanitizer.children(node), 1)}
@@ -247,7 +259,7 @@ def sanitize_content(node: Any) -> dict[str, Any] | None:
 
 def normalise_document(content: Any) -> dict[str, Any]:
     try:
-        size = len(json.dumps(content, ensure_ascii=False))
+        size = len(json.dumps(content, ensure_ascii=False).encode("utf-8"))
     except (TypeError, ValueError) as exc:
         raise ValidationFailed("Document content is not valid JSON.") from exc
     if size > MAX_CONTENT_BYTES:
@@ -281,17 +293,24 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w'-]+\b", text))
 
 
-def citation_clusters(content: dict[str, Any]) -> list[list[str]]:
-    clusters: list[list[str]] = []
+def citation_nodes(content: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every citation node, depth-first in document order. The single traversal shared by citation rendering
+    and both exporters (which key formatted text by node identity)."""
+    nodes: list[dict[str, Any]] = []
 
     def walk(n: dict[str, Any]) -> None:
         if n.get("type") == "citation":
-            clusters.append(list((n.get("attrs") or {}).get("citationIds") or []))
+            nodes.append(n)
         for child in n.get("content") or []:
-            walk(child)
+            if isinstance(child, dict):
+                walk(child)
 
     walk(content)
-    return clusters
+    return nodes
+
+
+def citation_clusters(content: dict[str, Any]) -> list[list[str]]:
+    return [list((n.get("attrs") or {}).get("citationIds") or []) for n in citation_nodes(content)]
 
 
 async def get_owned_document(db: AsyncSession, document_id: uuid.UUID, user: User, *, lock: bool = False) -> Document:
@@ -428,9 +447,9 @@ async def save_document(
 
 
 async def restore_revision(
-    db: AsyncSession, doc: Document, user: User, revision_id: uuid.UUID, *, base_version: int | None = None
+    db: AsyncSession, doc: Document, user: User, revision_id: uuid.UUID, *, base_version: int
 ) -> Document:
-    """`doc` must be row-locked. With `base_version`, the restore only applies to the version the user saw."""
+    """`doc` must be row-locked. The restore only applies to the version the user saw (409 otherwise)."""
     _check_version(doc, base_version)
     revision = await db.get(DocumentRevision, revision_id)
     if revision is None or revision.document_id != doc.id:
@@ -502,6 +521,7 @@ async def render_citations(
     bibliography: list[str] = []
     if formattable:
         csl_items = [to_csl_json(papers[pid]) for pid in paper_ids if pid in papers]
+        await db.commit()  # release the DB connection while the citation engine runs (no writes are pending)
         formatted = await format_citations(
             csl_items,
             style=style,

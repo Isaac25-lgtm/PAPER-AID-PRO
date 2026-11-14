@@ -56,11 +56,20 @@ async def _fts(db: AsyncSession, query: str, paper_ids: list[uuid.UUID], limit: 
     return list((await db.execute(stmt)).scalars())
 
 
-async def _vector(db: AsyncSession, query: str, paper_ids: list[uuid.UUID], limit: int) -> list[PaperChunk]:
+async def _embed_query(query: str) -> list[float] | None:
+    """The query vector, fetched BEFORE any SQL so no DB connection waits on the provider. None if unavailable."""
     embedder = get_embedder()
     if embedder is None:
-        return []
-    [vector] = await embedder.embed([query], task="query")
+        return None
+    try:
+        [vector] = await embedder.embed([query], task="query")
+    except Exception:  # embedding provider down/rate-limited: keyword retrieval still answers the question
+        log.warning("search.embedding_unavailable", exc_info=True)
+        return None
+    return vector
+
+
+async def _vector(db: AsyncSession, vector: list[float], paper_ids: list[uuid.UUID], limit: int) -> list[PaperChunk]:
     distance = PaperChunk.embedding.cosine_distance(vector)
     stmt = (
         select(PaperChunk)
@@ -83,12 +92,15 @@ async def search_evidence(
     candidates = max(limit * 4, 24)
     fused: dict[uuid.UUID, float] = {}
     chunks: dict[uuid.UUID, PaperChunk] = {}
+    vector = await _embed_query(query)
     keyword = await _fts(db, query, paper_ids, candidates)
-    try:
-        semantic = await _vector(db, query, paper_ids, candidates)
-    except Exception:  # embedding provider down/rate-limited: keyword retrieval still answers the question
-        log.warning("search.vector_unavailable", exc_info=True)
-        semantic = []
+    semantic: list[PaperChunk] = []
+    if vector is not None:
+        try:
+            async with db.begin_nested():  # a failing optional query must not abort the caller's transaction
+                semantic = await _vector(db, vector, paper_ids, candidates)
+        except Exception:
+            log.warning("search.vector_query_failed", exc_info=True)
     for result in (keyword, semantic):
         for rank, chunk in enumerate(result):
             chunks[chunk.id] = chunk

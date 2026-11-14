@@ -5,17 +5,20 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from collections.abc import AsyncIterator
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Query, Response, UploadFile
-from sqlalchemy import any_, func, select
+from fastapi.responses import StreamingResponse
+from sqlalchemy import Select, any_, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DB
 from app.api.downloads import content_disposition
-from app.db.models import Collection, CollectionPaper, LibraryItem, Paper, PaperAuthor, PaperSource
+from app.db.models import Collection, CollectionPaper, LibraryItem, Paper, PaperAuthor, PaperSource, User
+from app.db.session import get_sessionmaker
 from app.errors import Conflict, NotFound, PayloadTooLarge, ValidationFailed
 from app.schemas import (
     CollectionIn,
@@ -29,7 +32,13 @@ from app.schemas import (
 from app.security.auth import VerifiedUser
 from app.security.rate_limit import enforce_rate_limit
 from app.services.citations.interchange import parse_bibtex, parse_ris, to_bibtex, to_ris
-from app.services.papers import create_private_paper, get_paper_for_user, to_csl_json, upsert_public_paper
+from app.services.papers import (
+    create_private_paper,
+    get_paper_for_user,
+    to_csl_json,
+    upsert_public_paper,
+    visible_papers_clause,
+)
 from app.services.scholarly.aggregator import resolve_identifier
 from app.services.scholarly.identifiers import Identifier
 from app.services.scholarly.models import ScholarlyWork
@@ -37,9 +46,18 @@ from app.services.scholarly.models import ScholarlyWork
 router = APIRouter(tags=["library"])
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
 MAX_IMPORT_ENTRIES = 500
-MAX_LIBRARY_PAGE = 1000
-MAX_EXPORT_ITEMS = 5000
+MAX_LIBRARY_PAGE = 500
+EXPORT_BATCH = 200
 RESOLVE_CONCURRENCY = 4
+
+
+def _visible_items(user: User) -> Select[tuple[LibraryItem]]:
+    """Library rows whose paper the user may CURRENTLY see. A saved link never outlives access to its paper."""
+    return (
+        select(LibraryItem)
+        .join(Paper, Paper.id == LibraryItem.paper_id)
+        .where(LibraryItem.user_id == user.id, visible_papers_clause(user))
+    )
 
 
 async def _get_item(db: DB, user_id: uuid.UUID, paper_id: uuid.UUID, *, lock: bool = False) -> LibraryItem:
@@ -61,21 +79,17 @@ async def _get_collection(db: DB, user_id: uuid.UUID, collection_id: uuid.UUID) 
 
 @router.get("/library", response_model=list[LibraryItemOut])
 async def list_library(
+    response: Response,
     db: DB,
     user: VerifiedUser,
     collection_id: uuid.UUID | None = None,
     tag: Annotated[str | None, Query(max_length=50)] = None,
-    limit: Annotated[int, Query(ge=1, le=MAX_LIBRARY_PAGE)] = MAX_LIBRARY_PAGE,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_LIBRARY_PAGE)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[LibraryItemOut]:
-    stmt = (
-        select(LibraryItem)
-        .where(LibraryItem.user_id == user.id)
-        .options(selectinload(LibraryItem.paper).selectinload(Paper.authors).joinedload(PaperAuthor.author))
-        .order_by(LibraryItem.created_at.desc(), LibraryItem.id)
-        .limit(limit)
-        .offset(offset)
-    )
+    """One page of the library (newest first). `X-Total-Count` gives the total for paging; `q` filters by title."""
+    stmt = _visible_items(user)
     if collection_id:
         await _get_collection(db, user.id, collection_id)
         stmt = stmt.join(
@@ -84,7 +98,17 @@ async def list_library(
         )
     if tag:
         stmt = stmt.where(tag == any_(LibraryItem.tags))
-    items = list((await db.execute(stmt)).scalars().unique())
+    if q and q.strip():
+        stmt = stmt.where(Paper.title.ilike(f"%{q.strip()}%"))
+    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+    response.headers["X-Total-Count"] = str(total)
+    page = (
+        stmt.options(selectinload(LibraryItem.paper).selectinload(Paper.authors).joinedload(PaperAuthor.author))
+        .order_by(LibraryItem.created_at.desc(), LibraryItem.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    items = list((await db.execute(page)).scalars().unique())
     memberships: dict[uuid.UUID, list[uuid.UUID]] = {}
     if items:
         rows = await db.execute(
@@ -236,34 +260,60 @@ async def export_library(
     user: VerifiedUser,
     format: Literal["bibtex", "ris", "csl-json"] = "bibtex",
     collection_id: uuid.UUID | None = None,
-) -> Response:
-    stmt = (
-        select(LibraryItem)
-        .where(LibraryItem.user_id == user.id)
-        .options(selectinload(LibraryItem.paper).selectinload(Paper.authors).joinedload(PaperAuthor.author))
-        .order_by(LibraryItem.created_at)
-    )
+) -> StreamingResponse:
+    """The complete library (or one collection), streamed in batches so size never truncates it."""
+    stmt = _visible_items(user)
     if collection_id:
         await _get_collection(db, user.id, collection_id)
         stmt = stmt.join(
             CollectionPaper,
             (CollectionPaper.paper_id == LibraryItem.paper_id) & (CollectionPaper.collection_id == collection_id),
         )
-    items = [to_csl_json(i.paper) for i in (await db.execute(stmt.limit(MAX_EXPORT_ITEMS))).scalars().unique()]
-    if format == "bibtex":
-        body, media, ext = to_bibtex(items), "application/x-bibtex", "bib"
-    elif format == "ris":
-        body, media, ext = to_ris(items), "application/x-research-info-systems", "ris"
-    else:
-        body, media, ext = (
-            json.dumps(items, ensure_ascii=False, indent=2),
-            "application/vnd.citationstyles.csl+json",
-            "json",
-        )
-    return Response(
-        content=body,
+    ids = list(
+        (
+            await db.execute(stmt.with_only_columns(LibraryItem.id).order_by(LibraryItem.created_at, LibraryItem.id))
+        ).scalars()
+    )
+    await db.commit()
+    media, ext = {
+        "bibtex": ("application/x-bibtex", "bib"),
+        "ris": ("application/x-research-info-systems", "ris"),
+        "csl-json": ("application/vnd.citationstyles.csl+json", "json"),
+    }[format]
+
+    async def body() -> AsyncIterator[str]:
+        if format == "csl-json":
+            yield "["
+        first = True
+        for start_index in range(0, len(ids), EXPORT_BATCH):
+            batch = ids[start_index : start_index + EXPORT_BATCH]
+            async with get_sessionmaker()() as session:
+                rows = (
+                    await session.execute(
+                        select(LibraryItem)
+                        .where(LibraryItem.id.in_(batch))
+                        .options(
+                            selectinload(LibraryItem.paper).selectinload(Paper.authors).joinedload(PaperAuthor.author)
+                        )
+                        .order_by(LibraryItem.created_at, LibraryItem.id)
+                    )
+                ).scalars()
+                items = [to_csl_json(i.paper) for i in rows.unique()]
+            if format == "bibtex":
+                yield to_bibtex(items) + "\n"
+            elif format == "ris":
+                yield to_ris(items) + "\n"
+            else:
+                for item in items:
+                    yield ("" if first else ",") + "\n" + json.dumps(item, ensure_ascii=False, indent=2)
+                    first = False
+        if format == "csl-json":
+            yield "\n]\n"
+
+    return StreamingResponse(
+        body(),
         media_type=f"{media}; charset=utf-8",
-        headers={"Content-Disposition": content_disposition(f"paperaid-library.{ext}")},
+        headers={"Content-Disposition": content_disposition(f"paperaid-library.{ext}"), "X-Item-Count": str(len(ids))},
     )
 
 
@@ -318,8 +368,10 @@ async def delete_collection(collection_id: uuid.UUID, db: DB, user: VerifiedUser
 @router.put("/collections/{collection_id}/papers/{paper_id}", status_code=204)
 async def add_to_collection(collection_id: uuid.UUID, paper_id: uuid.UUID, db: DB, user: VerifiedUser) -> Response:
     await _get_collection(db, user.id, collection_id)
-    # Only papers in your library can be organised. Locking the library item serialises this with removal.
+    # Only papers in your library (that you can still see) can be organised. Locking the library item
+    # serialises this with removal.
     await _get_item(db, user.id, paper_id, lock=True)
+    await get_paper_for_user(db, paper_id, user)
     await db.execute(
         pg_insert(CollectionPaper)
         .values(collection_id=collection_id, paper_id=paper_id)

@@ -7,10 +7,11 @@ import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
 import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
 import { PaperMeta } from "@/components/papers";
-import { Alert, Badge, Button, Card, EmptyState, Input, PageHeader, Spinner } from "@/components/ui";
+import { Alert, Select, Badge, Button, Card, EmptyState, Input, PageHeader, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { GroundedAnswer, Paper, SearchResponse, Work } from "@/lib/types";
+import type { GroundedAnswer, Paper, SearchResponse, Work, Subject } from "@/lib/types";
+import { SUBJECTS } from "@/lib/types";
 
 const PROVIDER_LABELS: Record<string, string> = {
   openalex: "OpenAlex",
@@ -18,6 +19,9 @@ const PROVIDER_LABELS: Record<string, string> = {
   pubmed: "PubMed",
   semantic_scholar: "Semantic Scholar",
   arxiv: "arXiv",
+  doaj: "DOAJ",
+  europe_pmc: "Europe PMC",
+  core: "CORE",
 };
 
 function WorkCard({ work }: { work: Work }) {
@@ -83,19 +87,27 @@ export default function DiscoverPage() {
   const q = params.get("q") ?? "";
   const yearFrom = params.get("year_from") ?? "";
   const oaOnly = params.get("oa") === "1";
+  const subject = (params.get("subject") ?? "all") as Subject;
   const [draft, setDraft] = useState(q);
   const [from, setFrom] = useState(yearFrom);
 
   const search = useQuery({
-    queryKey: ["search", q, yearFrom, oaOnly],
-    queryFn: () => api.get<SearchResponse>("/discovery/search", { q, year_from: yearFrom || undefined, open_access_only: oaOnly || undefined, limit: 25 }),
+    queryKey: ["search", q, yearFrom, oaOnly, subject],
+    queryFn: () =>
+      api.get<SearchResponse>("/discovery/search", {
+        q,
+        year_from: yearFrom || undefined,
+        open_access_only: oaOnly || undefined,
+        subject: subject === "all" ? undefined : subject,
+        limit: 25,
+      }),
     enabled: q.length >= 2,
     staleTime: 5 * 60_000,
   });
 
   return (
     <Container>
-      <PageHeader title="Discover literature" subtitle="One search across OpenAlex, Crossref, PubMed, Semantic Scholar and arXiv." />
+      <PageHeader title="Discover literature" subtitle="One search across major scholarly databases in every field, with duplicates merged." />
       <SectionGuide section="discover" />
       <form
         className="mb-6 flex flex-wrap gap-2"
@@ -104,10 +116,24 @@ export default function DiscoverPage() {
           const next: Record<string, string> = { q: draft.trim() };
           if (from) next.year_from = from;
           if (oaOnly) next.oa = "1";
+          if (subject !== "all") next.subject = subject;
           setParams(next);
         }}
       >
         <Input className="min-w-64 flex-1" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Topic, title, or keywords" aria-label="Search query" minLength={2} required />
+        <Select
+          className="w-full sm:w-64"
+          value={subject}
+          aria-label="Subject"
+          onChange={(e) => {
+            const next = new URLSearchParams(params);
+            if (e.target.value === "all") next.delete("subject");
+            else next.set("subject", e.target.value);
+            setParams(next);
+          }}
+        >
+          {SUBJECTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </Select>
         <Input className="w-32" type="number" min={1800} max={2100} placeholder="From year" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From year" />
         <label className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm">
           <input
@@ -125,8 +151,8 @@ export default function DiscoverPage() {
         <Button type="submit">Search</Button>
       </form>
 
-      {!q && <EmptyState title="Start with a topic" icon={<Sparkles className="h-8 w-8" />}>Results are merged across five scholarly databases and duplicates removed.</EmptyState>}
-      {search.isLoading && <Spinner label="Searching five databases" />}
+      {!q && <EmptyState title="Start with a topic" icon={<Sparkles className="h-8 w-8" />}>Choose a subject to focus the search. Results come from OpenAlex, Crossref, Semantic Scholar and the Directory of Open Access Journals, plus PubMed and Europe PMC for health and life sciences.</EmptyState>}
+      {search.isLoading && <Spinner label="Searching scholarly databases" />}
       {search.error && <Alert kind="error">{errorMessage(search.error)}</Alert>}
       {search.data && (
         <>

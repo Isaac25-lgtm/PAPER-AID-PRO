@@ -107,7 +107,7 @@ export function RegisterPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  if (firebaseUser) return <Navigate to="/library" replace />;
+  if (firebaseUser) return <Navigate to="/dashboard" replace />;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();

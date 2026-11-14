@@ -133,7 +133,7 @@ function CheckerMock() {
 }
 
 const STEPS = [
-  { icon: Search, title: "Find", body: "Search OpenAlex, Crossref, PubMed, Semantic Scholar and arXiv at once, then save what matters." },
+  { icon: Search, title: "Find", body: "Search major scholarly databases in every field at once, filter by subject, then save what matters." },
   { icon: LibraryBig, title: "Organise", body: "Keep papers, your own PDFs, notes and collections in one library. Import or export BibTeX and RIS." },
   { icon: FileText, title: "Write & cite", body: "Start from a guided outline, cite at the cursor, and get a reference list in APA, Vancouver, IEEE and more." },
 ];
@@ -142,7 +142,7 @@ const FEATURES = [
   {
     label: "Write",
     title: "Citations that format themselves",
-    body: "Cite from your library at the cursor, with page numbers if you want them. The reference list builds itself and lists only what you cite. Switch between 10 official styles in one click, then export to Word or PDF.",
+    body: "Cite from your library at the cursor, with page numbers if you want them. The reference list builds itself and lists only what you cite. Switch between 18 official styles in one click, then export to Word or PDF.",
     visual: <StylesMock />,
   },
   {
@@ -169,9 +169,9 @@ const COMPARISON = [
 
 const FAQ = [
   { q: "Is PaperAid Pro free?", a: "Yes. Searching, your library, documents, citation formatting and reference checking are free to use." },
-  { q: "Where do the papers come from?", a: "From OpenAlex, Crossref, PubMed, Semantic Scholar and arXiv. When you save a paper, its details are fetched from the official registry record, so your citations are built from authoritative metadata." },
+  { q: "Where do the papers come from?", a: "From OpenAlex, Crossref, Semantic Scholar, DOAJ, PubMed, Europe PMC and arXiv. When you save a paper, its details are fetched from the official registry record, so your citations are built from authoritative metadata." },
   { q: "Can the AI make up references?", a: "Answers can only cite passages and abstracts from papers you selected. Each statement must quote its source, and statements the source doesn't support are removed. Always read the cited passage before relying on it." },
-  { q: "Which citation styles are supported?", a: "APA 7, MLA 9, Chicago 18 (author-date and notes), Harvard, Vancouver, IEEE, AMA 11, Nature and Science, using the official CSL style files." },
+  { q: "Which citation styles are supported?", a: "18 official CSL styles: APA 7, Harvard, MLA 9, Chicago 18 (author-date and notes), ASA, APSA, AAA, OSCOLA, Bluebook, Vancouver, AMA 11, Nature, Science, ACS, IEEE, Elsevier Harvard and Springer. Books, chapters, reports, court cases and statutes can be entered manually." },
   { q: "Can I use my own PDFs and reference manager?", a: "Yes. Upload PDFs (kept private to you) and import BibTeX or RIS exports from Zotero, Mendeley or EndNote. You can export your library the same way." },
   { q: "Who can see my work?", a: "Only you. Uploads, notes, documents and research conversations are private to your account, and PDFs are stored privately and sent only to you." },
 ];
@@ -302,7 +302,7 @@ export function HomePage() {
       <section className="mx-auto grid max-w-6xl gap-4 px-4 py-16 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { icon: FlaskConical, title: "Guided outlines", body: "Templates for manuscripts, proposals, reviews and theses, by study design." },
-          { icon: Quote, title: "10 citation styles", body: "APA, MLA, Chicago, Harvard, Vancouver, IEEE, AMA, Nature, Science." },
+          { icon: Quote, title: "18 citation styles", body: "From APA, Harvard and Chicago to OSCOLA for law and IEEE for engineering." },
           { icon: LibraryBig, title: "Works with your tools", body: "Import and export BibTeX, RIS and CSL-JSON; export documents to Word." },
           { icon: Lock, title: "Private by default", body: "Your uploads and drafts are visible only to you." },
         ].map(({ icon: Icon, title, body }) => (

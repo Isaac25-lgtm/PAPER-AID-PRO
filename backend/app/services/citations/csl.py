@@ -27,21 +27,32 @@ class StyleInfo:
     id: str
     title: str
     kind: Literal["author-date", "numeric", "note"]
+    group: str  # discipline grouping shown in style pickers
+    has_bibliography: bool = True  # False for footnote-only styles (e.g. Bluebook law review)
 
 
+# Official CSL repository styles (CC BY-SA 3.0), bundled so formatting never depends on a network call.
 STYLES: dict[str, StyleInfo] = {
     s.id: s
     for s in [
-        StyleInfo("apa", "APA 7th edition", "author-date"),
-        StyleInfo("mla", "MLA 9th edition", "author-date"),
-        StyleInfo("chicago-author-date", "Chicago 18th (author-date)", "author-date"),
-        StyleInfo("chicago-note", "Chicago 18th (notes & bibliography)", "note"),
-        StyleInfo("harvard", "Harvard (Cite Them Right)", "author-date"),
-        StyleInfo("vancouver", "Vancouver (NLM/ICMJE)", "numeric"),
-        StyleInfo("ieee", "IEEE", "numeric"),
-        StyleInfo("ama", "AMA 11th edition", "numeric"),
-        StyleInfo("nature", "Nature", "numeric"),
-        StyleInfo("science", "Science", "numeric"),
+        StyleInfo("apa", "APA 7th edition", "author-date", "Widely used"),
+        StyleInfo("harvard", "Harvard (Cite Them Right)", "author-date", "Widely used"),
+        StyleInfo("mla", "MLA 9th edition", "author-date", "Humanities"),
+        StyleInfo("chicago-author-date", "Chicago 18th (author-date)", "author-date", "Humanities"),
+        StyleInfo("chicago-note", "Chicago 18th (notes & bibliography)", "note", "Humanities"),
+        StyleInfo("asa", "ASA (American Sociological Association)", "author-date", "Social sciences"),
+        StyleInfo("apsa", "APSA (political science)", "author-date", "Social sciences"),
+        StyleInfo("aaa", "AAA (anthropology)", "author-date", "Social sciences"),
+        StyleInfo("oscola", "OSCOLA 4th edition (law, UK & Commonwealth)", "note", "Law"),
+        StyleInfo("bluebook", "Bluebook (law review, US; footnotes only)", "note", "Law", has_bibliography=False),
+        StyleInfo("vancouver", "Vancouver (NLM/ICMJE)", "numeric", "Health & life sciences"),
+        StyleInfo("ama", "AMA 11th edition", "numeric", "Health & life sciences"),
+        StyleInfo("nature", "Nature", "numeric", "Sciences"),
+        StyleInfo("science", "Science", "numeric", "Sciences"),
+        StyleInfo("acs", "ACS (chemistry)", "numeric", "Sciences"),
+        StyleInfo("ieee", "IEEE", "numeric", "Engineering & computing"),
+        StyleInfo("elsevier-harvard", "Elsevier Harvard (with titles)", "author-date", "Publishers"),
+        StyleInfo("springer-author-date", "Springer basic (author-date)", "author-date", "Publishers"),
     ]
 }
 

@@ -175,12 +175,13 @@ async def get_revision(document_id: uuid.UUID, revision_id: uuid.UUID, db: DB, u
 
 @router.post("/{document_id}/revisions/{revision_id}/restore", response_model=DocumentOut)
 async def restore_revision(
-    document_id: uuid.UUID, revision_id: uuid.UUID, db: DB, user: VerifiedUser, body: RestoreRequest | None = None
+    document_id: uuid.UUID, revision_id: uuid.UUID, body: RestoreRequest, db: DB, user: VerifiedUser
 ) -> DocumentOut:
-    """Restore a revision. Send `base_version` so a restore never silently overwrites newer edits (409 instead)."""
+    """Restore a revision. `base_version` is required, so a restore never silently overwrites newer edits."""
     doc = await svc.get_owned_document(db, document_id, user, lock=True)
-    base_version = body.base_version if body else None
-    return DocumentOut.model_validate(await svc.restore_revision(db, doc, user, revision_id, base_version=base_version))
+    return DocumentOut.model_validate(
+        await svc.restore_revision(db, doc, user, revision_id, base_version=body.base_version)
+    )
 
 
 # -------------------------------------------------------------------------------------------------- export

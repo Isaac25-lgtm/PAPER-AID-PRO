@@ -7,7 +7,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { Link } from "react-router";
 
 import { useAuth } from "@/lib/auth";
-import { EDITOR_SHORTCUTS, GUIDES, SECTION_ORDER, guideStore, type SectionKey } from "@/lib/guides";
+import { EDITOR_SHORTCUTS, GUIDES, SECTION_ORDER, type SectionKey } from "@/lib/guides";
+import { usePreference } from "@/lib/preferences";
 import { Button, Modal } from "./ui";
 
 // --------------------------------------------------------------------------------------------- context
@@ -22,22 +23,20 @@ export function useGuidance(): Guidance {
   return useContext(GuidanceContext);
 }
 
-const TOUR_KEY = "welcome.v1";
-
-/** Hosts the Help centre and the welcome tour (shown once per account, the first time it signs in here). */
+/**
+ * Hosts the Help centre and the welcome tour. Nothing pops up by itself: the tour is offered on Home and in Help,
+ * and finishing or skipping it is remembered on the account (so the Home offer disappears on every device).
+ */
 export function GuidanceProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [help, setHelp] = useState<{ open: boolean; section?: SectionKey }>({ open: false });
   const [tourOpen, setTourOpen] = useState(false);
-
-  useEffect(() => {
-    if (user && !guideStore.get(`${TOUR_KEY}.${user.id}`)) setTourOpen(true);
-  }, [user]);
+  const [, setTourSeen] = usePreference<boolean>("tour_seen", false);
 
   const closeTour = useCallback(() => {
-    if (user) guideStore.set(`${TOUR_KEY}.${user.id}`, "done");
+    setTourSeen(true);
     setTourOpen(false);
-  }, [user]);
+  }, [setTourSeen]);
 
   const value = useMemo<Guidance>(
     () => ({
@@ -61,20 +60,15 @@ export function GuidanceProvider({ children }: { children: ReactNode }) {
 
 // --------------------------------------------------------------------------------- per-section guide
 /**
- * "How to use this page": expanded the first time someone opens a section, then a single line they can expand
- * again. Shown to signed-in people only.
+ * "How to use this page": a single quiet line ("New here? How Library works") that expands into the steps and
+ * tips. Collapsed by default; if someone opens it, that choice is remembered on their account. Signed-in only.
  */
 export function SectionGuide({ section, className }: { section: SectionKey; className?: string }) {
   const { user } = useAuth();
   const guide = GUIDES[section];
-  const storeKey = user ? `guide.${section}.${user.id}` : "";
-  const [expanded, setExpanded] = useState(() => Boolean(storeKey) && guideStore.get(storeKey) !== "collapsed");
+  const [expanded, setExpanded] = usePreference<boolean>(`guide_${section}_open`, false);
   if (!user) return null;
-  const toggle = () => {
-    const next = !expanded;
-    setExpanded(next);
-    guideStore.set(storeKey, next ? "expanded" : "collapsed");
-  };
+  const toggle = () => setExpanded(!expanded);
   return (
     <section
       aria-label={`How to use ${guide.title}`}
@@ -83,7 +77,7 @@ export function SectionGuide({ section, className }: { section: SectionKey; clas
       <button type="button" onClick={toggle} aria-expanded={expanded} className="flex w-full items-center gap-2 text-left">
         <CircleHelp className="h-4 w-4 shrink-0 text-brand-700" aria-hidden />
         <span className="flex-1 text-sm font-medium text-brand-900">
-          How to use {guide.title}
+          {expanded ? `How to use ${guide.title}` : `New here? How ${guide.title} works`}
           {!expanded && <span className="ml-2 hidden font-normal text-slate-600 sm:inline">· {guide.summary}</span>}
         </span>
         <span className="text-xs text-brand-700">{expanded ? "Hide" : "Show"}</span>
@@ -219,7 +213,7 @@ function HelpCenter({ open, initialSection, onClose }: { open: boolean; initialS
 
       {tab === "evidence" && (
         <div className="space-y-3 text-sm text-slate-700">
-          <p><strong>Metadata comes from registries.</strong> Titles, authors and dates come from Crossref, PubMed, OpenAlex, Semantic Scholar and arXiv, never from free text you paste, so citations are built from authoritative records.</p>
+          <p><strong>Metadata comes from registries.</strong> Titles, authors and dates come from scholarly registries (Crossref, OpenAlex, PubMed and others), never from free text you paste; sources you type in yourself are marked “user-supplied”, so citations are built from authoritative records.</p>
           <p><strong>Citations use official styles.</strong> In-text citations and reference lists are produced by the same citation engine used by Zotero and Mendeley, with the official style files.</p>
           <p><strong>AI answers show their sources.</strong> Each statement in an AI answer must quote the passage it relies on. Statements the cited text does not support are removed, and the answer says so. Click a numbered marker to read the source yourself.</p>
           <p><strong>Your work is private.</strong> Uploads, notes, documents and research conversations are visible only to you.</p>
@@ -238,11 +232,11 @@ function HelpCenter({ open, initialSection, onClose }: { open: boolean; initialS
 // ---------------------------------------------------------------------------------------- welcome tour
 const TOUR = [
   { icon: Sparkles, title: "Welcome to PaperAid Pro", body: "PaperAid Pro takes you from finding literature to a finished, correctly cited document. Here is how the pieces fit together; it takes under a minute.", to: null },
-  { icon: Compass, title: "1. Find papers", body: "Discover searches five scholarly databases at once. Save to library brings in a paper with metadata from the official registry.", to: "/discover" },
+  { icon: Compass, title: "1. Find papers", body: "Discover searches major scholarly databases in every field at once; choose a subject to focus it. Save to library brings in a paper with metadata from the official registry.", to: "/discover" },
   { icon: LibraryBig, title: "2. Build your library", body: "Your Library holds saved papers and your own PDFs. Organise them into collections, add notes and tags, and import or export BibTeX and RIS.", to: "/library" },
   { icon: FileText, title: "3. Write with citations", body: "Documents start from a guided outline for your study design. Cite from your library at the cursor; the reference list builds itself in your chosen style.", to: "/documents" },
   { icon: FlaskConical, title: "4. Ask your sources", body: "The Research assistant answers questions across papers you choose, and every statement links to the passage it came from.", to: "/research" },
-  { icon: Quote, title: "5. Check your references", body: "Before you submit, Citation tools check each reference against Crossref and format identifiers in 10 styles.", to: "/tools/citations" },
+  { icon: Quote, title: "5. Check your references", body: "Before you submit, Citation tools check each reference against Crossref and format identifiers in 18 styles, from APA and Harvard to OSCOLA and IEEE.", to: "/tools/citations" },
   { icon: BookOpen, title: "Help is always one click away", body: "Each page has a “How to use” guide at the top, and the Help button in the top bar opens guides for every section.", to: null },
 ] as const;
 

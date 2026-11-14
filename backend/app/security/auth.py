@@ -23,9 +23,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.models import AuditEvent, User, UserRole
+from app.db.models import AuditEvent, ClosedAccount, User, UserRole
 from app.db.session import get_db
-from app.errors import AccountConflict, EmailNotVerified, Forbidden, NotInvited, Unauthenticated
+from app.errors import (
+    AccountConflict,
+    ConsentRequired,
+    EmailNotVerified,
+    Forbidden,
+    NotInvited,
+    Unauthenticated,
+)
+from app.policy import POLICY_VERSION
 
 log = logging.getLogger(__name__)
 
@@ -119,6 +127,10 @@ async def _upsert_user(db: AsyncSession, claims: TokenClaims) -> User:
     user = (await db.execute(select(User).where(User.firebase_uid == claims.uid))).scalar_one_or_none()
     now = datetime.now(UTC)
     if user is None:
+        if await db.get(ClosedAccount, claims.uid) is not None:
+            # A closed account's ID token can stay cryptographically valid for up to an hour; never let it
+            # re-create a profile (or re-bootstrap an admin) after closure.
+            raise Unauthenticated("This account has been closed.")
         holder = (await db.execute(select(User).where(User.email == claims.email))).scalar_one_or_none()
         if holder is not None:
             # A different Firebase identity with this email (e.g. a deleted and re-created Firebase account).
@@ -218,6 +230,8 @@ async def get_current_user(user: Annotated[User | None, Depends(get_token_user)]
 async def get_verified_user(user: Annotated[User, Depends(get_current_user)]) -> User:
     if not _is_verified(user):
         raise EmailNotVerified("Verify your email address to use this feature.")
+    if get_settings().require_policy_acceptance and user.accepted_policy_version != POLICY_VERSION:
+        raise ConsentRequired("Please review and accept the Terms of Service and Privacy Notice to continue.")
     return user
 
 

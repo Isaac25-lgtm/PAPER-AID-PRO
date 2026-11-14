@@ -17,14 +17,14 @@ import { Link as RouterLink, useParams } from "react-router";
 
 import { AIError } from "@/components/GroundedAnswerView";
 import { HelpButton, SectionGuide } from "@/components/Guidance";
-import { useStyles } from "@/components/papers";
-import { Alert, Badge, Button, Input, Modal, Select, Spinner } from "@/components/ui";
+import { StyleOptions, useLibrarySearch, useStyles } from "@/components/papers";
+import { Alert, Badge, Button, Input, Modal, Select, Spinner, useDialogFocus } from "@/components/ui";
 import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
 import { CitationNode, LABEL_META } from "@/lib/citationNode";
 import { relativeTime, sanitizeHtml } from "@/lib/format";
 import { SaveQueue, type Fields } from "@/lib/saveQueue";
 import { normalizeSuggestion } from "@/lib/templates";
-import type { Citation, JSONContent, LibraryItem, Paper, RenderedCitations, ResearchDocument, Revision } from "@/lib/types";
+import type { Citation, JSONContent, Paper, RenderedCitations, ResearchDocument, Revision } from "@/lib/types";
 
 type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error";
 
@@ -82,7 +82,7 @@ function Toolbar({ editor, onAI }: { editor: Editor; onAI: () => void }) {
 function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; editor: Editor; onInserted: () => void }) {
   const [filter, setFilter] = useState("");
   const [locator, setLocator] = useState("");
-  const library = useQuery({ queryKey: ["library", null, null], queryFn: () => api.get<LibraryItem[]>("/library") });
+  const library = useLibrarySearch(filter);
   const insert = useMutation({
     mutationFn: (paper: Paper) => api.post<Citation>(`/documents/${documentId}/citations`, { paper_id: paper.id, locator: locator.trim() || null }),
     onSuccess: (citation) => {
@@ -91,14 +91,17 @@ function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; 
       onInserted();
     },
   });
-  const papers = (library.data ?? []).map((i) => i.paper).filter((p) => !filter || `${p.title} ${p.authors.join(" ")}`.toLowerCase().includes(filter.toLowerCase()));
+  const papers = (library.data?.items ?? []).map((i) => i.paper);
+  const more = (library.data?.total ?? 0) - papers.length;
   return (
     <div className="space-y-3">
-      <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter your library" aria-label="Filter sources" />
+      <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search your library by title" aria-label="Search sources" />
       <Input value={locator} onChange={(e) => setLocator(e.target.value)} placeholder="Page (optional), e.g. 12 or 12-14" aria-label="Page locator" maxLength={50} />
       {insert.error && <Alert kind="error">{errorMessage(insert.error)}</Alert>}
       {library.isLoading && <Spinner />}
-      {library.data?.length === 0 && <p className="text-sm text-slate-500">Your library is empty. <RouterLink className="text-brand-700" to="/discover">Find papers</RouterLink> first.</p>}
+      {library.error && <Alert kind="error">{errorMessage(library.error)}</Alert>}
+      {more > 0 && <p className="text-xs text-slate-500">Showing the {papers.length} newest of {library.data?.total} matches. Type to narrow the search.</p>}
+      {library.data?.total === 0 && !filter && <p className="text-sm text-slate-500">Your library is empty. <RouterLink className="text-brand-700" to="/discover">Find papers</RouterLink> first.</p>}
       <ul className="space-y-2">
         {papers.map((paper) => (
           <li key={paper.id} className="rounded-lg border border-slate-200 p-2.5">
@@ -114,25 +117,9 @@ function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; 
   );
 }
 
-function RevisionsPanel({
-  documentId,
-  prepare,
-  onRestored,
-}: {
-  documentId: string;
-  /** Saves (or, with consent, discards) pending edits; resolves to the version to restore from, or null to cancel. */
-  prepare: () => Promise<number | null>;
-  onRestored: (doc: ResearchDocument) => void;
-}) {
+function RevisionsPanel({ documentId, onRestore }: { documentId: string; onRestore: (revisionId: string) => Promise<void> }) {
   const revisions = useQuery({ queryKey: ["revisions", documentId], queryFn: () => api.get<Revision[]>(`/documents/${documentId}/revisions`) });
-  const restore = useMutation({
-    mutationFn: async (id: string) => {
-      const baseVersion = await prepare();
-      if (baseVersion === null) return null;
-      return api.post<ResearchDocument>(`/documents/${documentId}/revisions/${id}/restore`, { base_version: baseVersion });
-    },
-    onSuccess: (doc) => doc && onRestored(doc),
-  });
+  const restore = useMutation({ mutationFn: onRestore });
   if (revisions.isLoading) return <Spinner />;
   return (
     <ul className="space-y-2">
@@ -215,6 +202,18 @@ export default function EditorPage() {
     typeof window.matchMedia === "function" && !window.matchMedia("(min-width: 1024px)").matches ? null : "sources",
   );
   const [exportError, setExportError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false); // exporting or restoring: editing paused
+  // Below the lg breakpoint the side panel is a modal drawer over the page, with dialog focus behaviour.
+  const [narrow, setNarrow] = useState(() => typeof window.matchMedia === "function" && !window.matchMedia("(min-width: 1024px)").matches);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(min-width: 1024px)");
+    const update = () => setNarrow(!query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  const drawerRef = useRef<HTMLElement>(null);
+  useDialogFocus(drawerRef, Boolean(panel) && narrow, () => setPanel(null));
   const [aiOpen, setAiOpen] = useState(false);
   const [rendered, setRendered] = useState<RenderedCitations | null>(null);
   const versionRef = useRef<number>(1);
@@ -345,30 +344,54 @@ export default function EditorPage() {
     await flush();
   };
 
-  /** Before a restore: save pending edits, or discard them only with explicit consent. */
-  const prepareRestore = async (): Promise<number | null> => {
-    if (await flush()) return versionRef.current;
-    if (saves.conflicted) {
-      window.alert("Resolve the editing conflict shown above before restoring a version.");
-      return null;
+  /** Run `task` with editing paused, so the text cannot change between "everything is saved" and the action. */
+  const frozen = async <T,>(task: () => Promise<T>): Promise<T> => {
+    editor?.setEditable(false);
+    setBusy(true);
+    try {
+      return await task();
+    } finally {
+      editor?.setEditable(true);
+      setBusy(false);
     }
-    if (!window.confirm("Your latest changes could not be saved. Restore anyway and discard them?")) return null;
-    saves.discard();
-    return versionRef.current;
   };
 
-  const exportAs = async (format: string) => {
-    setExportError(null);
-    if (!(await flush())) {
-      setExportError("Your latest changes are not saved yet, so the export would be out of date. Resolve the save problem, then export again.");
-      return;
-    }
-    try {
-      await downloadFile(`/documents/${id}/export`, `${title || "document"}.${format}`, { format });
-    } catch (error) {
-      setExportError(errorMessage(error));
-    }
-  };
+  /** Restore: save pending edits first (or discard them only with explicit consent), then restore that version. */
+  const restoreRevision = (revisionId: string) =>
+    frozen(async () => {
+      if (!(await flush())) {
+        if (saves.conflicted) {
+          window.alert("Resolve the editing conflict shown above before restoring a version.");
+          return;
+        }
+        if (!window.confirm("Your latest changes could not be saved. Restore anyway and discard them?")) return;
+        saves.discard();
+      }
+      const doc = await api.post<ResearchDocument>(`/documents/${id}/revisions/${revisionId}/restore`, { base_version: versionRef.current });
+      versionRef.current = doc.version;
+      saves.discard();
+      setTitle(doc.title);
+      setStyle(doc.csl_style);
+      editor?.commands.setContent(doc.content, { emitUpdate: false });
+      setSaveState("saved");
+      queryClient.setQueryData(["document", id], doc);
+      void queryClient.invalidateQueries({ queryKey: ["revisions", id] });
+      void refreshCitations();
+    });
+
+  const exportAs = (format: string) =>
+    frozen(async () => {
+      setExportError(null);
+      if (!(await flush())) {
+        setExportError("Your latest changes are not saved yet, so the export would be out of date. Resolve the save problem, then export again.");
+        return;
+      }
+      try {
+        await downloadFile(`/documents/${id}/export`, `${title || "document"}.${format}`, { format });
+      } catch (error) {
+        setExportError(errorMessage(error));
+      }
+    });
 
   if (docQuery.isLoading || !editor) return <Spinner label="Opening document" />;
   if (docQuery.error) return <div className="p-8"><Alert kind="error">{errorMessage(docQuery.error)}</Alert></div>;
@@ -382,13 +405,14 @@ export default function EditorPage() {
           value={title}
           maxLength={300}
           aria-label="Document title"
+          disabled={busy}
           onChange={(e) => { setTitle(e.target.value); saves.update({ title: e.target.value }); scheduleSave(); }}
           className="min-w-0 flex-1 truncate rounded px-2 py-1 text-lg font-semibold text-slate-900 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-200"
         />
         <Badge tone={status[saveState][1]}>{status[saveState][0]}</Badge>
         <HelpButton section="editor" label="How to write here" className="hidden sm:flex" />
-        <Select className="w-28 py-1.5 sm:w-52" value={style} aria-label="Citation style" onChange={(e) => { setStyle(e.target.value); saves.update({ csl_style: e.target.value }); void flush(); }}>
-          {(styles.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+        <Select className="w-28 py-1.5 sm:w-52" value={style} aria-label="Citation style" disabled={busy} onChange={(e) => { setStyle(e.target.value); saves.update({ csl_style: e.target.value }); void flush(); }}>
+          <StyleOptions styles={styles.data} />
         </Select>
         <Button size="sm" variant={panel === "sources" ? "primary" : "secondary"} onClick={() => setPanel(panel === "sources" ? null : "sources")} aria-label="Sources"><BookMarked className="h-4 w-4" /> <span className="hidden sm:inline">Sources</span></Button>
         <Button size="sm" variant={panel === "history" ? "primary" : "secondary"} onClick={() => setPanel(panel === "history" ? null : "history")} aria-label="Version history"><History className="h-4 w-4" /></Button>
@@ -444,7 +468,12 @@ export default function EditorPage() {
           <div className="fixed inset-0 z-30 bg-slate-900/30 lg:hidden" aria-hidden onClick={() => setPanel(null)} />
         )}
         {panel && (
-          <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-sm overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-xl lg:sticky lg:top-14 lg:z-auto lg:h-[calc(100vh-3.5rem)] lg:w-80 lg:max-w-none lg:shrink-0 lg:shadow-none">
+          <aside
+            ref={drawerRef}
+            role={narrow ? "dialog" : undefined}
+            aria-modal={narrow ? true : undefined}
+            aria-label={panel === "sources" ? "Cite from your library" : "Version history"}
+            className="fixed inset-y-0 right-0 z-40 w-full max-w-sm overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-xl lg:sticky lg:top-14 lg:z-auto lg:h-[calc(100vh-3.5rem)] lg:w-80 lg:max-w-none lg:shrink-0 lg:shadow-none">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold text-slate-900">{panel === "sources" ? "Cite from your library" : "Version history"}</h2>
               <button type="button" className="rounded p-1 text-slate-500 hover:bg-slate-100 lg:hidden" aria-label="Close panel" onClick={() => setPanel(null)}>
@@ -454,19 +483,7 @@ export default function EditorPage() {
             {panel === "sources" ? (
               <SourcesPanel documentId={id} editor={editor} onInserted={() => void flush()} />
             ) : (
-              <RevisionsPanel
-                documentId={id}
-                prepare={prepareRestore}
-                onRestored={(doc) => {
-                  versionRef.current = doc.version;
-                  saves.discard();
-                  setTitle(doc.title);
-                  editor.commands.setContent(doc.content, { emitUpdate: false });
-                  setSaveState("saved");
-                  void queryClient.invalidateQueries({ queryKey: ["revisions", id] });
-                  void refreshCitations();
-                }}
-              />
+              <RevisionsPanel documentId={id} onRestore={restoreRevision} />
             )}
           </aside>
         )}

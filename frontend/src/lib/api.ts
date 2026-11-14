@@ -35,7 +35,21 @@ function buildUrl(path: string, query?: Query): string {
   return `${BASE}${path}${qs ? `?${qs}` : ""}`;
 }
 
-async function request<T>(method: string, path: string, options: { query?: Query; body?: unknown; form?: FormData; raw?: boolean } = {}): Promise<T> {
+interface RequestOptions {
+  query?: Query;
+  body?: unknown;
+  form?: FormData;
+  raw?: boolean;
+  /** Return the X-Total-Count header alongside the JSON body (paged lists). */
+  paged?: boolean;
+}
+
+export interface Page<T> {
+  items: T[];
+  total: number;
+}
+
+async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
   const token = await getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -64,6 +78,11 @@ async function request<T>(method: string, path: string, options: { query?: Query
     throw new ApiError(response.status, code, message, details);
   }
   if (options.raw) return (await response.blob()) as T;
+  if (options.paged) {
+    const items = (await response.json()) as unknown[];
+    const total = Number(response.headers.get("X-Total-Count") ?? items.length);
+    return { items, total: Number.isFinite(total) ? total : items.length } as T;
+  }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
@@ -73,7 +92,8 @@ export const api = {
   post: <T>(path: string, body?: unknown, query?: Query) => request<T>("POST", path, { body, query }),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, { body }),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, { body }),
-  delete: <T>(path: string) => request<T>("DELETE", path),
+  delete: <T>(path: string, body?: unknown) => request<T>("DELETE", path, { body }),
+  page: <T>(path: string, query?: Query) => request<Page<T>>("GET", path, { query, paged: true }),
   upload: <T>(path: string, form: FormData) => request<T>("POST", path, { form }),
   blob: (path: string, query?: Query) => request<Blob>("GET", path, { query, raw: true }),
 };

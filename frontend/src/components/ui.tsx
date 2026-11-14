@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { AlertTriangle, CheckCircle2, Info, Loader2, X } from "lucide-react";
-import { useEffect, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { useEffect, useRef, type ButtonHTMLAttributes, type RefObject, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -126,18 +126,20 @@ export function EmptyState({ icon, title, children, action }: { icon?: ReactNode
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/** Accessible dialog: focus moves into it, Tab/Shift+Tab stay inside, Escape closes, focus returns afterwards. */
-export function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: ReactNode; wide?: boolean }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
+/**
+ * Focus management for anything that behaves as a dialog (modals, the mobile editor drawer): focus moves inside,
+ * Tab/Shift+Tab stay inside, Escape closes, and focus returns to where it was when the dialog closes.
+ */
+export function useDialogFocus(ref: RefObject<HTMLElement | null>, active: boolean, onClose: () => void) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   useEffect(() => {
-    if (!open) return;
+    if (!active) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const dialog = dialogRef.current;
+    const dialog = ref.current;
     const focusables = () => Array.from(dialog?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
     const firstInBody = dialog?.querySelector<HTMLElement>(`[data-modal-body] :is(${FOCUSABLE})`);
-    (firstInBody ?? dialog)?.focus();
+    (firstInBody ?? focusables()[0] ?? dialog)?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onCloseRef.current();
@@ -151,14 +153,14 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
         event.preventDefault();
         return;
       }
-      const active = document.activeElement;
-      if (!dialog.contains(active)) {
+      const current = document.activeElement;
+      if (!dialog.contains(current)) {
         event.preventDefault();
         first.focus();
-      } else if (event.shiftKey && active === first) {
+      } else if (event.shiftKey && current === first) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && active === last) {
+      } else if (!event.shiftKey && current === last) {
         event.preventDefault();
         first.focus();
       }
@@ -168,7 +170,13 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
       document.removeEventListener("keydown", onKey);
       if (previous?.isConnected) previous.focus();
     };
-  }, [open]);
+  }, [active, ref]);
+}
+
+/** Accessible dialog: focus moves into it, Tab/Shift+Tab stay inside, Escape closes, focus returns afterwards. */
+export function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: ReactNode; wide?: boolean }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, open, onClose);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 pt-20" onMouseDown={onClose}>

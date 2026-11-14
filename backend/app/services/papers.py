@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -82,7 +83,7 @@ async def find_public_match(db: AsyncSession, work: ScholarlyWork) -> Paper | No
     return (await db.execute(stmt)).scalars().first()
 
 
-async def _author_rows(db: AsyncSession, work: ScholarlyWork) -> list[Author]:
+async def author_rows(db: AsyncSession, work: ScholarlyWork) -> list[Author]:
     rows: list[Author] = []
     for wa in work.authors[:100]:
         author = None
@@ -146,36 +147,66 @@ def _apply_work(paper: Paper, work: ScholarlyWork, *, overwrite: bool) -> None:
         paper.keywords = list(dict.fromkeys([*(paper.keywords or []), *work.keywords]))[:15]
 
 
+async def _set_authors(db: AsyncSession, paper: Paper, work: ScholarlyWork, *, replace: bool) -> None:
+    """Write the author list. `replace` clears the loaded list first (delete-orphan removes the old rows)."""
+    if replace:
+        paper.authors.clear()
+        await db.flush()
+    for position, author in enumerate(await author_rows(db, work)):
+        db.add(PaperAuthor(paper_id=paper.id, author_id=author.id, position=position))
+
+
 async def upsert_public_paper(db: AsyncSession, work: ScholarlyWork, *, created_by: User | None) -> Paper:
-    """Insert or enrich the canonical public record for a scholarly work (matched by DOI/PMID/arXiv)."""
+    """Insert or enrich the canonical public record for a REGISTRY-resolved work (matched by DOI/PMID/arXiv).
+
+    Only registry metadata reaches the shared catalog. A record that was written from an unverified source
+    (metadata_source != "registry") is overwritten with the registry's fields and authors. Two concurrent first
+    imports of the same work cannot both insert: the loser re-reads the winner's row."""
     paper = await find_public_match(db, work)
     if paper is None:
-        paper = Paper(
-            title=work.title,
-            visibility=PaperVisibility.PUBLIC,
-            source=PaperSource.DISCOVERY,
-            status=PaperStatus.METADATA_ONLY,
-            created_by_id=created_by.id if created_by else None,
-            keywords=[],
-        )
-        _apply_work(paper, work, overwrite=True)
-        db.add(paper)
-        await db.flush()
-        for position, author in enumerate(await _author_rows(db, work)):
-            db.add(PaperAuthor(paper_id=paper.id, author_id=author.id, position=position))
+        try:
+            async with db.begin_nested():
+                paper = Paper(
+                    title=work.title,
+                    visibility=PaperVisibility.PUBLIC,
+                    source=PaperSource.DISCOVERY,
+                    status=PaperStatus.METADATA_ONLY,
+                    created_by_id=created_by.id if created_by else None,
+                    keywords=[],
+                    metadata_source="registry",
+                )
+                _apply_work(paper, work, overwrite=True)
+                db.add(paper)
+                await db.flush()
+                await _set_authors(db, paper, work, replace=False)
+                await db.flush()
+        except IntegrityError:
+            paper = await find_public_match(db, work)  # a concurrent import created it first
+            if paper is None:
+                raise
+            _apply_work(paper, work, overwrite=False)
     else:
-        _apply_work(paper, work, overwrite=False)
-        if not paper.authors and work.authors:
-            for position, author in enumerate(await _author_rows(db, work)):
-                db.add(PaperAuthor(paper_id=paper.id, author_id=author.id, position=position))
+        untrusted = paper.metadata_source != "registry"
+        _apply_work(paper, work, overwrite=untrusted)
+        if untrusted or (not paper.authors and work.authors):
+            await _set_authors(db, paper, work, replace=True)
+        paper.metadata_source = "registry"
     await db.commit()
     return await get_paper_for_user(db, paper.id, None)
 
 
 async def create_private_paper(
-    db: AsyncSession, *, owner: User, work: ScholarlyWork, source: PaperSource, commit: bool = True
+    db: AsyncSession,
+    *,
+    owner: User,
+    work: ScholarlyWork,
+    source: PaperSource,
+    commit: bool = True,
+    paper_id: uuid.UUID | None = None,
 ) -> Paper:
     paper = Paper(
+        id=paper_id or uuid.uuid4(),
+        metadata_source="user",
         title=work.title,
         visibility=PaperVisibility.PRIVATE,
         source=source,
@@ -187,7 +218,7 @@ async def create_private_paper(
     _apply_work(paper, work, overwrite=True)
     db.add(paper)
     await db.flush()
-    for position, author in enumerate(await _author_rows(db, work)):
+    for position, author in enumerate(await author_rows(db, work)):
         db.add(PaperAuthor(paper_id=paper.id, author_id=author.id, position=position))
     if not commit:
         return paper
@@ -272,7 +303,32 @@ def to_csl_json(paper: Paper) -> dict[str, Any]:
         pmcid=paper.pmcid,
         url=paper.url,
         arxiv_id=paper.arxiv_id,
-    )
+    ) | _csl_extras(paper)
+
+
+_EXTRA_KEYS = {
+    "edition",
+    "publisher-place",
+    "ISBN",
+    "accessed",
+    "authority",
+    "number",
+    "genre",
+    "medium",
+    "event-title",
+    "container-title-short",
+    "editor",
+    "interviewer",
+    "archive",
+    "archive_location",
+    "section",
+    "issued",
+}
+
+
+def _csl_extras(paper: Paper) -> dict[str, Any]:
+    """Manual-entry fields (edition, place, court, editors, ...) that have no dedicated column."""
+    return {k: v for k, v in (paper.csl_extra or {}).items() if k in _EXTRA_KEYS and v}
 
 
 def work_to_csl_json(work: ScholarlyWork, item_id: str) -> dict[str, Any]:

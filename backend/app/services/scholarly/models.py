@@ -8,8 +8,19 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-ProviderName = Literal["crossref", "pubmed", "semantic_scholar", "openalex", "arxiv"]
-ALL_PROVIDERS: tuple[ProviderName, ...] = ("openalex", "crossref", "pubmed", "semantic_scholar", "arxiv")
+ProviderName = Literal["crossref", "pubmed", "semantic_scholar", "openalex", "arxiv", "doaj", "europe_pmc", "core"]
+ALL_PROVIDERS: tuple[ProviderName, ...] = (
+    "openalex",
+    "crossref",
+    "semantic_scholar",
+    "doaj",
+    "core",
+    "pubmed",
+    "europe_pmc",
+    "arxiv",
+)
+Subject = Literal["all", "health", "life", "physical", "social", "humanities"]
+SUBJECTS: tuple[Subject, ...] = ("all", "health", "life", "physical", "social", "humanities")
 
 
 class WorkAuthor(BaseModel):

@@ -18,6 +18,7 @@ from app.services.ai.grounding import (
     GroundedAnswer,
     check_claims,
     citation_payload,
+    evidence_excerpt,
     removal_note,
     render_evidence,
     validate_grounded,
@@ -26,7 +27,7 @@ from app.services.ai.grounding import (
 from app.services.ai.providers import get_embedder, get_llm
 from app.services.search import leading_chunks, search_evidence
 
-SUMMARY_PROMPT_VERSION = "2026-11-v2"  # v2: claim-level quotes + verified overview
+SUMMARY_PROMPT_VERSION = "2026-11-v3"  # v3: quotes with positions; quantities checked with sign and unit
 EMBED_BATCH = 64
 
 
@@ -293,8 +294,8 @@ async def summarize_paper(db: AsyncSession, paper: Paper, *, force: bool = False
                         "key": k,
                         "section": by_key[k].section,
                         "page_start": by_key[k].page_start,
-                        "excerpt": by_key[k].text[:400],
                         "kind": by_key[k].kind,
+                        **evidence_excerpt(by_key[k].shown_text, [q for q in claim.quotes if q.key == k], fallback=400),
                     }
                     for k in claim.evidence_ids
                 ],

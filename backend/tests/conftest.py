@@ -47,6 +47,8 @@ os.environ.update(
         # Never a real project: nothing in the test suite may reach production Firebase/Google APIs.
         "FIREBASE_PROJECT_ID": "paperaid-test-local",
         "MAINTENANCE_ON_STARTUP": "false",
+        # Consent gating has its own tests (test_accounts.py); elsewhere accounts count as having accepted.
+        "REQUIRE_POLICY_ACCEPTANCE": "false",
     }
 )
 
@@ -66,6 +68,8 @@ from app.services.ai.providers import set_embedder, set_llm  # noqa: E402
 TABLES = [
     "audit_events",
     "storage_deletions",
+    "closed_accounts",
+    "consent_records",
     "rate_limit_buckets",
     "messages",
     "conversations",
@@ -242,6 +246,12 @@ def registries() -> Iterator[_respx.MockRouter]:
         )
         router.get(_re.compile(r"https://export\.arxiv\.org/api/query.*")).mock(
             return_value=_httpx.Response(200, text=fx.ARXIV_FEED)
+        )
+        router.get(_re.compile(r"https://doaj\.org/api/search/articles/.*")).mock(
+            return_value=_httpx.Response(200, json=fx.DOAJ_SEARCH)
+        )
+        router.get(_re.compile(r"https://www\.ebi\.ac\.uk/europepmc/webservices/rest/search.*")).mock(
+            return_value=_httpx.Response(200, json=fx.EUROPE_PMC_SEARCH)
         )
         yield router
 

@@ -36,3 +36,21 @@ async def test_live_reference_verification():
     real = "LeCun Y, Bengio Y, Hinton G. Deep learning. Nature. 2015;521(7553):436-444. doi:10.1038/nature14539"
     result = await verify_reference(real)
     assert result["verdict"] == "verified", result
+
+
+@pytest.mark.live
+async def test_live_doaj_and_europe_pmc():
+    from app.services.scholarly.providers import DOAJ, EuropePMC
+
+    doaj = await DOAJ.search("teacher motivation", 5, None, None, False)
+    assert doaj and all(w.is_open_access for w in doaj)
+    epmc = await EuropePMC.search("malaria school children", 5, 2015, None, False)
+    assert epmc and any(w.pmid or w.doi for w in epmc)
+
+
+@pytest.mark.live
+async def test_live_subject_filter_returns_humanities_results():
+    from app.services.scholarly.providers import OpenAlex
+
+    works = await OpenAlex.search("oral history archives", 5, None, None, False, subject="humanities")
+    assert works

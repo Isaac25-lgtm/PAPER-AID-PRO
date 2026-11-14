@@ -27,6 +27,44 @@ class UserOut(Model):
     created_at: datetime
 
 
+class MeOut(UserOut):
+    """The signed-in person, plus what the app needs to gate and personalise the experience."""
+
+    accepted_policy_version: str | None
+    policy_version: str = Field(description="Current Terms/Privacy version; accept it when it differs.")
+    needs_consent: bool
+    preferences: dict[str, Any]
+
+
+class ProgressOut(BaseModel):
+    library: int
+    full_text: int
+    collections: int
+    documents: int
+    conversations: int
+
+
+class ConsentIn(BaseModel):
+    """Required: terms, privacy, ai_processing, age_18 (all must be true). Optional: product_emails, analytics."""
+
+    terms: bool
+    privacy: bool
+    ai_processing: bool
+    age_18: bool
+    product_emails: bool = False
+    analytics: bool = False
+
+
+class PreferencesIn(BaseModel):
+    """Merged into the stored preferences (a value of null removes the key)."""
+
+    values: dict[str, Any] = Field(max_length=50)
+
+
+class DeleteAccountIn(BaseModel):
+    confirm_email: str = Field(min_length=3, max_length=320)
+
+
 class UserUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
 
@@ -57,6 +95,9 @@ class PaperOut(Model):
     keywords: list[str]
     visibility: str
     source: str
+    # "registry" (verified from Crossref/PubMed/...) or "user" (typed or uploaded by its owner)
+    metadata_source: str = "registry"
+    csl_extra: dict[str, Any] = Field(default_factory=dict)
     status: str
     status_detail: str | None
     has_full_text: bool
@@ -101,6 +142,8 @@ class PaperOut(Model):
             authors=[pa.author.name for pa in paper.authors],
             visibility=paper.visibility.value,
             source=paper.source.value,
+            metadata_source=paper.metadata_source,
+            csl_extra=paper.csl_extra or {},
             status=paper.status.value,
             has_full_text=paper.status == PaperStatus.READY,
             has_pdf=bool(paper.storage_path),
@@ -244,7 +287,7 @@ class DocumentUpdate(BaseModel):
 
 
 class RestoreRequest(BaseModel):
-    base_version: int | None = Field(default=None, ge=1)
+    base_version: int = Field(ge=1, description="The document version the user is looking at (409 if stale).")
 
 
 class DocumentSummaryOut(Model):
@@ -300,6 +343,8 @@ class StyleOut(BaseModel):
     id: str
     title: str
     kind: str
+    group: str = ""
+    has_bibliography: bool = True
 
 
 class FormatRequest(BaseModel):

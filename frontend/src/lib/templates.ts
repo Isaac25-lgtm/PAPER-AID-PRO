@@ -11,40 +11,121 @@ export const DOC_TYPE_LABELS: Record<DocumentType, string> = {
   draft: "Blank draft",
 };
 
-export const STUDY_DESIGNS: Record<DocumentType, string[]> = {
+/** Designs grouped by research approach, so every discipline finds its own (not only health and STEM). */
+export const DESIGN_GROUPS: Record<DocumentType, { group: string; designs: string[] }[]> = {
   manuscript: [
-    "Randomized Controlled Trial (RCT)",
-    "Prospective Cohort Study",
-    "Retrospective Observational Study",
-    "Experimental / Laboratory Study",
-    "Cross-Sectional Investigation",
-    "Qualitative Study",
-    "Deep Learning Benchmark / Algorithmic Evaluation",
+    {
+      group: "Quantitative",
+      designs: [
+        "Survey / Questionnaire Study",
+        "Quasi-Experimental Study",
+        "Randomized Controlled Trial (RCT)",
+        "Prospective Cohort Study",
+        "Retrospective Observational Study",
+        "Cross-Sectional Investigation",
+        "Correlational / Secondary Data Analysis",
+        "Experimental / Laboratory Study",
+      ],
+    },
+    {
+      group: "Qualitative",
+      designs: [
+        "Qualitative Interview / Focus-Group Study",
+        "Case Study",
+        "Ethnography",
+        "Phenomenological Study",
+        "Grounded Theory Study",
+        "Discourse / Document Analysis",
+      ],
+    },
+    { group: "Mixed & participatory", designs: ["Mixed-Methods Study", "Action Research"] },
+    {
+      group: "Humanities & law",
+      designs: ["Argumentative / Critical Essay", "Historical / Archival Study", "Doctrinal Legal Research", "Comparative Law / Policy Analysis"],
+    },
+    {
+      group: "Engineering & computing",
+      designs: ["Design & Evaluation Study", "Deep Learning Benchmark / Algorithmic Evaluation", "Simulation / Modelling Study"],
+    },
+    { group: "Business & management", designs: ["Business Case Study", "Organisational / Management Study"] },
   ],
   proposal: [
-    "Prospective Clinical Trial Protocol",
-    "Longitudinal Multi-Center Cohort Proposal",
-    "Exploratory Pilot Grant Framework",
-    "Translational Technology Validation Plan",
+    {
+      group: "Proposals",
+      designs: [
+        "Research Proposal (thesis or degree)",
+        "Concept Note",
+        "Grant Proposal",
+        "Exploratory Pilot Grant Framework",
+        "Mixed-Methods Research Proposal",
+        "Qualitative Research Proposal",
+        "Prospective Clinical Trial Protocol",
+        "Longitudinal Multi-Center Cohort Proposal",
+        "Translational Technology Validation Plan",
+      ],
+    },
   ],
   literature_review: [
-    "Critical Thematic Narrative Review",
-    "PRISMA-Compliant Systematic Literature Review",
-    "Scoping Review Protocol",
-    "Meta-Analysis & Quantitative Synthesis",
+    {
+      group: "Reviews",
+      designs: [
+        "Critical Thematic Narrative Review",
+        "PRISMA-Compliant Systematic Literature Review",
+        "Scoping Review Protocol",
+        "Integrative Review",
+        "Meta-Analysis & Quantitative Synthesis",
+      ],
+    },
   ],
   thesis: [
-    "Doctoral Dissertation (Monograph)",
-    "Master's Thesis",
-    "Cumulative / Article-Based Dissertation",
-    "Undergraduate Research Project",
+    {
+      group: "Theses",
+      designs: ["Undergraduate Research Project", "Master's Thesis", "Doctoral Dissertation (Monograph)", "Cumulative / Article-Based Dissertation"],
+    },
   ],
-  report: ["Technical Report", "Policy Brief", "Program Evaluation Report"],
+  report: [
+    {
+      group: "Reports",
+      designs: ["Technical Report", "Policy Brief", "Program Evaluation Report", "Baseline / Situation Analysis Report", "Feasibility Study"],
+    },
+  ],
   draft: [],
 };
 
+/** All designs per document type (flat). */
+export const STUDY_DESIGNS: Record<DocumentType, string[]> = Object.fromEntries(
+  Object.entries(DESIGN_GROUPS).map(([type, groups]) => [type, groups.flatMap((g) => g.designs)]),
+) as Record<DocumentType, string[]>;
+
+/** Outlines for designs whose structure differs from the generic research article. Matched by keyword. */
+const DESIGN_OUTLINES: [string[], string[]][] = [
+  [["survey", "questionnaire"], ["Abstract", "Introduction & Research Problem", "Research Questions & Hypotheses", "Methods: Population, Sampling & Instrument", "Data Collection & Analysis", "Results", "Discussion", "Limitations & Ethical Considerations", "Conclusion"]],
+  [["quasi-experimental"], ["Abstract", "Introduction & Rationale", "Hypotheses", "Design, Groups & Assignment", "Intervention & Outcome Measures", "Analysis (including control of confounders)", "Results", "Discussion & Threats to Validity", "Conclusion"]],
+  [["case study"], ["Abstract", "Introduction & Case Selection", "Theoretical Lens", "Methods: Data Sources & Analysis", "Case Description", "Findings", "Discussion & Transferability", "Limitations", "Conclusion"]],
+  [["ethnograph"], ["Abstract", "Introduction & Setting", "Theoretical Framework", "Fieldwork, Access & Positionality", "Data Collection & Analysis", "Findings", "Discussion", "Reflexivity & Ethics", "Conclusion"]],
+  [["phenomenolog", "grounded theory", "interview", "focus-group", "qualitative"], ["Abstract", "Introduction & Research Problem", "Theoretical Framework", "Methodology: Sampling, Data Collection & Reflexivity", "Analysis Approach", "Findings & Themes", "Discussion & Implications", "Limitations & Trustworthiness"]],
+  [["discourse", "document analysis"], ["Abstract", "Introduction", "Analytical Framework", "Corpus / Documents & Selection", "Analysis", "Findings", "Discussion", "Conclusion"]],
+  [["mixed-methods"], ["Abstract", "Introduction & Research Problem", "Research Questions", "Mixed-Methods Design & Rationale", "Quantitative Strand: Methods & Results", "Qualitative Strand: Methods & Findings", "Integration of Findings", "Discussion", "Limitations", "Conclusion"]],
+  [["action research"], ["Abstract", "Introduction & Context", "Participants & Partnership", "Cycle 1: Plan, Act, Observe, Reflect", "Cycle 2: Plan, Act, Observe, Reflect", "Outcomes & Learning", "Discussion", "Ethics & Limitations", "Conclusion"]],
+  [["argumentative", "critical essay"], ["Introduction & Thesis Statement", "Context & Key Concepts", "Argument 1", "Argument 2", "Counter-Arguments & Rebuttal", "Conclusion"]],
+  [["historical", "archival"], ["Introduction & Historiography", "Sources & Archives", "Historical Context", "Analysis", "Interpretation & Significance", "Conclusion"]],
+  [["doctrinal legal"], ["Introduction & Legal Question", "Legal Framework (Statutes & Instruments)", "Case Law Analysis", "Critical Evaluation", "Recommendations / Law Reform", "Conclusion"]],
+  [["comparative law", "policy analysis"], ["Introduction & Problem", "Analytical Framework & Comparators", "Jurisdiction / Policy A", "Jurisdiction / Policy B", "Comparative Analysis", "Recommendations", "Conclusion"]],
+  [["design & evaluation", "simulation", "modelling"], ["Abstract", "Introduction & Requirements", "Related Work", "System / Model Design", "Implementation", "Evaluation Method", "Results", "Discussion & Limitations", "Conclusion & Future Work"]],
+  [["business case", "organisational", "management study"], ["Executive Summary", "Introduction & Organisation Background", "Problem / Opportunity", "Analysis (Market, Financial, Operational)", "Options & Evaluation", "Recommendations", "Implementation Plan", "Conclusion"]],
+  [["concept note"], ["Title & Summary", "Problem Statement", "Objectives", "Proposed Approach", "Expected Outcomes", "Partners & Capacity", "Budget Summary"]],
+  [["research proposal (thesis", "qualitative research proposal", "mixed-methods research proposal"], ["Title & Abstract", "Background & Problem Statement", "Objectives & Research Questions", "Significance & Justification", "Literature Review", "Methodology", "Ethical Considerations", "Work Plan & Timeline", "Budget", "Expected Outcomes & Dissemination"]],
+  [["integrative review"], ["Abstract", "Introduction & Review Purpose", "Methods: Search, Selection & Appraisal", "Data Analysis & Integration", "Results", "Discussion", "Conclusion"]],
+  [["baseline", "situation analysis"], ["Executive Summary", "Introduction & Objectives", "Methodology", "Context & Baseline Findings", "Key Indicators", "Conclusions & Recommendations", "Annexes"]],
+  [["feasibility study"], ["Executive Summary", "Background", "Technical Feasibility", "Economic / Financial Feasibility", "Social & Environmental Considerations", "Risks", "Recommendation"]],
+];
+
 export function defaultHeadings(docType: DocumentType, design = ""): string[] {
   const d = design.toLowerCase();
+  if (d && !(d.includes("randomized") || d.includes("rct"))) {
+    const outline = DESIGN_OUTLINES.find(([keys]) => keys.some((k) => d.includes(k)));
+    if (outline) return outline[1];
+  }
   switch (docType) {
     case "manuscript":
       if (d.includes("randomized") || d.includes("rct"))
@@ -186,8 +267,16 @@ export function sectionGuidance(heading: string, design = ""): string {
   if (h.includes("ethic")) return "Describe ethical approval, consent, data protection and risk mitigation.";
   if (h.includes("budget")) return "Itemise costs and justify each line against the aims.";
   if (h.includes("timeline") || h.includes("milestone")) return "Set out the work plan, milestones and deliverables over time.";
-  if (h.includes("result") || h.includes("finding") || h.includes("synthesis") || h.includes("charted"))
-    return "Report the findings objectively: effect estimates, confidence intervals and key observations, without interpretation.";
+  if (h.includes("theme") || (h.includes("finding") && /qualitative|interview|ethnograph|case study|phenomenolog|grounded/i.test(design)))
+    return "Present each theme with a clear explanation and illustrative quotations or observations from your data.";
+  if (h.includes("result") || h.includes("finding") || h.includes("synthesis") || h.includes("charted") || h.includes("indicator"))
+    return "Report what you found objectively (statistics, observations or evidence, as fits your design), before interpreting it.";
+  if (h.includes("argument") || h.includes("analysis") || h.includes("interpretation") || h.includes("evaluation"))
+    return "Develop the argument step by step, supporting each point with evidence or sources from your library.";
+  if (h.includes("thesis statement")) return "State the claim the essay will defend, in one or two sentences.";
+  if (h.includes("case law") || h.includes("legal framework") || h.includes("statute"))
+    return "Set out the relevant statutes, instruments and cases, and analyse how they apply. Add cases and statutes with “Enter manually”.";
+  if (h.includes("sources & archives")) return "Describe the archives and primary sources you used and how you selected and read them.";
   if (h.includes("discussion") || h.includes("implication") || h.includes("recommendation"))
     return "Interpret the findings against prior studies, explain what they mean and what should follow from them.";
   if (h.includes("limitation") || h.includes("bias") || h.includes("pitfall") || h.includes("trustworth"))

@@ -1,15 +1,20 @@
 """Paper ingestion jobs: obtain the PDF, store it privately, extract + chunk text, then embed (if configured).
 
-Job state machine (all transitions are single conditional UPDATEs, so concurrent deliveries cannot both win):
+Job state machine (every transition is one conditional UPDATE, so concurrent deliveries cannot both win):
 
     queued --claim--> running --success--> succeeded
        ^                 |--terminal error--> failed
        |                 '--transient error (attempt < MAX_ATTEMPTS)--> queued (Cloud Tasks redelivers)
-       '-- dispatch failure / expired lease --> failed (reclaimable by a new request or an admin retry)
+       '-- dispatch failure / expired lease --> failed (a new request or an admin retry starts again)
 
-Queued and running jobs carry a lease (`lease_expires_at`). If a worker dies or a task is never delivered, the
-lease expires and `reclaim_abandoned_jobs` marks the job failed, so the paper is never stuck.
-A partial unique index guarantees at most one queued/running job per paper.
+- Leases: queued and running jobs carry `lease_expires_at`. If a worker dies or a task is lost, the lease expires
+  and `reclaim_abandoned_jobs` fails the job, so a paper is never stuck. A NULL lease counts as expired.
+- Fencing: each claim gets a fresh `attempt_token`. Results (chunks, paper status, job outcome) are published in
+  ONE transaction that first locks the job row and checks the token, so a slow worker whose lease was reclaimed
+  can never overwrite a newer attempt.
+- A delivery that finds a live lease held by another attempt asks Cloud Tasks to retry later (503) instead of
+  acknowledging, so a task is never lost while a worker might still die.
+- A partial unique index guarantees at most one queued/running job per paper.
 """
 
 from __future__ import annotations
@@ -18,9 +23,10 @@ import asyncio
 import enum
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +35,7 @@ from app.db.session import get_sessionmaker
 from app.errors import AppError, Conflict, UpstreamError
 from app.security.url_safety import fetch_pdf
 from app.services import ai
-from app.services.maintenance import schedule_deletion
+from app.services.maintenance import confirm_upload, record_upload_intent, schedule_deletion
 from app.services.open_access import pdf_candidates
 from app.services.pdf import chunk_pages, extract_pages
 from app.services.storage import get_storage, pdf_key, sha256_hex
@@ -55,36 +61,66 @@ class PdfUnavailable(AppError):
     code = "PDF_UNAVAILABLE"
 
 
+class LeaseLost(Exception):
+    """This attempt no longer owns the job (its lease was reclaimed); it must not publish anything."""
+
+
+@dataclass(frozen=True)
+class Attempt:
+    """Immutable facts about the claimed attempt (safe to use after a rollback expires ORM objects)."""
+
+    job_id: uuid.UUID
+    paper_id: uuid.UUID
+    token: uuid.UUID
+    number: int
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
 
-async def store_pdf(db: AsyncSession, paper: Paper, data: bytes) -> str:
-    """Upload the PDF and point the paper at it (caller commits). A replaced object is queued for deletion."""
+def _lease_expired(now: datetime):  # type: ignore[no-untyped-def]
+    return or_(ProcessingJob.lease_expires_at.is_(None), ProcessingJob.lease_expires_at < now)
+
+
+# ------------------------------------------------------------------------------------------- PDF storage
+async def put_pdf(paper_id: uuid.UUID, data: bytes) -> tuple[str, str]:
+    """Write the object, after durably recording the intent (so a failure anywhere later cannot orphan it).
+    Returns (key, sha256). The caller must `attach_pdf` in the transaction that commits the paper."""
     digest = sha256_hex(data)
-    key = pdf_key(str(paper.id), digest)
+    key = pdf_key(str(paper_id), digest)
+    await record_upload_intent(key)
     await get_storage().put(key, data, "application/pdf")
+    return key, digest
+
+
+async def attach_pdf(db: AsyncSession, paper: Paper, key: str, digest: str, size: int) -> None:
+    """Point the paper at a written object (caller commits). A replaced object is queued for deletion."""
     if paper.storage_path and paper.storage_path != key:
         await schedule_deletion(db, paper.storage_path)
-    paper.storage_path = key
-    paper.file_sha256 = digest
-    paper.file_size = len(data)
+    paper.storage_path, paper.file_sha256, paper.file_size = key, digest, size
+    await confirm_upload(db, key)
+
+
+async def store_pdf(db: AsyncSession, paper: Paper, data: bytes) -> str:
+    key, digest = await put_pdf(paper.id, data)
+    await attach_pdf(db, paper, key, digest, len(data))
     return key
 
 
+# ------------------------------------------------------------------------------------------- job control
 async def reclaim_abandoned_jobs(db: AsyncSession, paper_id: uuid.UUID | None = None) -> int:
     """Fail queued/running jobs whose lease expired (worker died, task lost) and release their papers."""
+    now = _now()
     stmt = (
         update(ProcessingJob)
-        .where(
-            ProcessingJob.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]),
-            ProcessingJob.lease_expires_at < _now(),
-        )
+        .where(ProcessingJob.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]), _lease_expired(now))
         .values(
             status=JobStatus.FAILED,
             error="Processing was interrupted before it finished. Please retry.",
-            finished_at=_now(),
+            finished_at=now,
             lease_expires_at=None,
+            attempt_token=None,
         )
         .returning(ProcessingJob.paper_id)
     )
@@ -119,28 +155,92 @@ async def queue_ingest(db: AsyncSession, paper: Paper, requested_by: User | None
     except IntegrityError as exc:  # uq_processing_jobs_active_paper: another request queued it first
         await db.rollback()
         raise Conflict("This paper is already being processed.") from exc
+    job_id, paper_id = job.id, paper.id
     try:
-        await enqueue_job(job.id)
+        await enqueue_job(job_id)
     except Exception as exc:
         # The task never reached the queue: close the job now instead of leaving it "queued" forever.
+        await db.rollback()
         message = exc.message if isinstance(exc, AppError) else "Could not queue the processing job."
         await db.execute(
             update(ProcessingJob)
-            .where(ProcessingJob.id == job.id, ProcessingJob.status == JobStatus.QUEUED)
+            .where(ProcessingJob.id == job_id, ProcessingJob.status == JobStatus.QUEUED)
             .values(status=JobStatus.FAILED, error=message, finished_at=_now(), lease_expires_at=None)
         )
         await db.execute(
             update(Paper)
-            .where(Paper.id == paper.id, Paper.status == PaperStatus.QUEUED)
+            .where(Paper.id == paper_id, Paper.status == PaperStatus.QUEUED)
             .values(status=previous_status, status_detail=previous_detail)
         )
         await db.commit()
         raise
-    await db.refresh(job)
-    return job
+    return (
+        await db.execute(
+            select(ProcessingJob).where(ProcessingJob.id == job_id).execution_options(populate_existing=True)
+        )
+    ).scalar_one()
 
 
-async def _obtain_pdf(db: AsyncSession, paper: Paper) -> bytes:
+async def _claim(db: AsyncSession, job_id: uuid.UUID) -> Attempt | Outcome:
+    """Atomically move queued (or lease-expired running) -> running with a new fencing token."""
+    now = _now()
+    row = (
+        await db.execute(
+            update(ProcessingJob)
+            .where(
+                ProcessingJob.id == job_id,
+                (ProcessingJob.status == JobStatus.QUEUED)
+                | ((ProcessingJob.status == JobStatus.RUNNING) & _lease_expired(now)),
+            )
+            .values(
+                status=JobStatus.RUNNING,
+                attempts=ProcessingJob.attempts + 1,
+                started_at=now,
+                lease_expires_at=now + RUNNING_LEASE,
+                attempt_token=uuid.uuid4(),
+            )
+            .returning(ProcessingJob.paper_id, ProcessingJob.attempt_token, ProcessingJob.attempts)
+        )
+    ).first()
+    await db.commit()
+    if row is not None:
+        return Attempt(job_id=job_id, paper_id=row.paper_id, token=row.attempt_token, number=row.attempts)
+    status = (await db.execute(select(ProcessingJob.status).where(ProcessingJob.id == job_id))).scalar_one_or_none()
+    await db.commit()
+    # Another worker holds a live lease: completion is unknown, so ask the queue to try again later.
+    return Outcome.RETRY if status == JobStatus.RUNNING else Outcome.SKIPPED
+
+
+async def _hold(db: AsyncSession, attempt: Attempt) -> None:
+    """Lock the job row and confirm this attempt still owns it. The lock lasts until the caller commits, so a
+    reclaim cannot slip in between this check and the published results."""
+    row = (
+        await db.execute(
+            select(ProcessingJob.status, ProcessingJob.attempt_token)
+            .where(ProcessingJob.id == attempt.job_id)
+            .with_for_update()
+        )
+    ).first()
+    if row is None or row.status != JobStatus.RUNNING or row.attempt_token != attempt.token:
+        raise LeaseLost
+
+
+async def _finish(db: AsyncSession, attempt: Attempt, **values: object) -> bool:
+    """Record the outcome only if this attempt still owns the job. Returns whether it did."""
+    result = await db.execute(
+        update(ProcessingJob)
+        .where(
+            ProcessingJob.id == attempt.job_id,
+            ProcessingJob.status == JobStatus.RUNNING,
+            ProcessingJob.attempt_token == attempt.token,
+        )
+        .values(**values)
+    )
+    return bool(getattr(result, "rowcount", 0))
+
+
+# ------------------------------------------------------------------------------------------- pipeline
+async def _obtain_pdf(db: AsyncSession, paper: Paper, attempt: Attempt) -> bytes:
     if paper.storage_path:
         return await get_storage().get(paper.storage_path)
     errors: list[str] = []
@@ -152,7 +252,9 @@ async def _obtain_pdf(db: AsyncSession, paper: Paper) -> bytes:
             errors.append(f"{origin}: {exc.message}")
             transient = transient or isinstance(exc, UpstreamError)
             continue
-        await store_pdf(db, paper, data)
+        key, digest = await put_pdf(paper.id, data)
+        await _hold(db, attempt)
+        await attach_pdf(db, paper, key, digest, len(data))
         if not paper.oa_pdf_url:
             paper.oa_pdf_url = url
         await db.commit()
@@ -164,14 +266,16 @@ async def _obtain_pdf(db: AsyncSession, paper: Paper) -> bytes:
     raise PdfUnavailable(message)
 
 
-async def _ingest(db: AsyncSession, paper: Paper) -> None:
-    data = await _obtain_pdf(db, paper)
+async def _ingest(db: AsyncSession, paper: Paper, attempt: Attempt) -> None:
+    """Extract and stage the results. Does NOT commit: run_job publishes them together with the job outcome."""
+    data = await _obtain_pdf(db, paper, attempt)
     pages = await asyncio.to_thread(extract_pages, data)
     chunks = await asyncio.to_thread(chunk_pages, pages)
-    await db.execute(delete(PaperChunk).where(PaperChunk.paper_id == paper.id))
+    await _hold(db, attempt)
+    await db.execute(delete(PaperChunk).where(PaperChunk.paper_id == attempt.paper_id))
     db.add_all(
         PaperChunk(
-            paper_id=paper.id,
+            paper_id=attempt.paper_id,
             chunk_index=c.index,
             text=c.text,
             section=c.section,
@@ -184,7 +288,6 @@ async def _ingest(db: AsyncSession, paper: Paper) -> None:
     paper.page_count = len(pages)
     paper.status = PaperStatus.READY
     paper.status_detail = f"{len(chunks)} passages extracted from {len(pages)} pages."
-    await db.commit()
 
 
 async def _embed_best_effort(db: AsyncSession, paper_id: uuid.UUID) -> None:
@@ -205,82 +308,70 @@ def _is_retryable(exc: Exception) -> bool:
     return True  # unexpected errors (lost DB connection, ...) deserve another attempt
 
 
-async def _claim(db: AsyncSession, job_id: uuid.UUID) -> ProcessingJob | None:
-    """Atomically move queued (or lease-expired running) -> running. Duplicate deliveries get None."""
-    now = _now()
-    claimed = (
-        await db.execute(
-            update(ProcessingJob)
-            .where(
-                ProcessingJob.id == job_id,
-                (ProcessingJob.status == JobStatus.QUEUED)
-                | ((ProcessingJob.status == JobStatus.RUNNING) & (ProcessingJob.lease_expires_at < now)),
-            )
-            .values(
-                status=JobStatus.RUNNING,
-                attempts=ProcessingJob.attempts + 1,
-                started_at=now,
-                lease_expires_at=now + RUNNING_LEASE,
-            )
-            .returning(ProcessingJob.id)
-        )
-    ).scalar_one_or_none()
-    await db.commit()
-    if claimed is None:
-        return None
-    return (
-        await db.execute(
-            select(ProcessingJob).where(ProcessingJob.id == job_id).execution_options(populate_existing=True)
-        )
-    ).scalar_one()
-
-
-async def _finish(db: AsyncSession, job_id: uuid.UUID, **values: object) -> None:
-    # Only the worker that still holds the job may finish it (a reclaimed job stays reclaimed).
-    await db.execute(
-        update(ProcessingJob)
-        .where(ProcessingJob.id == job_id, ProcessingJob.status == JobStatus.RUNNING)
-        .values(**values)
-    )
-
-
 async def run_job(job_id: uuid.UUID) -> Outcome:
     async with get_sessionmaker()() as db:
-        job = await _claim(db, job_id)
-        if job is None:
-            return Outcome.SKIPPED  # duplicate delivery, or already finished
-        paper = await db.get(Paper, job.paper_id)
+        claimed = await _claim(db, job_id)
+        if isinstance(claimed, Outcome):
+            return claimed
+        attempt = claimed
+        paper = await db.get(Paper, attempt.paper_id)
         if paper is None:
-            await _finish(db, job_id, status=JobStatus.FAILED, error="Paper no longer exists.", finished_at=_now())
+            await _finish(db, attempt, status=JobStatus.FAILED, error="Paper no longer exists.", finished_at=_now())
             await db.commit()
             return Outcome.DONE
         paper.status = PaperStatus.PROCESSING
         await db.commit()
         try:
-            await _ingest(db, paper)
-        except Exception as exc:
+            await _ingest(db, paper, attempt)
+            published = await _finish(
+                db,
+                attempt,
+                status=JobStatus.SUCCEEDED,
+                error=None,
+                finished_at=_now(),
+                lease_expires_at=None,
+                attempt_token=None,
+            )
+            if not published:
+                raise LeaseLost
+            await db.commit()  # chunks + paper status + job outcome become visible together
+        except LeaseLost:
             await db.rollback()
+            log.warning("processing.lease_lost", extra={"job_id": str(job_id)})
+            return Outcome.SKIPPED
+        except Exception as exc:
+            await db.rollback()  # expires ORM state: from here on only `attempt` (plain values) is used
             message = exc.message if isinstance(exc, AppError) else "Unexpected processing error."
             if not isinstance(exc, AppError):
                 log.exception("processing.unexpected_error", extra={"job_id": str(job_id)})
-            retry = _is_retryable(exc) and job.attempts < MAX_ATTEMPTS
+            retry = _is_retryable(exc) and attempt.number < MAX_ATTEMPTS
             if retry:
-                await _finish(
-                    db, job_id, status=JobStatus.QUEUED, error=message, lease_expires_at=_now() + QUEUED_LEASE
+                owned = await _finish(
+                    db,
+                    attempt,
+                    status=JobStatus.QUEUED,
+                    error=message,
+                    lease_expires_at=_now() + QUEUED_LEASE,
+                    attempt_token=None,
                 )
                 paper_values = {"status": PaperStatus.QUEUED, "status_detail": f"Retrying after an error: {message}"}
             else:
-                await _finish(
-                    db, job_id, status=JobStatus.FAILED, error=message, finished_at=_now(), lease_expires_at=None
+                owned = await _finish(
+                    db,
+                    attempt,
+                    status=JobStatus.FAILED,
+                    error=message,
+                    finished_at=_now(),
+                    lease_expires_at=None,
+                    attempt_token=None,
                 )
                 paper_values = {"status": PaperStatus.FAILED, "status_detail": message}
-            await db.execute(update(Paper).where(Paper.id == job.paper_id).values(**paper_values))
+            if owned:
+                await db.execute(update(Paper).where(Paper.id == attempt.paper_id).values(**paper_values))
             await db.commit()
-            return Outcome.RETRY if retry else Outcome.DONE
-        await _finish(db, job_id, status=JobStatus.SUCCEEDED, error=None, finished_at=_now(), lease_expires_at=None)
-        await db.commit()
-        log.info("processing.succeeded", extra={"job_id": str(job_id), "paper_id": str(paper.id)})
-        await _embed_best_effort(db, paper.id)
+            return Outcome.RETRY if (retry and owned) else (Outcome.DONE if owned else Outcome.SKIPPED)
+        log.info("processing.succeeded", extra={"job_id": str(job_id), "paper_id": str(attempt.paper_id)})
+        await _embed_best_effort(db, attempt.paper_id)
         return Outcome.DONE
 
 

@@ -1,15 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FlaskConical, MessageSquare, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
 import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
+import { useLibrarySearch } from "@/components/papers";
 import { Alert, Badge, Button, Card, EmptyState, Input, PageHeader, Spinner, Textarea } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
-import type { Conversation, ConversationSummary, GroundedAnswer, LibraryItem } from "@/lib/types";
+import type { Conversation, ConversationSummary, GroundedAnswer } from "@/lib/types";
 
 export default function ResearchPage() {
   const queryClient = useQueryClient();
@@ -20,7 +21,7 @@ export default function ResearchPage() {
   const [question, setQuestion] = useState("");
   const [filter, setFilter] = useState("");
 
-  const library = useQuery({ queryKey: ["library", null, null], queryFn: () => api.get<LibraryItem[]>("/library") });
+  const library = useLibrarySearch(filter, 100);
   const conversations = useQuery({ queryKey: ["conversations"], queryFn: () => api.get<ConversationSummary[]>("/research/conversations") });
   const conversation = useQuery({
     queryKey: ["conversation", conversationId],
@@ -29,16 +30,25 @@ export default function ResearchPage() {
   });
   const effectiveSelection = selected ?? new Set(conversation.data?.paper_ids ?? []);
 
+  // The thread on screen right now; a late answer must not pull the user back to a thread they left.
+  const currentThread = useRef(conversationId);
+  currentThread.current = conversationId;
   const ask = useMutation({
-    mutationFn: () =>
-      api.post<GroundedAnswer>("/research/ask", { question: question.trim(), paper_ids: Array.from(effectiveSelection), conversation_id: conversationId ?? undefined }),
-    onSuccess: (answer) => {
-      setQuestion("");
+    mutationFn: async () => {
+      const origin = conversationId;
+      const answer = await api.post<GroundedAnswer>("/research/ask", {
+        question: question.trim(),
+        paper_ids: Array.from(effectiveSelection),
+        conversation_id: origin ?? undefined,
+      });
+      return { answer, origin };
+    },
+    onSuccess: ({ answer, origin }) => {
       void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      if (answer.conversation_id) {
-        void queryClient.invalidateQueries({ queryKey: ["conversation", answer.conversation_id] });
-        setParams({ c: answer.conversation_id });
-      }
+      if (answer.conversation_id) void queryClient.invalidateQueries({ queryKey: ["conversation", answer.conversation_id] });
+      if (currentThread.current !== origin) return; // the user moved on; the answer is saved in its own thread
+      setQuestion("");
+      if (answer.conversation_id) setParams({ c: answer.conversation_id });
     },
   });
   const remove = useMutation({
@@ -55,7 +65,7 @@ export default function ResearchPage() {
     else next.add(paperId);
     setSelected(next);
   };
-  const papers = (library.data ?? []).map((i) => i.paper).filter((p) => !filter || p.title.toLowerCase().includes(filter.toLowerCase()));
+  const papers = (library.data?.items ?? []).map((i) => i.paper);
 
   return (
     <Container>
@@ -67,6 +77,7 @@ export default function ResearchPage() {
             <Plus className="h-4 w-4" /> New question
           </Button>
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">History</p>
+          {conversations.error && <Alert kind="error">Could not load your history. <button className="underline" onClick={() => void conversations.refetch()}>Retry</button></Alert>}
           {conversations.data?.length === 0 && <p className="text-sm text-slate-500">No conversations yet.</p>}
           <ul className="space-y-1">
             {conversations.data?.map((c) => (
@@ -83,6 +94,7 @@ export default function ResearchPage() {
 
         <section className="min-w-0 space-y-4">
           {conversation.isLoading && <Spinner />}
+          {conversation.error && <Alert kind="error">{errorMessage(conversation.error)} <button className="underline" onClick={() => void conversation.refetch()}>Retry</button></Alert>}
           {conversation.data?.messages.map((m) =>
             m.role === "user" ? (
               <div key={m.id} className="flex justify-end"><div className="max-w-[85%] rounded-2xl bg-brand-700 px-4 py-2 text-white">{m.content}</div></div>
@@ -99,7 +111,7 @@ export default function ResearchPage() {
           )}
           <Card className="p-4">
             <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); if (question.trim().length >= 3 && effectiveSelection.size) ask.mutate(); }}>
-              <Textarea rows={3} value={question} maxLength={2000} onChange={(e) => setQuestion(e.target.value)} placeholder="e.g. What interventions reduced malaria incidence in school-age children, and by how much?" aria-label="Research question" />
+              <Textarea rows={3} value={question} maxLength={2000} onChange={(e) => setQuestion(e.target.value)} placeholder="e.g. What do these studies find about the main question, and where do they disagree?" aria-label="Research question" />
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-500">{effectiveSelection.size} paper{effectiveSelection.size === 1 ? "" : "s"} selected</span>
                 <Button type="submit" loading={ask.isPending} disabled={!effectiveSelection.size || question.trim().length < 3}><MessageSquare className="h-4 w-4" /> Ask</Button>
@@ -114,7 +126,7 @@ export default function ResearchPage() {
           <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter" aria-label="Filter papers" className="mb-2" />
           {library.isLoading && <Spinner />}
           {library.error && <Alert kind="error">{errorMessage(library.error)}</Alert>}
-          {library.data?.length === 0 && <p className="text-sm text-slate-500">Your library is empty. <Link to="/discover" className="text-brand-700">Discover papers</Link>.</p>}
+          {library.data?.total === 0 && !filter && <p className="text-sm text-slate-500">Your library is empty. <Link to="/discover" className="text-brand-700">Discover papers</Link>.</p>}
           <ul className="max-h-[60vh] space-y-1.5 overflow-y-auto">
             {papers.map((p) => (
               <li key={p.id}>

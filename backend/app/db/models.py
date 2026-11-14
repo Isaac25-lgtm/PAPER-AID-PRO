@@ -125,6 +125,12 @@ class User(Base):
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Version of the Terms/Privacy notice this account last accepted (None = must accept before using the app).
+    accepted_policy_version: Mapped[str | None] = mapped_column(String(20))
+    # Per-account settings that follow the person across devices (guide state, default style, field, ...).
+    preferences: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -176,6 +182,15 @@ class Paper(Base):
     file_sha256: Mapped[str | None] = mapped_column(String(64))
     file_size: Mapped[int | None] = mapped_column(BigInteger)
     page_count: Mapped[int | None] = mapped_column(Integer)
+    # Where the bibliographic fields came from: "registry" (Crossref/PubMed/...), "user" (typed or uploaded by
+    # its private owner) or "unverified" (public record written from a user file under the old import policy).
+    metadata_source: Mapped[str] = mapped_column(
+        String(20), default="registry", server_default=text("'registry'"), nullable=False
+    )
+    # Extra CSL fields for manually entered sources (edition, place, ISBN, court, accessed date, editors, ...).
+    csl_extra: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
 
     search_vector: Mapped[Any] = mapped_column(
         TSVECTOR,
@@ -287,6 +302,8 @@ class ProcessingJob(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # A running job holds a lease; a worker that dies stops renewing it and the job becomes reclaimable.
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Fencing token for the current attempt: a worker may only publish results while it still holds it.
+    attempt_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
 
@@ -435,6 +452,8 @@ class Message(Base):
         Boolean, default=False, server_default=text("false"), nullable=False
     )
     gaps: Mapped[str] = mapped_column(Text, default="", server_default=text("''"), nullable=False)
+    # Question and answer of one exchange share a turn; ordering never depends on equal timestamps.
+    turn_index: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
     created_at: Mapped[datetime] = _created()
 
     __table_args__ = (Index("ix_messages_conversation", "conversation_id", "created_at"),)
@@ -458,7 +477,36 @@ class StorageDeletion(Base):
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
     last_error: Mapped[str | None] = mapped_column(Text)
+    # Not processed before this time: upload intents get a grace period; failures back off exponentially.
+    not_before: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_at: Mapped[datetime] = _created()
+
+
+class ClosedAccount(Base):
+    """Firebase identities whose PaperAid account was closed. Still-valid ID tokens for them are refused, so a
+    closed account cannot be re-created by an open browser tab before its token expires."""
+
+    __tablename__ = "closed_accounts"
+
+    firebase_uid: Mapped[str] = mapped_column(String(128), primary_key=True)
+    closed_at: Mapped[datetime] = _created()
+
+
+class ConsentRecord(Base):
+    """Evidence of what a person agreed to, which version, and when. Kept (pseudonymised) after account deletion."""
+
+    __tablename__ = "consent_records"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    firebase_uid: Mapped[str] = mapped_column(String(128), nullable=False)
+    document: Mapped[str] = mapped_column(String(40), nullable=False)  # terms | privacy | ai_processing | ...
+    version: Mapped[str] = mapped_column(String(20), nullable=False)
+    granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    country: Mapped[str | None] = mapped_column(String(8))
+    created_at: Mapped[datetime] = _created()
+
+    __table_args__ = (Index("ix_consent_records_user", "user_id", "document", "created_at"),)
 
 
 class AuditEvent(Base):

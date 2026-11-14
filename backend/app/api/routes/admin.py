@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
@@ -155,10 +156,17 @@ async def run_job(body: dict[str, str], authorization: Annotated[str | None, Hea
 
     204 = finished (succeeded or failed for good). 503 = transient failure: Cloud Tasks redelivers with backoff;
     the worker caps attempts itself, so a job can never retry forever."""
-    verify_task_request(authorization)
+    await asyncio.to_thread(verify_task_request, authorization)  # blocking HTTP: keep it off the event loop
     try:
         job_id = uuid.UUID(body.get("job_id", ""))
     except ValueError as exc:
         raise ValidationFailed("Invalid job id.") from exc
     outcome = await processing.run_job(job_id)
     return Response(status_code=503 if outcome == processing.Outcome.RETRY else 204)
+
+
+@internal.post("/maintenance", response_model=MaintenanceOut)
+async def scheduled_maintenance(authorization: Annotated[str | None, Header()] = None) -> MaintenanceOut:
+    """Cloud Scheduler entry point (every 15 minutes, OIDC-authenticated like the task endpoint)."""
+    await asyncio.to_thread(verify_task_request, authorization)
+    return MaintenanceOut(**asdict(await run_maintenance()))

@@ -119,3 +119,51 @@ ARXIV_FEED = """<?xml version="1.0" encoding="UTF-8"?>
   <author><name>Lee Ng</name></author>
  </entry>
 </feed>"""
+
+
+DOAJ_SEARCH = {
+    "results": [
+        {
+            "bibjson": {
+                "title": "Oral history archives in East African universities",
+                "abstract": "We describe how three universities preserve oral history recordings.",
+                "author": [{"name": "Ruth Achieng"}],
+                "year": "2022",
+                "journal": {
+                    "title": "Archives and Records Review",
+                    "publisher": "Open Press",
+                    "volume": "4",
+                    "number": "2",
+                },
+                "identifier": [{"type": "doi", "id": "10.5555/archives.2022.12"}],
+                "link": [{"type": "fulltext", "url": "https://example.org/a.pdf", "content_type": "PDF"}],
+                "start_page": "10",
+                "end_page": "24",
+                "keywords": ["oral history"],
+            }
+        }
+    ]
+}
+
+EUROPE_PMC_SEARCH = {
+    "resultList": {
+        "result": [
+            {
+                "id": "PPR123",
+                "source": "PPR",
+                "doi": "10.1101/2024.01.01.000001",
+                "title": "Bed net use among pupils: a preprint",
+                "abstractText": "Preprint abstract.",
+                "pubYear": "2024",
+                "isOpenAccess": "Y",
+                "citedByCount": 2,
+                "authorList": {"author": [{"firstName": "Grace", "lastName": "Namaganda", "fullName": "Namaganda G"}]},
+                "fullTextUrlList": {
+                    "fullTextUrl": [
+                        {"documentStyle": "pdf", "availabilityCode": "OA", "url": "https://europepmc.org/x.pdf"}
+                    ]
+                },
+            }
+        ]
+    }
+}

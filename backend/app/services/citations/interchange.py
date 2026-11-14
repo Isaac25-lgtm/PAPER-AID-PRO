@@ -160,7 +160,7 @@ def parse_bibtex(text: str) -> list[ScholarlyWork]:
     except Exception as exc:
         raise ValidationFailed("The BibTeX file could not be parsed.") from exc
     works = []
-    for entry in database.entries[:MAX_IMPORT_ENTRIES]:
+    for entry in database.entries[: MAX_IMPORT_ENTRIES + 1]:
         title = clean_text((entry.get("title") or "").replace("{", "").replace("}", ""))
         if not title:
             continue
@@ -200,7 +200,7 @@ def parse_ris(text: str) -> list[ScholarlyWork]:
             if record:
                 works.append(_ris_record(record))
             record = {}
-            if len(works) >= MAX_IMPORT_ENTRIES:
+            if len(works) > MAX_IMPORT_ENTRIES:
                 break
             continue
         record.setdefault(tag, []).append(value)

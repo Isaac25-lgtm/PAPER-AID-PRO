@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router";
 
 import { useAuth } from "@/lib/auth";
+import { ConsentGate } from "./Consent";
 import { HelpButton, useGuidance } from "./Guidance";
 import { Alert, Button, Spinner } from "./ui";
 
@@ -119,11 +120,17 @@ export function Layout() {
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-sm text-slate-500">
           <span>© {new Date().getFullYear()} PaperAid Pro · Silver</span>
           <span className="flex gap-4">
+            <Link to="/terms" className="hover:text-slate-800">
+              Terms
+            </Link>
             <Link to="/privacy" className="hover:text-slate-800">
               Privacy
             </Link>
+            <Link to="/ai-notice" className="hover:text-slate-800">
+              AI notice
+            </Link>
             <a href="https://openalex.org" className="hover:text-slate-800" target="_blank" rel="noreferrer">
-              Metadata: OpenAlex, Crossref, PubMed, Semantic Scholar, arXiv
+              Metadata: OpenAlex, Crossref, Semantic Scholar, DOAJ, PubMed, Europe PMC
             </a>
           </span>
         </div>
@@ -190,6 +197,7 @@ export function RequireAuth({ children, admin = false }: { children: ReactNode; 
     );
   }
   if (!user) return <Spinner label="Loading your account" />;
+  if (user.needs_consent) return <ConsentGate />;
   if (admin && user.role !== "admin") return <Navigate to="/" replace />;
   return <>{children}</>;
 }

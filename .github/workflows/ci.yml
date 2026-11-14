@@ -26,8 +26,28 @@ jobs:
       - run: pip install -r requirements.txt pytest==9.2.0 pytest-asyncio==1.5.0 respx==0.23.1 ruff==0.17.5
       - run: npm ci --omit=dev --no-audit --no-fund
         working-directory: backend/app/services/citations/engine
-      - run: ruff check app tests alembic && ruff format --check app tests alembic
+      - run: ruff check app tests alembic scripts && ruff format --check app tests alembic scripts
       - run: python -m pytest -q
+
+  # The production image itself: fonts, Node/citeproc, migrations and readiness exactly as deployed.
+  container:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: smoke }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t paperaid-api:ci backend
+      - name: Smoke test inside the image
+        run: >-
+          docker run --rm --network host
+          -e ENV=test -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/smoke
+          -e FIREBASE_PROJECT_ID=paperaid-ci -e MAINTENANCE_ON_STARTUP=false
+          paperaid-api:ci python scripts/smoke_container.py
 
   frontend:
     runs-on: ubuntu-latest

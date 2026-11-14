@@ -1,14 +1,17 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, FileUp, FolderPlus, LibraryBig, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { SectionGuide } from "@/components/Guidance";
+import { ManualSourceForm } from "@/components/ManualSource";
 import { Container } from "@/components/Layout";
 import { PaperCard } from "@/components/papers";
 import { Alert, Button, EmptyState, Input, Label, Modal, PageHeader, Select, Spinner, Textarea } from "@/components/ui";
 import { api, downloadFile, errorMessage } from "@/lib/api";
 import type { Collection, ImportResult, LibraryItem, Paper } from "@/lib/types";
+
+const PAGE_SIZE = 50;
 
 function NotesModal({ item, onClose }: { item: LibraryItem; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -44,6 +47,7 @@ function AddPaperModal({ open, onClose }: { open: boolean; onClose: () => void }
   const queryClient = useQueryClient();
   const [identifier, setIdentifier] = useState("");
   const [fullText, setFullText] = useState(true);
+  const [mode, setMode] = useState<"identifier" | "manual">("identifier");
   const importPaper = useMutation({
     mutationFn: () => api.post<Paper>("/papers/import", { identifier, add_to_library: true, fetch_full_text: fullText }),
     onSuccess: (paper) => {
@@ -64,7 +68,28 @@ function AddPaperModal({ open, onClose }: { open: boolean; onClose: () => void }
     },
   });
   return (
-    <Modal open={open} onClose={onClose} title="Add a paper">
+    <Modal open={open} onClose={onClose} title="Add a source" wide>
+      <div className="mb-4 flex gap-1 border-b border-slate-200" role="tablist">
+        {(
+          [
+            ["identifier", "By DOI or upload"],
+            ["manual", "Enter manually (books, law, reports…)"],
+          ] as const
+        ).map(([key, label]) => (
+          <button key={key} role="tab" aria-selected={mode === key} onClick={() => setMode(key)} className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${mode === key ? "border-brand-700 text-brand-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {mode === "manual" ? (
+        <ManualSourceForm
+          onSaved={(paper) => {
+            void queryClient.invalidateQueries({ queryKey: ["library"] });
+            navigate(`/papers/${paper.id}`);
+          }}
+        />
+      ) : (
+      <>
       <form onSubmit={(e) => { e.preventDefault(); importPaper.mutate(); }} className="space-y-3">
         <div>
           <Label htmlFor="identifier">DOI, PubMed ID, PMC ID or arXiv ID</Label>
@@ -82,6 +107,8 @@ function AddPaperModal({ open, onClose }: { open: boolean; onClose: () => void }
         <input type="file" accept="application/pdf" className="hidden" onChange={(e) => e.target.files?.[0] && upload.mutate(e.target.files[0])} />
       </label>
       {(importPaper.error || upload.error) && <div className="mt-3"><Alert kind="error">{errorMessage(importPaper.error ?? upload.error)}</Alert></div>}
+      </>
+      )}
     </Modal>
   );
 }
@@ -147,10 +174,18 @@ export default function LibraryPage() {
   const [collectionModal, setCollectionModal] = useState<Collection | null | "new">(null);
 
   const collections = useQuery({ queryKey: ["collections"], queryFn: () => api.get<Collection[]>("/collections") });
-  const items = useQuery({
+  const items = useInfiniteQuery({
     queryKey: ["library", collectionId, tag],
-    queryFn: () => api.get<LibraryItem[]>("/library", { collection_id: collectionId ?? undefined, tag: tag ?? undefined }),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      api.page<LibraryItem>("/library", { collection_id: collectionId ?? undefined, tag: tag ?? undefined, limit: PAGE_SIZE, offset: pageParam }),
+    getNextPageParam: (last, pages) => {
+      const loaded = pages.reduce((n, page) => n + page.items.length, 0);
+      return loaded < last.total ? loaded : undefined;
+    },
   });
+  const loadedItems = items.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = items.data?.pages[0]?.total ?? 0;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["library"] });
     void queryClient.invalidateQueries({ queryKey: ["collections"] });
@@ -168,7 +203,7 @@ export default function LibraryPage() {
       refresh();
     },
   });
-  const allTags = Array.from(new Set((items.data ?? []).flatMap((i) => i.tags))).sort();
+  const allTags = Array.from(new Set(loadedItems.flatMap((i) => i.tags))).sort();
   const current = collections.data?.find((c) => c.id === collectionId);
 
   return (
@@ -233,13 +268,28 @@ export default function LibraryPage() {
         <section>
           {items.isLoading && <Spinner />}
           {items.error && <Alert kind="error">{errorMessage(items.error)}</Alert>}
-          {items.data?.length === 0 && (
-            <EmptyState icon={<LibraryBig className="h-8 w-8" />} title={collectionId || tag ? "Nothing here yet" : "Your library is empty"} action={<Link to="/discover" className="font-medium text-brand-700">Discover papers →</Link>}>
-              Save papers from Discover, add one by DOI, upload a PDF, or import a reference file.
+          {items.data && total === 0 && (collectionId || tag ? (
+            <EmptyState icon={<LibraryBig className="h-8 w-8" />} title="Nothing here yet">
+              Add papers to this {collectionId ? "collection from the menu on each paper" : "tag by editing a paper’s tags"}.
             </EmptyState>
-          )}
+          ) : (
+            <EmptyState
+              icon={<LibraryBig className="h-8 w-8" />}
+              title="Your library is empty"
+              action={
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Link to="/discover" className="rounded-lg bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800">Search for papers</Link>
+                  <Button size="sm" variant="secondary" onClick={() => setAddOpen(true)}>Add by DOI, upload a PDF or enter a book</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>Import from Zotero / Mendeley</Button>
+                </div>
+              }
+            >
+              Your library holds the papers you work with. Everything you save, upload or import appears here, ready to cite in your documents and to question in Research.
+            </EmptyState>
+          ))}
+          {total > 0 && <p className="mb-3 text-xs text-slate-500">Showing {loadedItems.length} of {total} papers</p>}
           <div className="space-y-4">
-            {items.data?.map((item) => (
+            {loadedItems.map((item) => (
               <div key={item.paper.id}>
                 <PaperCard
                   paper={item.paper}
@@ -275,6 +325,13 @@ export default function LibraryPage() {
               </div>
             ))}
           </div>
+          {items.hasNextPage && (
+            <div className="mt-6 flex justify-center">
+              <Button variant="secondary" loading={items.isFetchingNextPage} onClick={() => void items.fetchNextPage()}>
+                Load more ({total - loadedItems.length} remaining)
+              </Button>
+            </div>
+          )}
         </section>
       </div>
       <AddPaperModal open={addOpen} onClose={() => setAddOpen(false)} />

@@ -43,9 +43,9 @@ export const GUIDES: Record<SectionKey, SectionGuide> = {
     key: "discover",
     title: "Discover",
     path: "/discover",
-    summary: "Search OpenAlex, Crossref, PubMed, Semantic Scholar and arXiv at once, with duplicates merged.",
+    summary: "Search major scholarly databases in every field at once (OpenAlex, Crossref, Semantic Scholar, DOAJ, plus PubMed and Europe PMC for health), with duplicates merged.",
     steps: [
-      "Type a topic, title or question and press Search.",
+      "Choose a subject (or All subjects), type a topic, title or question and press Search.",
       "Narrow results with a start year or “Open access only”.",
       "Read the abstract, then choose Save to library. Its details are fetched from the official registry and its page opens.",
       "Papers already in PaperAid show “Open in PaperAid”. From a paper's page you can cite it in any style.",
@@ -74,7 +74,7 @@ export const GUIDES: Record<SectionKey, SectionGuide> = {
     path: "/papers",
     summary: "Everything about one paper: details, citation, full text, passages and questions.",
     steps: [
-      "Save the paper to your library, or copy its citation in any of the 10 styles.",
+      "Save the paper to your library, or copy its citation in any of the 18 styles.",
       "Choose Retrieve open-access PDF, or Upload your copy (private) if you have the PDF.",
       "Once the full text is ready, search inside it to find exact passages with page numbers.",
       "Ask a question about the paper; every statement in the answer links to the passage it came from.",
@@ -87,7 +87,7 @@ export const GUIDES: Record<SectionKey, SectionGuide> = {
     path: "/library",
     summary: "Your personal research library: saved papers, uploads, collections, notes and exports.",
     steps: [
-      "Add papers: Save to library from Discover; or choose Add paper to import by DOI / PubMed ID / arXiv ID or upload a PDF; or choose Import .bib/.ris to bring in a reference-manager export.",
+      "Add papers: Save to library from Discover; or choose Add paper to import by DOI / PubMed ID / arXiv ID, upload a PDF, or enter a book, chapter, report, court case or statute manually; or choose Import .bib/.ris to bring in a reference-manager export.",
       "Create collections (for a chapter, a review, a course) and add papers to them.",
       "Add tags and notes to remember why a paper matters.",
       "Export the whole library or a collection as BibTeX, RIS or CSL-JSON for other reference managers.",

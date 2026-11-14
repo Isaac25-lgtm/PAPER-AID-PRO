@@ -138,7 +138,11 @@ async def test_revisions_and_restore(client):
     assert [r["reason"] for r in revisions] == ["checkpoint", "created"]
     original = next(r for r in revisions if r["reason"] == "created")
     restored = (
-        await client.post(f"/api/v1/documents/{doc['id']}/revisions/{original['id']}/restore", headers=ALICE)
+        await client.post(
+            f"/api/v1/documents/{doc['id']}/revisions/{original['id']}/restore",
+            headers=ALICE,
+            json={"base_version": 3},
+        )
     ).json()
     assert restored["title"] == "Chapter 2" and restored["version"] == 4
     after = (await client.get(f"/api/v1/documents/{doc['id']}/revisions", headers=ALICE)).json()

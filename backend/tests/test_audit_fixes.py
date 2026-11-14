@@ -219,18 +219,18 @@ async def test_transient_errors_are_retried_and_capped(client, monkeypatch):
     real_ingest = processing._ingest
     calls = {"n": 0}
 
-    async def flaky(db, paper):
+    async def flaky(db, paper, attempt):
         calls["n"] += 1
         if calls["n"] == 1:
             raise UpstreamError("Storage download failed (HTTP 503).")
-        await real_ingest(db, paper)
+        await real_ingest(db, paper, attempt)
 
     monkeypatch.setattr(processing, "_ingest", flaky)
     paper = await upload(client, "Flaky study")
     job = (await client.get(f"/api/v1/papers/{paper['id']}/jobs", headers=ALICE)).json()[0]
     assert job["status"] == "succeeded" and job["attempts"] == 2
 
-    async def always_down(db, paper):
+    async def always_down(db, paper, attempt):
         raise UpstreamError("Storage download failed (HTTP 503).")
 
     monkeypatch.setattr(processing, "_ingest", always_down)
@@ -241,7 +241,7 @@ async def test_transient_errors_are_retried_and_capped(client, monkeypatch):
 async def test_terminal_errors_are_not_retried(client, monkeypatch):
     from app.errors import ValidationFailed
 
-    async def scanned(db, paper):
+    async def scanned(db, paper, attempt):
         raise ValidationFailed("This PDF has no extractable text.")
 
     monkeypatch.setattr(processing, "_ingest", scanned)
@@ -543,6 +543,10 @@ async def test_failed_object_delete_is_retried_by_maintenance(client):
         assert (original.root / key).exists()
         flaky.fail_delete = False
         async with get_sessionmaker()() as db:
+            assert await process_deletions(db, keys=[key]) == 0  # backing off after the failure
+            row = await db.get(StorageDeletion, key)
+            row.not_before = row.created_at  # backoff elapsed
+            await db.commit()
             assert await process_deletions(db) == 1
             assert await db.get(StorageDeletion, key) is None
         assert not (original.root / key).exists()

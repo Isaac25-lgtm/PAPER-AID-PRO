@@ -4,21 +4,29 @@ import { useState } from "react";
 
 import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
-import { useStyles } from "@/components/papers";
+import { StyleOptions, useStyles } from "@/components/papers";
 import { Alert, Badge, Button, Card, PageHeader, Select, Textarea } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/format";
 import type { FormattedEntry, VerifyResult } from "@/lib/types";
 
+/** Identifiers per request: the API allows 20 for visitors and 50 for signed-in accounts. */
+export const IDENTIFIER_LIMIT = { anonymous: 20, signedIn: 50 } as const;
+
 function Generator() {
   const styles = useStyles();
+  const { user } = useAuth();
   const [input, setInput] = useState("");
   const [style, setStyle] = useState("apa");
   const [copied, setCopied] = useState(false);
+  const identifiers = input.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const limit = user ? IDENTIFIER_LIMIT.signedIn : IDENTIFIER_LIMIT.anonymous;
+  const overLimit = identifiers.length > limit;
   const format = useMutation({
     mutationFn: () =>
       api.post<{ entries: FormattedEntry[]; unresolved: string[] }>("/citations/format", {
-        identifiers: input.split(/\n+/).map((l) => l.trim()).filter(Boolean).slice(0, 50),
+        identifiers,
         style,
         output: "html",
       }),
@@ -37,10 +45,14 @@ function Generator() {
         <Textarea rows={5} value={input} onChange={(e) => setInput(e.target.value)} placeholder={"10.1038/nature14539\nPMID: 31978945\narXiv:1706.03762"} aria-label="Identifiers" />
         <div className="flex gap-2">
           <Select className="flex-1" value={style} onChange={(e) => setStyle(e.target.value)} aria-label="Citation style">
-            {(styles.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+            <StyleOptions styles={styles.data} />
           </Select>
-          <Button type="submit" loading={format.isPending} disabled={!input.trim()}>Format</Button>
+          <Button type="submit" loading={format.isPending} disabled={!identifiers.length || overLimit}>Format</Button>
         </div>
+        <p className={overLimit ? "text-sm font-medium text-red-700" : "text-xs text-slate-500"} aria-live="polite">
+          {identifiers.length} of {limit} identifiers
+          {overLimit && (user ? " — remove some lines to continue." : " — sign in to format up to 50 at once, or remove some lines.")}
+        </p>
       </form>
       {format.error && <div className="mt-3"><Alert kind="error">{errorMessage(format.error)}</Alert></div>}
       {format.data && (
@@ -119,7 +131,7 @@ function Verifier() {
 export default function CitationToolsPage() {
   return (
     <Container>
-      <PageHeader title="Citation tools" subtitle="Format references in 10 styles and check reference lists against Crossref. No sign-in required." />
+      <PageHeader title="Citation tools" subtitle="Format references in 18 styles across disciplines and check reference lists against Crossref. No sign-in required." />
       <SectionGuide section="citations" />
       <div className="grid gap-6 lg:grid-cols-2">
         <Generator />

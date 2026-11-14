@@ -29,6 +29,11 @@ class JsonFormatter(logging.Formatter):
                 payload[key] = value
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
+            if record.levelno >= logging.ERROR:
+                # Cloud Error Reporting groups these entries into error reports (with alerting on new errors).
+                payload["@type"] = "type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent"
+                payload["stack_trace"] = payload["exception"]
+                payload["serviceContext"] = {"service": "paperaid-api"}
         return json.dumps(payload, default=str)
 
 

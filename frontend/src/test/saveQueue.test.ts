@@ -43,12 +43,30 @@ describe("SaveQueue", () => {
     await server.tick();
     expect(server.sent).toHaveLength(1); // the second save waits for the first
     server.waiting[0]!.resolve();
-    expect(await first).toBe(true);
     await server.tick();
     expect(server.sent).toEqual([{ content: "v1" }, { content: "v2" }]);
     server.waiting[1]!.resolve();
+    expect(await first).toBe(true);
     expect(await second).toBe(true);
     expect(server.maxConcurrent).toBe(1);
+    expect(queue.dirty).toBe(false);
+  });
+
+  it("does not report success while newer edits are still unsaved (export gate)", async () => {
+    const server = slowServer();
+    const queue = new SaveQueue(server.send, isConflict);
+    queue.update({ title: "Old title" });
+    let settled: boolean | null = null;
+    void queue.flush().then((ok) => (settled = ok));
+    await server.tick();
+    queue.update({ title: "Newer title" }); // typed while the request is in flight
+    server.waiting[0]!.resolve();
+    await server.tick();
+    expect(settled).toBeNull(); // not yet: the newer title is still pending
+    expect(server.sent[1]).toEqual({ title: "Newer title" });
+    server.waiting[1]!.resolve();
+    await server.tick();
+    expect(settled).toBe(true);
     expect(queue.dirty).toBe(false);
   });
 

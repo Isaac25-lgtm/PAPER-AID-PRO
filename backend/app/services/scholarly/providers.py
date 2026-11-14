@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextlib
 from datetime import date
 from typing import Any
+from urllib.parse import quote
 
 from lxml import etree
 
@@ -111,11 +112,28 @@ class OpenAlex:
             sources=["openalex"],
         )
 
+    # OpenAlex topic taxonomy: domains 1 Life, 2 Social, 3 Physical, 4 Health Sciences; field 12 Arts & Humanities.
+    SUBJECT_FILTERS = {
+        "health": "primary_topic.domain.id:4",
+        "life": "primary_topic.domain.id:1",
+        "physical": "primary_topic.domain.id:3",
+        "social": "primary_topic.domain.id:2",
+        "humanities": "primary_topic.field.id:12",
+    }
+
     @classmethod
     async def search(
-        cls, query: str, limit: int, year_from: int | None, year_to: int | None, open_access_only: bool
+        cls,
+        query: str,
+        limit: int,
+        year_from: int | None,
+        year_to: int | None,
+        open_access_only: bool,
+        subject: str | None = None,
     ) -> list[ScholarlyWork]:
         filters = []
+        if subject in cls.SUBJECT_FILTERS:
+            filters.append(cls.SUBJECT_FILTERS[subject])
         if year_from:
             filters.append(f"from_publication_date:{year_from}-01-01")
         if year_to:
@@ -189,7 +207,13 @@ class Crossref:
 
     @classmethod
     async def search(
-        cls, query: str, limit: int, year_from: int | None, year_to: int | None, open_access_only: bool
+        cls,
+        query: str,
+        limit: int,
+        year_from: int | None,
+        year_to: int | None,
+        open_access_only: bool,
+        subject: str | None = None,
     ) -> list[ScholarlyWork]:
         filters = []
         if year_from:
@@ -323,7 +347,13 @@ class PubMed:
 
     @classmethod
     async def search(
-        cls, query: str, limit: int, year_from: int | None, year_to: int | None, open_access_only: bool
+        cls,
+        query: str,
+        limit: int,
+        year_from: int | None,
+        year_to: int | None,
+        open_access_only: bool,
+        subject: str | None = None,
     ) -> list[ScholarlyWork]:
         term = f"({query}) AND free full text[sb]" if open_access_only else query
         params: dict[str, Any] = {
@@ -401,11 +431,27 @@ class SemanticScholar:
             sources=["semantic_scholar"],
         )
 
+    FIELDS_OF_STUDY = {
+        "health": "Medicine",
+        "life": "Biology,Agricultural and Food Sciences,Environmental Science",
+        "physical": "Physics,Chemistry,Mathematics,Computer Science,Engineering,Materials Science,Geology",
+        "social": "Sociology,Economics,Political Science,Psychology,Business,Education,Law,Geography",
+        "humanities": "History,Art,Philosophy,Linguistics",
+    }
+
     @classmethod
     async def search(
-        cls, query: str, limit: int, year_from: int | None, year_to: int | None, open_access_only: bool
+        cls,
+        query: str,
+        limit: int,
+        year_from: int | None,
+        year_to: int | None,
+        open_access_only: bool,
+        subject: str | None = None,
     ) -> list[ScholarlyWork]:
         params: dict[str, Any] = {"query": query, "limit": min(limit, 50), "fields": cls.fields}
+        if subject in cls.FIELDS_OF_STUDY:
+            params["fieldsOfStudy"] = cls.FIELDS_OF_STUDY[subject]
         if year_from or year_to:
             params["year"] = f"{year_from or ''}-{year_to or ''}"
         if open_access_only:
@@ -473,7 +519,13 @@ class ArXiv:
 
     @classmethod
     async def search(
-        cls, query: str, limit: int, year_from: int | None, year_to: int | None, open_access_only: bool
+        cls,
+        query: str,
+        limit: int,
+        year_from: int | None,
+        year_to: int | None,
+        open_access_only: bool,
+        subject: str | None = None,
     ) -> list[ScholarlyWork]:
         terms = " AND ".join(f"all:{t}" for t in query.split() if t.isalnum()) or f'all:"{query}"'
         xml = await get_text(
@@ -494,10 +546,239 @@ class ArXiv:
         return works[0] if works else None
 
 
+# ----------------------------------------------------------------------------------------------------- DOAJ
+class DOAJ:
+    """Directory of Open Access Journals: peer-reviewed open-access articles in every discipline (no key)."""
+
+    base = "https://doaj.org/api/search/articles"
+
+    @staticmethod
+    def to_work(item: dict[str, Any]) -> ScholarlyWork | None:
+        bib = item.get("bibjson") or {}
+        title = clean_text(bib.get("title"))
+        if not title:
+            return None
+        journal = bib.get("journal") or {}
+        doi = next((normalize_doi(i.get("id")) for i in bib.get("identifier") or [] if i.get("type") == "doi"), None)
+        links = bib.get("link") or []
+        fulltext = next((link.get("url") for link in links if link.get("type") == "fulltext"), None)
+        pdf = next((link.get("url") for link in links if (link.get("content_type") or "").lower() == "pdf"), None)
+        year = int(bib["year"]) if str(bib.get("year") or "").isdigit() else None
+        return ScholarlyWork(
+            title=title,
+            abstract=clean_text(bib.get("abstract")),
+            authors=[split_name(a["name"]) for a in bib.get("author") or [] if a.get("name")],
+            year=year,
+            journal=clean_text(journal.get("title")),
+            publisher=clean_text(journal.get("publisher")),
+            volume=journal.get("volume"),
+            issue=journal.get("number"),
+            pages=_pages(bib.get("start_page"), bib.get("end_page")),
+            work_type="article-journal",
+            url=fulltext,
+            doi=doi,
+            is_open_access=True,
+            oa_pdf_url=pdf,
+            keywords=[k for k in bib.get("keywords") or [] if isinstance(k, str)][:10],
+            sources=["doaj"],
+        )
+
+    @classmethod
+    async def search(
+        cls,
+        query: str,
+        limit: int,
+        year_from: int | None,
+        year_to: int | None,
+        open_access_only: bool,
+        subject: str | None = None,
+    ) -> list[ScholarlyWork]:
+        data = await get_json(f"{cls.base}/{quote(query, safe='')}", params={"pageSize": min(limit, 50), "page": 1})
+        works = [w for item in data.get("results") or [] if (w := cls.to_work(item))]
+        return [
+            w
+            for w in works
+            if (not year_from or (w.year or 0) >= year_from) and (not year_to or (w.year or 9999) <= year_to)
+        ]
+
+    @classmethod
+    async def lookup(cls, kind: str, value: str) -> ScholarlyWork | None:
+        return None  # DOIs are resolved by Crossref/OpenAlex
+
+
+# ----------------------------------------------------------------------------------------------- Europe PMC
+class EuropePMC:
+    """Europe PMC: life-science and health literature including preprints, with open full-text links (no key)."""
+
+    base = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+
+    @staticmethod
+    def to_work(item: dict[str, Any]) -> ScholarlyWork | None:
+        title = clean_text(item.get("title"))
+        if not title:
+            return None
+        journal_info = item.get("journalInfo") or {}
+        authors = []
+        for author in (item.get("authorList") or {}).get("author") or []:
+            family, given = author.get("lastName"), author.get("firstName")
+            name = author.get("fullName") or " ".join(p for p in (given, family) if p)
+            if not name:
+                continue
+            orcid = (
+                (author.get("authorId") or {}).get("value")
+                if (author.get("authorId") or {}).get("type") == "ORCID"
+                else None
+            )
+            authors.append(
+                WorkAuthor(
+                    name=f"{given} {family}" if given and family else name, family=family, given=given, orcid=orcid
+                )
+            )
+        urls = (item.get("fullTextUrlList") or {}).get("fullTextUrl") or []
+        pdf = next(
+            (
+                u.get("url")
+                for u in urls
+                if u.get("documentStyle") == "pdf" and u.get("availabilityCode") in {"OA", "F"}
+            ),
+            None,
+        )
+        landing = next((u.get("url") for u in urls if u.get("availabilityCode") in {"OA", "F"}), None)
+        year = int(item["pubYear"]) if str(item.get("pubYear") or "").isdigit() else None
+        is_preprint = item.get("source") == "PPR"
+        return ScholarlyWork(
+            title=title,
+            abstract=clean_text(item.get("abstractText")),
+            authors=authors,
+            year=year,
+            journal=None if is_preprint else clean_text((journal_info.get("journal") or {}).get("title")),
+            volume=journal_info.get("volume"),
+            issue=journal_info.get("issue"),
+            pages=item.get("pageInfo"),
+            work_type="article" if is_preprint else "article-journal",
+            url=landing
+            or (f"https://europepmc.org/article/{item.get('source')}/{item.get('id')}" if item.get("id") else None),
+            doi=normalize_doi(item.get("doi")),
+            pmid=item.get("pmid"),
+            pmcid=normalize_pmcid(item.get("pmcid")),
+            is_open_access=item.get("isOpenAccess") == "Y",
+            oa_pdf_url=pdf,
+            citation_count=int(item.get("citedByCount") or 0),
+            sources=["europe_pmc"],
+        )
+
+    @classmethod
+    async def search(
+        cls,
+        query: str,
+        limit: int,
+        year_from: int | None,
+        year_to: int | None,
+        open_access_only: bool,
+        subject: str | None = None,
+    ) -> list[ScholarlyWork]:
+        terms = [f"({query})"]
+        if year_from or year_to:
+            terms.append(f"PUB_YEAR:[{year_from or 1500} TO {year_to or 2100}]")
+        if open_access_only:
+            terms.append("OPEN_ACCESS:y")
+        data = await get_json(
+            cls.base,
+            params={"query": " AND ".join(terms), "format": "json", "resultType": "core", "pageSize": min(limit, 50)},
+        )
+        return [w for item in (data.get("resultList") or {}).get("result") or [] if (w := cls.to_work(item))]
+
+    @classmethod
+    async def lookup(cls, kind: str, value: str) -> ScholarlyWork | None:
+        return None  # identifiers are resolved by PubMed/Crossref/OpenAlex
+
+
+# ----------------------------------------------------------------------------------------------------- CORE
+class CORE:
+    """CORE: the largest aggregator of open-access research papers, all disciplines. Requires CORE_API_KEY."""
+
+    base = "https://api.core.ac.uk/v3/search/works"
+
+    @staticmethod
+    def enabled() -> bool:
+        return bool(get_settings().core_api_key)
+
+    @staticmethod
+    def to_work(item: dict[str, Any]) -> ScholarlyWork | None:
+        title = clean_text(item.get("title"))
+        if not title:
+            return None
+        journals = item.get("journals") or []
+        year = item.get("yearPublished") if isinstance(item.get("yearPublished"), int) else None
+        return ScholarlyWork(
+            title=title,
+            abstract=clean_text(item.get("abstract")),
+            authors=[split_name(a["name"]) for a in item.get("authors") or [] if a.get("name")],
+            year=year,
+            journal=clean_text((journals[0] or {}).get("title")) if journals else None,
+            publisher=clean_text(item.get("publisher")),
+            work_type="article-journal",
+            url=(item.get("links") or [{}])[0].get("url") if item.get("links") else None,
+            doi=normalize_doi(item.get("doi")),
+            is_open_access=bool(item.get("downloadUrl")),
+            oa_pdf_url=item.get("downloadUrl") or None,
+            citation_count=int(item.get("citationCount") or 0),
+            sources=["core"],
+        )
+
+    @classmethod
+    async def search(
+        cls,
+        query: str,
+        limit: int,
+        year_from: int | None,
+        year_to: int | None,
+        open_access_only: bool,
+        subject: str | None = None,
+    ) -> list[ScholarlyWork]:
+        terms = [f"({query})"]
+        if year_from:
+            terms.append(f"yearPublished>={year_from}")
+        if year_to:
+            terms.append(f"yearPublished<={year_to}")
+        data = await get_json(
+            cls.base,
+            params={"q": " AND ".join(terms), "limit": min(limit, 50)},
+            headers={"Authorization": f"Bearer {get_settings().core_api_key}"},
+            retries=1,
+        )
+        return [w for item in data.get("results") or [] if (w := cls.to_work(item))]
+
+    @classmethod
+    async def lookup(cls, kind: str, value: str) -> ScholarlyWork | None:
+        return None
+
+
 PROVIDERS = {
     "openalex": OpenAlex,
     "crossref": Crossref,
     "pubmed": PubMed,
     "semantic_scholar": SemanticScholar,
     "arxiv": ArXiv,
+    "doaj": DOAJ,
+    "europe_pmc": EuropePMC,
+    "core": CORE,
 }
+
+# Which sources a search uses by default, per subject. arXiv (strict rate limits, physics/maths/CS preprints that
+# OpenAlex and Semantic Scholar already index) is never queried by default; it remains available for import by ID
+# and as an explicit choice. Health-only sources are queried only for health and life-science searches.
+_GENERAL = ("openalex", "crossref", "semantic_scholar", "doaj", "core")
+DEFAULT_PROVIDERS: dict[str, tuple[str, ...]] = {
+    "all": (*_GENERAL, "pubmed", "europe_pmc"),
+    "health": (*_GENERAL, "pubmed", "europe_pmc"),
+    "life": (*_GENERAL, "pubmed", "europe_pmc"),
+    "physical": _GENERAL,
+    "social": _GENERAL,
+    "humanities": _GENERAL,
+}
+
+
+def available(name: str) -> bool:
+    """CORE needs an API key; every other source is always available."""
+    return name != "core" or CORE.enabled()
