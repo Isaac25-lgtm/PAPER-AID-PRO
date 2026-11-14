@@ -42,6 +42,8 @@ interface RequestOptions {
   raw?: boolean;
   /** Return the X-Total-Count header alongside the JSON body (paged lists). */
   paged?: boolean;
+  /** Abort the request (e.g. a newer keystroke superseded it). Aborts surface as ApiError code "ABORTED". */
+  signal?: AbortSignal;
 }
 
 export interface Page<T> {
@@ -61,8 +63,9 @@ async function request<T>(method: string, path: string, options: RequestOptions 
   }
   let response: Response;
   try {
-    response = await fetch(buildUrl(path, options.query), { method, headers, body });
+    response = await fetch(buildUrl(path, options.query), { method, headers, body, signal: options.signal });
   } catch {
+    if (options.signal?.aborted) throw new ApiError(0, "ABORTED", "Request cancelled.");
     throw new ApiError(0, "NETWORK", "Could not reach PaperAid Pro. Check your connection and try again.");
   }
   if (!response.ok) {
@@ -88,8 +91,8 @@ async function request<T>(method: string, path: string, options: RequestOptions 
 }
 
 export const api = {
-  get: <T>(path: string, query?: Query) => request<T>("GET", path, { query }),
-  post: <T>(path: string, body?: unknown, query?: Query) => request<T>("POST", path, { body, query }),
+  get: <T>(path: string, query?: Query, signal?: AbortSignal) => request<T>("GET", path, { query, signal }),
+  post: <T>(path: string, body?: unknown, query?: Query, signal?: AbortSignal) => request<T>("POST", path, { body, query, signal }),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, { body }),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, { body }),
   delete: <T>(path: string, body?: unknown) => request<T>("DELETE", path, { body }),

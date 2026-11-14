@@ -115,7 +115,9 @@ export const GUIDES: Record<SectionKey, SectionGuide> = {
     path: "/documents",
     summary: "Write with correctly formatted in-text citations and an automatic reference list.",
     steps: [
-      "Place the cursor where a citation belongs, open Sources, optionally type a page, and choose Cite at cursor.",
+      "Type /cite (or press Cite in the toolbar) where a citation belongs. Search your library and every scholarly index at once, add a page if you like, and press Enter.",
+      "Select any words to rewrite or shorten them, find a source for them, or check them against your sources.",
+      "Open PDF to read a source beside your draft. Select words on a page, then cite that page or quote the words.",
       "The reference list at the end updates itself and lists only works you actually cite.",
       "Change the citation style from the style menu; every citation and the reference list are reformatted.",
       "Use History to see earlier versions and restore one (your current text is kept in history).",
@@ -123,7 +125,8 @@ export const GUIDES: Record<SectionKey, SectionGuide> = {
     ],
     tips: [
       "Changes save automatically. If the same document is edited in two tabs you are asked which version to keep.",
-      "AI assist can rewrite a selected passage or suggest a next sentence; it is told not to add facts or citations.",
+      "With AI switched on, grey suggestions appear when you pause at the end of a paragraph. Tab accepts, Esc dismisses; turn them off with Suggestions in the toolbar.",
+      "AI rewrites are proposals: nothing changes until you choose Replace, and citations in the passage are kept. The AI is told not to add facts or citations.",
     ],
   },
   research: {
@@ -167,6 +170,8 @@ export const EDITOR_SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "Ctrl/⌘ + Shift + 7", action: "Numbered list" },
   { keys: "Ctrl/⌘ + Shift + B", action: "Quote" },
   { keys: "Ctrl/⌘ + Z  /  Ctrl/⌘ + Shift + Z", action: "Undo / redo" },
+  { keys: "/cite", action: "Cite a source at the cursor" },
+  { keys: "Tab  /  Esc", action: "Accept / dismiss a grey suggestion" },
 ];
 
 /** Per-person "seen" flags in this browser. Storage can be unavailable (private mode): fail open, quietly. */

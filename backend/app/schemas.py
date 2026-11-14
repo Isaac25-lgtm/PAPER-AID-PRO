@@ -382,6 +382,10 @@ class ResearchAskRequest(BaseModel):
     conversation_id: uuid.UUID | None = None
 
 
+class PassageCheckRequest(BaseModel):
+    text: str = Field(min_length=3, max_length=2000)
+
+
 class GroundedAnswerOut(BaseModel):
     answer: str
     insufficient_evidence: bool

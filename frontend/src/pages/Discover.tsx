@@ -11,18 +11,7 @@ import { Alert, Select, Badge, Button, Card, EmptyState, Input, PageHeader, Spin
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { GroundedAnswer, Paper, SearchResponse, Work, Subject } from "@/lib/types";
-import { SUBJECTS } from "@/lib/types";
-
-const PROVIDER_LABELS: Record<string, string> = {
-  openalex: "OpenAlex",
-  crossref: "Crossref",
-  pubmed: "PubMed",
-  semantic_scholar: "Semantic Scholar",
-  arxiv: "arXiv",
-  doaj: "DOAJ",
-  europe_pmc: "Europe PMC",
-  core: "CORE",
-};
+import { PROVIDER_LABELS, SUBJECTS } from "@/lib/types";
 
 function WorkCard({ work }: { work: Work }) {
   const { user } = useAuth();

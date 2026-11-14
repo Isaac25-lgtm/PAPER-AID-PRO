@@ -186,6 +186,21 @@ async def research_synthesis(
     )
 
 
+CHECK_TASK = (
+    "The question is a passage from the user's own draft. Report what these sources say about it: which parts "
+    "the evidence supports, which parts it contradicts or qualifies, and say plainly when the sources do not "
+    "address it. Do not judge the writing style; only compare the passage with the evidence."
+)
+
+
+async def check_passage(db: AsyncSession, papers: list[Paper], passage: str) -> dict[str, Any]:
+    """Compare a passage from the user's draft with their sources (grounded: every statement cites evidence)."""
+    if not papers:
+        raise ValidationFailed("Add sources to this document or your library first.")
+    items = await gather_evidence(db, passage, papers, limit=12)
+    return await grounded_answer(db, passage, items, feature="Checking against your sources", task=CHECK_TASK)
+
+
 async def discovery_snapshot(db: AsyncSession, papers: list[Paper], query: str) -> dict[str, Any]:
     items = _abstract_evidence(papers[:10])
     if len(items) < 2:

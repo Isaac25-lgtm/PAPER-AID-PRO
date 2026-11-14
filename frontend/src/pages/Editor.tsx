@@ -9,22 +9,39 @@ import Underline from "@tiptap/extension-underline";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
-  ArrowLeft, Bold, BookMarked, Bot, Heading2, Heading3, History, Italic, List, ListOrdered, Quote, Redo2, Sparkles,
-  Table as TableIcon, Underline as UnderlineIcon, Undo2, X,
+  ArrowLeft, Bold, BookMarked, Bot, FileText, Heading2, Heading3, History, Italic, List, ListOrdered, Quote, Redo2,
+  ScanSearch, Sparkles, Table as TableIcon, TextQuote, Underline as UnderlineIcon, Undo2, X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router";
 
-import { AIError } from "@/components/GroundedAnswerView";
+import { CitePalette, queryFromSelection, type CiteRequest } from "@/components/editor/CitePalette";
+import { SelectionMenu, type Span } from "@/components/editor/SelectionMenu";
+import { useAutocomplete, type AutocompleteStatus } from "@/components/editor/useAutocomplete";
+import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
 import { HelpButton, SectionGuide } from "@/components/Guidance";
 import { StyleOptions, useLibrarySearch, useStyles } from "@/components/papers";
 import { Alert, Badge, Button, Input, Modal, Select, Spinner, useDialogFocus } from "@/components/ui";
 import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
 import { CitationNode, LABEL_META } from "@/lib/citationNode";
+import { CiteTrigger } from "@/lib/citeTrigger";
+import { GhostText } from "@/lib/ghostText";
+import { usePreference } from "@/lib/preferences";
 import { relativeTime, sanitizeHtml } from "@/lib/format";
 import { SaveQueue, type Fields } from "@/lib/saveQueue";
 import { normalizeSuggestion } from "@/lib/templates";
-import type { Citation, JSONContent, Paper, RenderedCitations, ResearchDocument, Revision } from "@/lib/types";
+import type { AIStatus, Citation, GroundedAnswer, JSONContent, Paper, RenderedCitations, ResearchDocument, Revision } from "@/lib/types";
+
+// pdf.js is large: the PDF panel and its worker load only when the panel is first opened.
+const PdfPanel = lazy(() => import("@/components/editor/PdfPanel"));
+
+type Panel = "sources" | "pdf" | "check" | "history";
+const PANEL_TITLES: Record<Panel, string> = {
+  sources: "Cite from your library",
+  pdf: "PDF beside your draft",
+  check: "Check against your sources",
+  history: "Version history",
+};
 
 type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error";
 
@@ -50,7 +67,23 @@ function applyCitationLabels(editor: Editor, rendered: RenderedCitations) {
   if (changed) editor.view.dispatch(tr.setMeta(LABEL_META, true).setMeta("addToHistory", false));
 }
 
-function Toolbar({ editor, onAI }: { editor: Editor; onAI: () => void }) {
+function Toolbar({
+  editor,
+  onAI,
+  onCite,
+  aiEnabled,
+  autocomplete,
+  onToggleAutocomplete,
+  autocompleteStatus,
+}: {
+  editor: Editor;
+  onAI: () => void;
+  onCite: () => void;
+  aiEnabled: boolean;
+  autocomplete: boolean;
+  onToggleAutocomplete: () => void;
+  autocompleteStatus: AutocompleteStatus;
+}) {
   const btn = (active: boolean, onClick: () => void, label: string, Icon: typeof Bold) => (
     <button type="button" onClick={onClick} aria-label={label} title={label} className={`rounded p-1.5 ${active ? "bg-brand-100 text-brand-800" : "text-slate-600 hover:bg-slate-100"}`}>
       <Icon className="h-4 w-4" />
@@ -72,9 +105,20 @@ function Toolbar({ editor, onAI }: { editor: Editor; onAI: () => void }) {
       {btn(editor.isActive("blockquote"), () => chain().toggleBlockquote().run(), "Quote", Quote)}
       {btn(false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), "Insert table", TableIcon)}
       <span className="mx-1 h-5 w-px bg-slate-200" />
+      <button type="button" onClick={onCite} title="Cite a source at the cursor (or type /cite)" className="flex items-center gap-1 rounded px-2 py-1 text-sm text-slate-700 hover:bg-slate-100">
+        <TextQuote className="h-4 w-4" /> Cite
+      </button>
       <button type="button" onClick={onAI} className="flex items-center gap-1 rounded px-2 py-1 text-sm text-brand-700 hover:bg-brand-50">
         <Sparkles className="h-4 w-4" /> AI assist
       </button>
+      {aiEnabled && (
+        <label className="ml-auto flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-50" title="Suggest the next words when you pause at the end of a paragraph. Tab accepts, Esc dismisses.">
+          <input type="checkbox" className="h-3.5 w-3.5 accent-slate-900" checked={autocomplete} onChange={onToggleAutocomplete} />
+          Suggestions
+          {autocomplete && autocompleteStatus === "thinking" && <span className="text-slate-400">…</span>}
+          {autocomplete && autocompleteStatus === "paused" && <span className="text-amber-700">paused for a minute</span>}
+        </label>
+      )}
     </div>
   );
 }
@@ -189,6 +233,25 @@ function AIAssistModal({ editor, documentId, open, onClose }: { editor: Editor; 
   );
 }
 
+function CheckPanel({ documentId, span }: { documentId: string; span: Span | null }) {
+  const check = useMutation({ mutationFn: (text: string) => api.post<GroundedAnswer>(`/documents/${documentId}/check`, { text }) });
+  const text = span?.text.trim().slice(0, 2000) ?? "";
+  const { mutate } = check;
+  useEffect(() => {
+    if (text.length >= 3) mutate(text);
+  }, [span, text, mutate]);
+  if (!span) return <p className="text-sm text-slate-600">Select a sentence or paragraph in your draft and choose “Check against my sources”.</p>;
+  return (
+    <div className="space-y-3">
+      <blockquote className="max-h-40 overflow-auto rounded-lg bg-slate-50 p-3 font-serif text-sm text-slate-800">{text}</blockquote>
+      <p className="text-xs text-slate-500">Compared with this document’s sources (or your library if the document has none yet). Every statement below quotes the source it relies on.</p>
+      {check.isPending && <Spinner label="Reading your sources" />}
+      {check.error && <AIError error={check.error} />}
+      {check.data && <GroundedAnswerView answer={check.data} />}
+    </div>
+  );
+}
+
 export default function EditorPage() {
   const { id = "" } = useParams();
   const queryClient = useQueryClient();
@@ -198,7 +261,7 @@ export default function EditorPage() {
   const [style, setStyle] = useState("apa");
   const [saveState, setSaveState] = useState<SaveState>("saved");
   // The side panel is open by default only where there is room for it next to the page.
-  const [panel, setPanel] = useState<"sources" | "history" | null>(() =>
+  const [panel, setPanel] = useState<Panel | null>(() =>
     typeof window.matchMedia === "function" && !window.matchMedia("(min-width: 1024px)").matches ? null : "sources",
   );
   const [exportError, setExportError] = useState<string | null>(null);
@@ -215,6 +278,12 @@ export default function EditorPage() {
   const drawerRef = useRef<HTMLElement>(null);
   useDialogFocus(drawerRef, Boolean(panel) && narrow, () => setPanel(null));
   const [aiOpen, setAiOpen] = useState(false);
+  const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: () => api.get<AIStatus>("/ai/status"), staleTime: 10 * 60_000 });
+  const aiEnabled = Boolean(aiStatus.data?.enabled);
+  const [autocomplete, setAutocomplete] = usePreference<boolean>("editor_suggestions", true);
+  const [citeRequest, setCiteRequest] = useState<CiteRequest | null>(null);
+  const [checkSpan, setCheckSpan] = useState<Span | null>(null);
+  const openCiteRef = useRef<(pos: number) => void>(() => undefined);
   const [rendered, setRendered] = useState<RenderedCitations | null>(null);
   const versionRef = useRef<number>(1);
   const timer = useRef<number | undefined>(undefined);
@@ -250,12 +319,14 @@ export default function EditorPage() {
       StarterKit.configure({ link: false, underline: false }),
       Underline,
       Link.configure({ openOnClick: false, protocols: ["http", "https", "mailto"] }),
-      Placeholder.configure({ placeholder: "Start writing… Use “Cite at cursor” in the sources panel to add citations." }),
+      Placeholder.configure({ placeholder: "Start writing… Type /cite to cite a source." }),
       Table.configure({ resizable: false }),
       TableRow,
       TableHeader,
       TableCell,
       CitationNode,
+      GhostText,
+      CiteTrigger.configure({ onTrigger: (pos: number) => openCiteRef.current(pos) }),
     ],
     content: "",
     onUpdate: ({ editor: ed, transaction }) => {
@@ -393,6 +464,11 @@ export default function EditorPage() {
       }
     });
 
+  openCiteRef.current = (pos: number) => {
+    if (!busy) setCiteRequest({ pos });
+  };
+  const suggestionStatus = useAutocomplete(editor, id, aiEnabled && autocomplete && !busy && !citeRequest);
+
   if (docQuery.isLoading || !editor) return <Spinner label="Opening document" />;
   if (docQuery.error) return <div className="p-8"><Alert kind="error">{errorMessage(docQuery.error)}</Alert></div>;
 
@@ -415,6 +491,8 @@ export default function EditorPage() {
           <StyleOptions styles={styles.data} />
         </Select>
         <Button size="sm" variant={panel === "sources" ? "primary" : "secondary"} onClick={() => setPanel(panel === "sources" ? null : "sources")} aria-label="Sources"><BookMarked className="h-4 w-4" /> <span className="hidden sm:inline">Sources</span></Button>
+        <Button size="sm" variant={panel === "pdf" ? "primary" : "secondary"} onClick={() => setPanel(panel === "pdf" ? null : "pdf")} aria-label="PDF beside draft"><FileText className="h-4 w-4" /> <span className="hidden xl:inline">PDF</span></Button>
+        {aiEnabled && <Button size="sm" variant={panel === "check" ? "primary" : "secondary"} onClick={() => setPanel(panel === "check" ? null : "check")} aria-label="Check against sources"><ScanSearch className="h-4 w-4" /></Button>}
         <Button size="sm" variant={panel === "history" ? "primary" : "secondary"} onClick={() => setPanel(panel === "history" ? null : "history")} aria-label="Version history"><History className="h-4 w-4" /></Button>
         <Select
           className="w-24 py-1.5 sm:w-32"
@@ -447,7 +525,16 @@ export default function EditorPage() {
       )}
       <div className="flex">
         <div className="min-w-0 flex-1">
-          <Toolbar editor={editor} onAI={() => setAiOpen(true)} />
+          <Toolbar
+            editor={editor}
+            onAI={() => setAiOpen(true)}
+            onCite={() => !busy && setCiteRequest({ pos: editor.state.selection.to })}
+            aiEnabled={aiEnabled}
+            autocomplete={autocomplete}
+            onToggleAutocomplete={() => setAutocomplete(!autocomplete)}
+            autocompleteStatus={suggestionStatus}
+          />
+          <p className="sr-only" aria-live="polite">{suggestionStatus === "ready" ? "Suggestion shown after the cursor. Press Tab to accept or Escape to dismiss." : ""}</p>
           <SectionGuide section="editor" className="mx-3 mb-0 mt-4 max-w-[820px] sm:mx-auto" />
           <div className="mx-auto my-4 max-w-[820px] rounded-lg bg-white px-5 py-6 shadow-sm sm:my-6 sm:px-12 sm:py-10">
             <EditorContent editor={editor} />
@@ -472,22 +559,40 @@ export default function EditorPage() {
             ref={drawerRef}
             role={narrow ? "dialog" : undefined}
             aria-modal={narrow ? true : undefined}
-            aria-label={panel === "sources" ? "Cite from your library" : "Version history"}
-            className="fixed inset-y-0 right-0 z-40 w-full max-w-sm overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-xl lg:sticky lg:top-14 lg:z-auto lg:h-[calc(100vh-3.5rem)] lg:w-80 lg:max-w-none lg:shrink-0 lg:shadow-none">
+            aria-label={PANEL_TITLES[panel]}
+            className={`fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-slate-200 bg-white p-4 shadow-xl lg:sticky lg:top-14 lg:z-auto lg:h-[calc(100vh-3.5rem)] lg:max-w-none lg:shrink-0 lg:shadow-none ${panel === "pdf" ? "max-w-xl lg:w-[30rem]" : "max-w-sm overflow-y-auto lg:w-80"}`}>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-semibold text-slate-900">{panel === "sources" ? "Cite from your library" : "Version history"}</h2>
+              <h2 className="font-semibold text-slate-900">{PANEL_TITLES[panel]}</h2>
               <button type="button" className="rounded p-1 text-slate-500 hover:bg-slate-100 lg:hidden" aria-label="Close panel" onClick={() => setPanel(null)}>
                 <X className="h-4 w-4" />
               </button>
             </div>
-            {panel === "sources" ? (
-              <SourcesPanel documentId={id} editor={editor} onInserted={() => void flush()} />
-            ) : (
-              <RevisionsPanel documentId={id} onRestore={restoreRevision} />
-            )}
+            <div className="min-h-0 flex-1">
+              {panel === "sources" && <SourcesPanel documentId={id} editor={editor} onInserted={() => void flush()} />}
+              {panel === "pdf" && (
+                <Suspense fallback={<Spinner label="Loading the PDF viewer" />}>
+                  <PdfPanel editor={editor} documentId={id} onInserted={() => void flush()} />
+                </Suspense>
+              )}
+              {panel === "check" && <CheckPanel documentId={id} span={checkSpan} />}
+              {panel === "history" && <RevisionsPanel documentId={id} onRestore={restoreRevision} />}
+            </div>
           </aside>
         )}
       </div>
+      <SelectionMenu
+        editor={editor}
+        aiEnabled={aiEnabled}
+        disabled={busy || Boolean(citeRequest) || aiOpen}
+        onFindSource={(span) => setCiteRequest({ pos: span.to, query: queryFromSelection(span.text) })}
+        onCheck={(span) => {
+          setCheckSpan({ ...span });
+          setPanel("check");
+        }}
+      />
+      {citeRequest && (
+        <CitePalette editor={editor} documentId={id} request={citeRequest} onClose={() => setCiteRequest(null)} onInserted={() => void flush()} />
+      )}
       {aiOpen && <AIAssistModal editor={editor} documentId={id} open={aiOpen} onClose={() => setAiOpen(false)} />}
     </div>
   );

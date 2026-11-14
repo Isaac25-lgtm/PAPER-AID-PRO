@@ -342,3 +342,15 @@ export interface Stats {
   jobs_queued: number;
   ai_enabled: boolean;
 }
+
+/** Display names of the scholarly indexes (provenance shown next to search results). */
+export const PROVIDER_LABELS: Record<string, string> = {
+  openalex: "OpenAlex",
+  crossref: "Crossref",
+  pubmed: "PubMed",
+  semantic_scholar: "Semantic Scholar",
+  arxiv: "arXiv",
+  doaj: "DOAJ",
+  europe_pmc: "Europe PMC",
+  core: "CORE",
+};

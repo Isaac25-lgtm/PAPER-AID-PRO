@@ -61,6 +61,14 @@ status), `storage_deletions`, `rate_limit_buckets`, `audit_events`.
   checks → support check → answer assembled only from surviving claims; citations carry the verified quote spans.
 - **Documents:** row-locked saves with `base_version` (409 on conflict); restores require the current version;
   the editor's save queue drains all pending edits and freezes editing during export and restore.
+- **Writing tools (editor):** `/cite` (input rule) or the Cite button opens the cite palette: library search plus
+  `GET /discovery/search`; a result outside the library is imported (`POST /papers/import`, registry metadata) and
+  then cited (`POST /documents/{id}/citations`). Ghost suggestions are ProseMirror widget decorations (never in the
+  saved document) requested from `/ai/complete` after a pause, one request at a time (aborted on the next
+  keystroke) and shown only if the text and cursor are unchanged; 429/503 pause them for a minute. Rewrites from the
+  selection menu replace the passage only if it is unchanged and keep its citation nodes. "Check against my
+  sources" is `POST /documents/{id}/check` (the document's sources, else the library; the same grounded-answer
+  validation). The PDF panel lazy-loads pdf.js (same-origin worker, no CSP change) and cites the PDF page.
 - **Accounts:** consent gate → recorded choices; self-service export (ZIP) and deletion (identity refused first).
 - **Maintenance:** on instance start, on demand (`POST /api/v1/admin/maintenance`) and, once scheduled, every
   15 minutes via `POST /internal/maintenance` (OIDC).
