@@ -368,7 +368,13 @@ def _utf16_len(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
 
 
-def evidence_excerpt(text: str, spans: list[QuoteSpan], *, fallback: int = 600) -> dict[str, Any]:
+def evidence_excerpt(
+    text: str,
+    spans: list[QuoteSpan],
+    *,
+    fallback: int = 600,
+    owners: dict[tuple[int, int], list[int]] | None = None,
+) -> dict[str, Any]:
     """An excerpt that contains EVERY verified supporting span, with their positions inside it.
 
     Positions are in UTF-16 code units (`offset_unit`), the unit browsers use for string slicing, so text with
@@ -384,7 +390,11 @@ def evidence_excerpt(text: str, spans: list[QuoteSpan], *, fallback: int = 600) 
     for span in ordered:
         if begin <= span.start and span.end <= finish:
             start = _utf16_len(excerpt[: span.start - begin])
-            quotes.append({"text": span.text, "start": start, "end": start + _utf16_len(span.text)})
+            quote: dict[str, Any] = {"text": span.text, "start": start, "end": start + _utf16_len(span.text)}
+            if owners is not None:
+                # Which statements (0-based, in answer order) this quote supports.
+                quote["claims"] = owners.get((span.start, span.end), [])
+            quotes.append(quote)
     return {
         "excerpt": excerpt,
         "excerpt_truncated_start": begin > 0,
@@ -398,8 +408,12 @@ def citation_payload(claims: list[CheckedClaim], items: list[EvidenceItem]) -> l
     """Citations for the evidence actually referenced by verified claims, built from database records."""
     used = {k for claim in claims for k in claim.evidence_ids}
     spans: dict[str, list[QuoteSpan]] = {}
-    for claim in claims:
+    owners: dict[str, dict[tuple[int, int], list[int]]] = {}
+    for index, claim in enumerate(claims):
         for span in claim.quotes:
+            claim_ids = owners.setdefault(span.key, {}).setdefault((span.start, span.end), [])
+            if index not in claim_ids:
+                claim_ids.append(index)
             if all(
                 (existing.start, existing.end) != (span.start, span.end) for existing in spans.setdefault(span.key, [])
             ):
@@ -408,7 +422,7 @@ def citation_payload(claims: list[CheckedClaim], items: list[EvidenceItem]) -> l
     for item in items:
         if item.key not in used:
             continue
-        excerpt = evidence_excerpt(item.shown_text, spans.get(item.key, []))
+        excerpt = evidence_excerpt(item.shown_text, spans.get(item.key, []), owners=owners.get(item.key, {}))
         payload.append(
             {
                 "key": item.key,

@@ -45,6 +45,14 @@ async def _cloud_tasks_token() -> str:
     return str(_credentials.token)
 
 
+class DispatchRejected(UpstreamError):
+    """The queue definitely did not accept the job."""
+
+
+class DispatchUncertain(UpstreamError):
+    """The request may have reached the queue; the job may run."""
+
+
 async def enqueue_job(job_id: uuid.UUID) -> None:
     settings = get_settings()
     if settings.tasks_backend == "inline":
@@ -61,6 +69,9 @@ async def enqueue_job(job_id: uuid.UUID) -> None:
     queue = f"projects/{settings.tasks_project}/locations/{settings.tasks_location}/queues/{settings.tasks_queue}"
     payload = {
         "task": {
+            # A stable name per job: if a create request's response is lost and it is sent again, Cloud Tasks
+            # reports ALREADY_EXISTS instead of queuing the job twice.
+            "name": f"{queue}/tasks/job-{job_id}",
             "httpRequest": {
                 "httpMethod": "POST",
                 "url": target,
@@ -75,13 +86,20 @@ async def enqueue_job(job_id: uuid.UUID) -> None:
         }
     }
     headers = {"Authorization": f"Bearer {await _cloud_tasks_token()}"}
-    async with httpx.AsyncClient(timeout=20) as client:
-        response = await client.post(
-            f"https://cloudtasks.googleapis.com/v2/{queue}/tasks", json=payload, headers=headers
-        )
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                f"https://cloudtasks.googleapis.com/v2/{queue}/tasks", json=payload, headers=headers
+            )
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:  # nothing was sent
+        raise DispatchRejected("Could not reach the processing queue. Please retry.") from exc
+    except httpx.TransportError as exc:  # sent, but the outcome is unknown (e.g. the response timed out)
+        raise DispatchUncertain("The processing queue did not confirm the job in time.") from exc
+    if response.status_code == 409:  # ALREADY_EXISTS: an earlier attempt for this job was accepted
+        return
     if response.status_code >= 300:
         log.error("tasks.enqueue_failed", extra={"status": response.status_code, "body": response.text[:500]})
-        raise UpstreamError("Could not queue the processing job. Please retry.")
+        raise DispatchRejected("Could not queue the processing job. Please retry.")
 
 
 _oidc_request = google.auth.transport.requests.Request(session=requests.Session())

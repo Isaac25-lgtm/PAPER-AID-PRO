@@ -70,6 +70,9 @@ def _abstract_evidence(papers: list[Paper], start: int = 1) -> list[EvidenceItem
     ]
 
 
+EVIDENCE_COVERAGE_EXTRA = 8  # opening passages/abstracts for sources the search missed, beyond `limit`
+
+
 async def gather_evidence(
     db: AsyncSession, question: str, papers: list[Paper], *, limit: int = 12
 ) -> list[EvidenceItem]:
@@ -92,10 +95,12 @@ async def gather_evidence(
         for i, e in enumerate(passages)
     ]
     covered = {e.paper.id for e in items}
+    # One budget for everything sent to the model, however many sources are selected.
+    budget = limit + EVIDENCE_COVERAGE_EXTRA
     # Keyword search can miss a paper entirely (e.g. vague questions); fall back to its opening passages.
     for paper_id in ready:
-        if paper_id not in covered:
-            for e in await leading_chunks(db, paper_id, 4):
+        if paper_id not in covered and len(items) < budget:
+            for e in await leading_chunks(db, paper_id, min(4, budget - len(items))):
                 items.append(
                     EvidenceItem(
                         key=f"E{len(items) + 1}",
@@ -110,7 +115,7 @@ async def gather_evidence(
                 )
             covered.add(paper_id)
     items += _abstract_evidence([p for p in papers if p.id not in covered], start=len(items) + 1)
-    return items
+    return items[:budget]
 
 
 async def grounded_answer(
@@ -354,7 +359,8 @@ async def rewrite_text(text: str, mode: str, context: str | None) -> dict[str, A
     llm = get_llm("AI rewriting")
     system = (
         "You are an academic writing editor. Return only the rewritten passage. Never add facts, numbers, "
-        "claims or citations that are not in the original. Keep any existing citation markers unchanged."
+        "claims or citations that are not in the original. Markers such as [[C1]] stand for citations: keep "
+        "every marker exactly once, in the same order, directly after the claim it supports. Never add markers."
     )
     prompt = (
         f"Instruction: {_REWRITE_INSTRUCTIONS[mode]}\n\n"

@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { useLibrarySearch } from "@/components/papers";
 import { Alert } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
+import { trackPosition, useEditGate } from "@/lib/editGate";
 import { PROVIDER_LABELS, type Citation, type Paper, type SearchResponse, type Work } from "@/lib/types";
 
 export interface CiteRequest {
@@ -13,6 +14,11 @@ export interface CiteRequest {
   pos: number;
   /** Initial search text (e.g. the selected sentence for "Find a source"). */
   query?: string;
+  /**
+   * Where the initial text came from. Text taken from the draft ("selection") is searched in the person's own
+   * library only; it is sent to the external scholarly indexes only after they review it and choose to.
+   */
+  origin?: "selection" | "typed";
 }
 
 type Option = { kind: "library"; paper: Paper } | { kind: "work"; work: Work };
@@ -26,11 +32,14 @@ function byline(authors: string[], year: number | null): string {
 }
 
 /** Insert a citation node at `pos`, with a space after it unless punctuation or a space already follows. */
-export function insertCitationAt(editor: Editor, pos: number, citationId: string): void {
+export function insertCitationAt(editor: Editor, pos: number, citationId: string, options: { before?: string } = {}): void {
   const at = Math.max(0, Math.min(pos, editor.state.doc.content.size));
   const next = editor.state.doc.textBetween(at, Math.min(at + 1, editor.state.doc.content.size), "", "");
-  const content: Array<Record<string, unknown>> = [{ type: "citation", attrs: { citationIds: [citationId] } }];
+  const content: Array<Record<string, unknown>> = [];
+  if (options.before) content.push({ type: "text", text: options.before });
+  content.push({ type: "citation", attrs: { citationIds: [citationId] } });
   if (!/^[\s.,;:!?)\]]/.test(next)) content.push({ type: "text", text: " " });
+  // One transaction: a quotation and its citation can never be separated or interleaved with another edit.
   editor.chain().focus().insertContentAt(at, content).run();
 }
 
@@ -58,6 +67,8 @@ export function CitePalette({
 }) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState(request.query ?? "");
+  // External search is armed for words the person types; draft text must be confirmed first.
+  const [externalAllowed, setExternalAllowed] = useState(request.origin !== "selection");
   const [locator, setLocator] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -71,7 +82,7 @@ export function CitePalette({
   const everywhere = useQuery({
     queryKey: ["cite-search", debounced],
     queryFn: ({ signal }) => api.get<SearchResponse>("/discovery/search", { q: debounced, limit: 6 }, signal),
-    enabled: debounced.length >= MIN_ALL_SOURCES_QUERY,
+    enabled: externalAllowed && debounced.length >= MIN_ALL_SOURCES_QUERY,
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -92,20 +103,29 @@ export function CitePalette({
     inputRef.current?.select();
   }, []);
 
+  const gate = useEditGate();
   const cite = useMutation({
-    mutationFn: async (option: Option) => {
-      let paperId: string;
-      if (option.kind === "library") paperId = option.paper.id;
-      else {
-        if (!option.work.identifier) throw new Error("This result has no DOI or other identifier, so it cannot be cited automatically. Add it from the Library page.");
-        const paper = await api.post<Paper>("/papers/import", { identifier: option.work.identifier, add_to_library: true });
-        paperId = paper.id;
-        void queryClient.invalidateQueries({ queryKey: ["library"] });
-      }
-      return api.post<Citation>(`/documents/${documentId}/citations`, { paper_id: paperId, locator: locator.trim() || null });
-    },
-    onSuccess: (citation) => {
-      insertCitationAt(editor, request.pos, citation.id);
+    // Part of the export/restore gate; the insertion point follows any edits made while the request runs.
+    mutationFn: (option: Option) =>
+      gate.run(async () => {
+        const target = trackPosition(editor, request.pos);
+        try {
+          let paperId: string;
+          if (option.kind === "library") paperId = option.paper.id;
+          else {
+            if (!option.work.identifier) throw new Error("This result has no DOI or other identifier, so it cannot be cited automatically. Add it from the Library page.");
+            const paper = await api.post<Paper>("/papers/import", { identifier: option.work.identifier, add_to_library: true });
+            paperId = paper.id;
+            void queryClient.invalidateQueries({ queryKey: ["library"] });
+          }
+          const citation = await api.post<Citation>(`/documents/${documentId}/citations`, { paper_id: paperId, locator: locator.trim() || null });
+          insertCitationAt(editor, target.pos, citation.id);
+          return citation;
+        } finally {
+          target.stop();
+        }
+      }),
+    onSuccess: () => {
       onInserted();
       onClose();
     },
@@ -172,14 +192,17 @@ export function CitePalette({
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setExternalAllowed(true); // the person is now writing their own search
+            }}
             placeholder="Search your library and all sources"
             aria-label="Search sources to cite"
             role="combobox"
             aria-expanded={options.length > 0}
             aria-controls="cite-options"
             aria-activedescendant={options.length ? optionId(active) : undefined}
-            className="min-w-0 flex-1 border-0 bg-transparent text-[15px] text-slate-900 outline-none placeholder:text-slate-400"
+            className="min-w-0 flex-1 border-0 bg-transparent text-[15px] text-slate-900 outline-none placeholder:text-slate-500"
             maxLength={300}
           />
           <input
@@ -193,6 +216,16 @@ export function CitePalette({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {cite.error && <div className="p-1.5"><Alert kind="error">{errorMessage(cite.error)}</Alert></div>}
+          {!externalAllowed && query.trim().length >= MIN_ALL_SOURCES_QUERY && (
+            <div className="m-1 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-600">
+              <p>Showing matches from your library only. Searching all sources sends these words to OpenAlex, Crossref and other scholarly indexes:</p>
+              <p className="mt-1 font-medium text-slate-900">“{query.trim()}”</p>
+              <p className="mt-1">Edit them above first if they contain anything private.</p>
+              <button type="button" onClick={() => setExternalAllowed(true)} className="mt-2 rounded-md bg-slate-900 px-2.5 py-1 font-medium text-white hover:bg-slate-800">
+                Search all sources
+              </button>
+            </div>
+          )}
           {everywhere.error && <p className="px-2.5 py-1.5 text-xs text-slate-500">Searching all sources failed: {errorMessage(everywhere.error)} Your library results are still shown.</p>}
           <ul id="cite-options" role="listbox" aria-label="Sources">
             {options.map((option, i) => {
@@ -203,8 +236,8 @@ export function CitePalette({
                 : `${byline(option.work.authors, option.work.year)}${option.work.journal ? ` · ${option.work.journal}` : ""}${option.work.sources?.length ? ` · via ${option.work.sources.map((s) => PROVIDER_LABELS[s] ?? s).join(", ")}` : ""} · ${option.work.identifier ? "adds to your library" : "no identifier"}`;
               return (
                 <li key={isLibrary ? option.paper.id : `${option.work.identifier ?? option.work.title}-${i}`}>
-                  {i === libraryCount && libraryCount > 0 && <p className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">All sources</p>}
-                  {i === 0 && isLibrary && <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">Your library</p>}
+                  {i === libraryCount && libraryCount > 0 && <p className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">All sources</p>}
+                  {i === 0 && isLibrary && <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">Your library</p>}
                   <div
                     id={optionId(i)}
                     role="option"
@@ -231,9 +264,9 @@ export function CitePalette({
           </ul>
           {noResults && debounced.length >= MIN_ALL_SOURCES_QUERY && !everywhere.isFetching && <p className="px-2.5 py-3 text-sm text-slate-500">No matching sources. Try different words or a DOI.</p>}
           {!query.trim() && libraryCount === 0 && <p className="px-2.5 py-3 text-sm text-slate-500">Type a few words of a title, an author or a topic.</p>}
-          {query.trim().length > 0 && debounced.length < MIN_ALL_SOURCES_QUERY && <p className="px-2.5 py-2 text-xs text-slate-400">Type at least {MIN_ALL_SOURCES_QUERY} characters to search all sources.</p>}
+          {externalAllowed && query.trim().length > 0 && debounced.length < MIN_ALL_SOURCES_QUERY && <p className="px-2.5 py-2 text-xs text-slate-500">Type at least {MIN_ALL_SOURCES_QUERY} characters to search all sources.</p>}
         </div>
-        <p className="border-t border-slate-100 px-3 py-2 text-[11px] text-slate-400">↑↓ choose · Enter cite · Esc close · type <kbd className="font-mono">/cite</kbd> while writing to open this</p>
+        <p className="border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500">↑↓ choose · Enter cite · Esc close · type <kbd className="font-mono">/cite</kbd> while writing to open this</p>
       </div>
     </>
   );

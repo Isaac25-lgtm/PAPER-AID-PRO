@@ -16,11 +16,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 const TYPED = " rural and urban households";
 const SUGGESTION = ", which raises the question of who the agent networks reach first.";
-const SECOND = " Mobile phones also lowered search costs for traders ";
-const QUERY = "mobile phones Africa";
+const SECOND = " Mobile phones also lowered search costs for grain traders in Niger ";
+const QUERY = "mobile phones markets Niger";
 const RESULTS = [
-  { title: "Mobile phones and economic development in Africa", meta: "Aker & Mbiti · 2010 · Journal of Economic Perspectives · via OpenAlex, Crossref" },
-  { title: "Information from markets near and far: mobile phones and agricultural markets in Niger", meta: "Aker · 2010 · American Economic Journal: Applied Economics · via Crossref" },
+  { title: "Information from markets near and far: mobile phones and agricultural markets in Niger", meta: "Aker · 2010 · American Economic Journal: Applied Economics · via OpenAlex, Crossref" },
+  { title: "Mobile phones and economic development in Africa", meta: "Aker & Mbiti · 2010 · Journal of Economic Perspectives · via Crossref" },
 ];
 
 interface DemoState {
@@ -116,6 +116,7 @@ export function LiveDemo() {
   const firstResult = useRef<HTMLDivElement>(null);
   const restingPoint = useRef<HTMLSpanElement>(null);
   const [active, setActive] = useState(false);
+  const [paused, setPaused] = useState(false);
 
   // Animate only while on screen and while the tab is visible.
   useEffect(() => {
@@ -146,12 +147,12 @@ export function LiveDemo() {
   };
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || paused) return;
     let cancelled = false;
-    const timers: number[] = [];
+    let timer: number | undefined; // one pending timer at a time
     const sleep = (ms: number) =>
       new Promise<void>((resolve, reject) => {
-        timers.push(window.setTimeout(() => (cancelled ? reject(new Error("cancelled")) : resolve()), ms));
+        timer = window.setTimeout(() => (cancelled ? reject(new Error("cancelled")) : resolve()), ms);
       });
     const type = async (key: "typed" | "second" | "query", text: string, speed: number) => {
       for (let i = 1; i <= text.length; i++) {
@@ -204,13 +205,27 @@ export function LiveDemo() {
     run().catch(() => undefined);
     return () => {
       cancelled = true;
-      timers.forEach((t) => window.clearTimeout(t));
+      window.clearTimeout(timer);
     };
-  }, [active]);
+  }, [active, paused]);
 
   const writing = !s.accepted || !s.cited;
   return (
-    <div ref={frame} aria-hidden className="relative mx-auto mt-14 w-full max-w-[1120px] overflow-hidden rounded-t-2xl border border-b-0 border-slate-200 bg-slate-50 text-left" data-testid="live-demo">
+    <div className="mx-auto mt-14 w-full max-w-[1120px]">
+    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1 text-left text-xs text-slate-500">
+      <span>Illustrative walkthrough with real papers. “Matched” means the title, first author and year agree with the Crossref record.</span>
+      {!reduced && (
+        <button
+          type="button"
+          onClick={() => setPaused(!paused)}
+          aria-pressed={paused}
+          className="rounded-md border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50"
+        >
+          {paused ? "▶ Play" : "❚❚ Pause"}
+        </button>
+      )}
+    </div>
+    <div ref={frame} aria-hidden className="relative w-full overflow-hidden rounded-t-2xl border border-b-0 border-slate-200 bg-slate-50 text-left" data-testid="live-demo">
       <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5">
         <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />
         <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />
@@ -235,7 +250,7 @@ export function LiveDemo() {
             {s.ghost && !s.accepted && (
               <>
                 <Caret />
-                <span className="text-slate-400">{s.ghost}</span>
+                <span className="text-slate-500">{s.ghost}</span>
               </>
             )}
             {s.accepted && s.ghost}
@@ -243,7 +258,7 @@ export function LiveDemo() {
             {s.slash && <span className="font-mono text-[14px] text-brand-600">/cite</span>}
             {s.cited && (
               <>
-                <Chip pop={!reduced}>Aker &amp; Mbiti, 2010</Chip>.
+                <Chip pop={!reduced}>Aker, 2010</Chip>.
               </>
             )}
             {!(s.ghost && !s.accepted) && <Caret />}
@@ -259,7 +274,7 @@ export function LiveDemo() {
                 <span className="pa-caret inline-block h-4 w-px bg-slate-900" />
               </div>
               <div className="min-h-[104px] p-1.5">
-                {s.results === 0 && <p className="px-2.5 py-2 text-[12px] text-slate-400">Searching your library and all sources…</p>}
+                {s.results === 0 && <p className="px-2.5 py-2 text-[12px] text-slate-500">Searching your library and all sources…</p>}
                 {RESULTS.slice(0, s.results).map((r, i) => (
                   <div
                     key={r.title}
@@ -283,13 +298,14 @@ export function LiveDemo() {
           <CheckRow label="Suri & Jack (2016)" status="matched" />
           {s.check !== "none" && (
             <div className={clsx(!reduced && "pa-fade")}>
-              <CheckRow label="Aker & Mbiti (2010)" status={s.check === "matched" ? "matched" : "checking"} />
+              <CheckRow label="Aker (2010)" status={s.check === "matched" ? "matched" : "checking"} />
             </div>
           )}
           <CheckRow label="A reference with the wrong year" status="differs" />
         </div>
       </div>
       <Pointer {...s.pointer} />
+    </div>
     </div>
   );
 }

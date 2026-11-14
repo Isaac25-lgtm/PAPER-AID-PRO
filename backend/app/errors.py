@@ -86,6 +86,24 @@ class UpstreamError(AppError):
     code = "UPSTREAM_ERROR"
 
 
+class AINotEnabledForAccount(AppError):
+    status_code = 403
+    code = "AI_NOT_ENABLED_FOR_ACCOUNT"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "AI features are being tested with a small group first and are not enabled for your account yet."
+        )
+
+
+class AIFeatureOff(AppError):
+    status_code = 503
+    code = "AI_FEATURE_OFF"
+
+    def __init__(self, feature: str) -> None:
+        super().__init__(f"{feature} is switched off on this deployment.")
+
+
 class AINotConfigured(AppError):
     status_code = 503
     code = "AI_NOT_CONFIGURED"

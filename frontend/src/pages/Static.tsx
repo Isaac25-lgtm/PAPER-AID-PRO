@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { Container } from "@/components/Layout";
 
 /** Version shown on the policies; must match the API's POLICY_VERSION (backend/app/policy.py). */
-export const POLICY_VERSION = "2026-11-14";
+export const POLICY_VERSION = "2026-11-14.2";
 const CONTACT = import.meta.env.VITE_PRIVACY_CONTACT_EMAIL as string | undefined;
 
 function Contact() {
@@ -105,9 +105,10 @@ export function AINoticePage() {
     <Policy title="AI Use Notice">
       <p>Some PaperAid Pro features use an AI model. This page explains when, what is sent and how answers are checked.</p>
       <h2>When AI is used</h2>
-      <p>Only when you ask for it: questions about papers, paper summaries, overviews of search results, and writing help (rewrite or suggest the next sentence). Search, your library, citations and reference checking do not use AI.</p>
+      <p>Only when you ask for it: questions about papers, paper summaries, overviews of search results, checking a passage against your sources, and writing help (rewrite, shorten or suggest the next sentence). AI features may be offered to a limited group of testers first. Search, your library, citations and reference checking do not use AI.</p>
+      <p><strong>Writing suggestions</strong> are off unless you turn them on in the editor. While they are on, each time you pause at the end of a paragraph the text before your cursor (up to the last few thousand characters) and the document's title and type are sent to produce a suggestion. Turn them off at any time with Suggestions in the editor toolbar.</p>
       <h2>What is sent</h2>
-      <p>Your question or the text you selected, and excerpts from the papers you chose. Never your password, and never your other documents or uploads.</p>
+      <p>Your question or the text you selected (or, with suggestions on, the text before your cursor), and excerpts from the papers you chose. Never your password, and never your other documents or uploads.</p>
       <h2>How answers are checked</h2>
       <ul>
         <li>Every statement must quote the passage it relies on, and the quote must really appear in that paper.</li>

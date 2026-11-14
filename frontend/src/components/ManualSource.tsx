@@ -107,7 +107,7 @@ export function ManualSourceForm({ onSaved }: { onSaved: (paper: Paper) => void 
           <div key={index} className="flex gap-2">
             <Input aria-label={`${label} ${index + 1} family name or organisation`} placeholder="Family name or organisation" value={person.family} onChange={(e) => update(list.map((p, i) => (i === index ? { ...p, family: e.target.value } : p)))} />
             <Input aria-label={`${label} ${index + 1} given names`} placeholder="Given names" value={person.given} onChange={(e) => update(list.map((p, i) => (i === index ? { ...p, given: e.target.value } : p)))} />
-            <button type="button" className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-red-600" aria-label="Remove" onClick={() => update(list.filter((_, i) => i !== index))}>
+            <button type="button" className="rounded p-2 text-slate-500 hover:bg-slate-100 hover:text-red-600" aria-label="Remove" onClick={() => update(list.filter((_, i) => i !== index))}>
               <Trash2 className="h-4 w-4" />
             </button>
           </div>

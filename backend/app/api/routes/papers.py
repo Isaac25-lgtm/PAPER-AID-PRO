@@ -36,7 +36,7 @@ from app.schemas import (
     PaperStatusFilter,
     PassageOut,
 )
-from app.security.auth import OptionalUser, VerifiedUser
+from app.security.auth import AIUser, OptionalUser, VerifiedUser
 from app.security.rate_limit import enforce_rate_limit
 from app.services import manual, processing
 from app.services.ai import features as ai_features
@@ -407,7 +407,7 @@ async def get_summary(paper_id: uuid.UUID, db: DB, user: OptionalUser) -> dict[s
 
 @router.post("/{paper_id}/summary")
 async def generate_summary(
-    paper_id: uuid.UUID, db: DB, user: VerifiedUser, settings: AppSettings, force: bool = False
+    paper_id: uuid.UUID, db: DB, user: AIUser, settings: AppSettings, force: bool = False
 ) -> dict[str, object]:
     await enforce_rate_limit(
         db, key=f"ai:{user.id}", limit=settings.rate_limit_ai_per_min, window_seconds=60, action="AI requests"
@@ -424,7 +424,7 @@ async def generate_summary(
 
 @router.post("/{paper_id}/ask", response_model=GroundedAnswerOut)
 async def ask_paper(
-    paper_id: uuid.UUID, body: AskRequest, db: DB, user: VerifiedUser, settings: AppSettings
+    paper_id: uuid.UUID, body: AskRequest, db: DB, user: AIUser, settings: AppSettings
 ) -> GroundedAnswerOut:
     await enforce_rate_limit(
         db, key=f"ai:{user.id}", limit=settings.rate_limit_ai_per_min, window_seconds=60, action="AI requests"

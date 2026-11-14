@@ -26,7 +26,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, exists, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +39,7 @@ from app.services.maintenance import confirm_upload, record_upload_intent, sched
 from app.services.open_access import pdf_candidates
 from app.services.pdf import chunk_pages, extract_pages
 from app.services.storage import get_storage, pdf_key, sha256_hex
-from app.services.tasks import enqueue_job, register_inline_runner
+from app.services.tasks import DispatchUncertain, enqueue_job, register_inline_runner
 
 log = logging.getLogger(__name__)
 
@@ -158,20 +158,36 @@ async def queue_ingest(db: AsyncSession, paper: Paper, requested_by: User | None
     job_id, paper_id = job.id, paper.id
     try:
         await enqueue_job(job_id)
+    except DispatchUncertain:
+        # The task may be queued (or may even have run): do not fail it. If it never arrives, its queued lease
+        # expires and maintenance releases it like any other abandoned job.
+        await db.rollback()
+        log.warning("processing.dispatch_uncertain", extra={"job_id": str(job_id)})
     except Exception as exc:
-        # The task never reached the queue: close the job now instead of leaving it "queued" forever.
+        # The task definitely never reached the queue: close THIS job now instead of leaving it "queued".
         await db.rollback()
         message = exc.message if isinstance(exc, AppError) else "Could not queue the processing job."
-        await db.execute(
+        closed = await db.execute(
             update(ProcessingJob)
-            .where(ProcessingJob.id == job_id, ProcessingJob.status == JobStatus.QUEUED)
+            .where(
+                ProcessingJob.id == job_id,
+                ProcessingJob.status == JobStatus.QUEUED,
+                ProcessingJob.attempt_token.is_(None),  # no worker has claimed it
+            )
             .values(status=JobStatus.FAILED, error=message, finished_at=_now(), lease_expires_at=None)
         )
-        await db.execute(
-            update(Paper)
-            .where(Paper.id == paper_id, Paper.status == PaperStatus.QUEUED)
-            .values(status=previous_status, status_detail=previous_detail)
-        )
+        if getattr(closed, "rowcount", 0):
+            # Restore the paper only if this job still owned its queued state (no newer job has taken over).
+            newer = exists().where(
+                ProcessingJob.paper_id == paper_id,
+                ProcessingJob.id != job_id,
+                ProcessingJob.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]),
+            )
+            await db.execute(
+                update(Paper)
+                .where(Paper.id == paper_id, Paper.status == PaperStatus.QUEUED, ~newer)
+                .values(status=previous_status, status_detail=previous_detail)
+            )
         await db.commit()
         if isinstance(exc, AppError):
             raise

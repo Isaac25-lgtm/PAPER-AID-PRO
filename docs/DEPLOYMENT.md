@@ -132,6 +132,11 @@ gcloud run services update paperaid-api --project paperaid --region europe-west4
   --update-env-vars AI_PROVIDER=anthropic            # default model: claude-opus-5-5; override with AI_MODEL
 ```
 
+AI is limited to a pilot group by default: `AI_ACCESS=pilot` (default) with `AI_PILOT_EMAILS=a@x.org,b@y.org`
+(administrators always included); `AI_ACCESS=everyone` opens it to every verified tester. Inline writing suggestions
+have their own switch, `AI_AUTOCOMPLETE_ENABLED=true` (default off), and each person must also turn them on in the
+editor. Adding a key therefore changes nothing for anyone outside the pilot list.
+
 Recommended order: enable for a small tester group first with a spending cap on the provider account, run the
 grounding checks on real papers from your testers' fields, then widen. Support verification is on
 (`AI_VERIFY_CLAIMS=true`). OpenAI / Gemini work the same way (`AI_PROVIDER=openai|gemini`; `AI_MODEL` required).
@@ -146,6 +151,12 @@ Optional semantic search: `EMBEDDING_PROVIDER=openai` with `OPENAI_API_KEY` (153
 | `NCBI_API_KEY` | Raises PubMed's limit from 3 to 10 requests/second |
 
 Add each as a secret and `--update-secrets NAME=secret:latest` (through `deploy/release.sh` via `EXTRA_DEPLOY_FLAGS`).
+
+## Local development and identity
+
+Outside `ENV=production` the API never deletes Firebase sign-ins (closing an account locally deletes the local data
+only). Use the Firebase Auth emulator (`FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099`) to exercise identity deletion,
+or a dedicated development Firebase project. Never give a development setup production credentials.
 
 ## Policies and consent
 

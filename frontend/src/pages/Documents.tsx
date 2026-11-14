@@ -163,7 +163,7 @@ export default function DocumentsPage() {
               <p className="mt-2 text-xs text-slate-500">Edited {relativeTime(doc.updated_at)}</p>
             </Link>
             <button
-              className="absolute right-3 top-3 rounded p-1 text-slate-400 opacity-100 hover:bg-red-50 hover:text-red-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+              className="absolute right-3 top-3 rounded p-1 text-slate-500 opacity-100 hover:bg-red-50 hover:text-red-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
               aria-label={`Delete ${doc.title}`}
               onClick={() => window.confirm(`Delete “${doc.title}” and its history? This cannot be undone.`) && remove.mutate(doc.id)}
             >

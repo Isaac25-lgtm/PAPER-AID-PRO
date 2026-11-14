@@ -10,7 +10,7 @@ from sqlalchemy import case, func, select
 
 from app.api.deps import DB, AppSettings
 from app.db.models import Conversation, Message, MessageRole
-from app.errors import NotFound, ValidationFailed
+from app.errors import AIFeatureOff, NotFound, ValidationFailed
 from app.schemas import (
     CompleteRequest,
     ConversationOut,
@@ -26,7 +26,7 @@ from app.schemas import (
     TextResult,
     VerifyRequest,
 )
-from app.security.auth import OptionalUser, VerifiedUser
+from app.security.auth import AIUser, OptionalUser, VerifiedUser
 from app.security.rate_limit import enforce_caller_limit, enforce_rate_limit
 from app.services.ai import features as ai_features
 from app.services.citations.csl import STYLES, format_citations
@@ -139,9 +139,7 @@ async def verify(request: Request, body: VerifyRequest, db: DB, user: OptionalUs
 
 # ------------------------------------------------------------------------------------------------ research
 @router.post("/research/ask", response_model=GroundedAnswerOut, tags=["research"])
-async def research_ask(
-    body: ResearchAskRequest, db: DB, user: VerifiedUser, settings: AppSettings
-) -> GroundedAnswerOut:
+async def research_ask(body: ResearchAskRequest, db: DB, user: AIUser, settings: AppSettings) -> GroundedAnswerOut:
     await enforce_rate_limit(
         db, key=f"ai:{user.id}", limit=settings.rate_limit_ai_per_min, window_seconds=60, action="AI requests"
     )
@@ -263,7 +261,7 @@ async def delete_conversation(conversation_id: uuid.UUID, db: DB, user: Verified
 
 # ------------------------------------------------------------------------------------------- writing (AI)
 @router.post("/ai/rewrite", response_model=TextResult, tags=["ai"])
-async def rewrite(body: RewriteRequest, db: DB, user: VerifiedUser, settings: AppSettings) -> TextResult:
+async def rewrite(body: RewriteRequest, db: DB, user: AIUser, settings: AppSettings) -> TextResult:
     await enforce_rate_limit(
         db, key=f"ai:{user.id}", limit=settings.rate_limit_ai_per_min, window_seconds=60, action="AI requests"
     )
@@ -271,7 +269,9 @@ async def rewrite(body: RewriteRequest, db: DB, user: VerifiedUser, settings: Ap
 
 
 @router.post("/ai/complete", response_model=TextResult, tags=["ai"])
-async def complete(body: CompleteRequest, db: DB, user: VerifiedUser, settings: AppSettings) -> TextResult:
+async def complete(body: CompleteRequest, db: DB, user: AIUser, settings: AppSettings) -> TextResult:
+    if not settings.ai_autocomplete_enabled:
+        raise AIFeatureOff("Inline writing suggestions")
     await enforce_rate_limit(
         db,
         key=f"aicomplete:{user.id}",

@@ -38,7 +38,8 @@ const { CitationNode } = await import("@/lib/citationNode");
 const { CiteTrigger } = await import("@/lib/citeTrigger");
 const { GhostText, acceptGhost, currentGhost, showGhost, suggestionPoint } = await import("@/lib/ghostText");
 const { CitePalette, queryFromSelection } = await import("@/components/editor/CitePalette");
-const { SelectionMenu, withCitations } = await import("@/components/editor/SelectionMenu");
+const { SelectionMenu } = await import("@/components/editor/SelectionMenu");
+const { buildRewriteInput, rewriteContent, applyRewrite } = await import("@/lib/rewrite");
 const { useAutocomplete } = await import("@/components/editor/useAutocomplete");
 const { cleanPdfQuote } = await import("@/components/editor/PdfPanel");
 const { applyCitationLabels } = await import("@/lib/citationLabels");
@@ -158,23 +159,60 @@ describe("/cite", () => {
 });
 
 describe("rewrite helpers", () => {
-  const cite = (id: string, label: string) => ({ label, json: { type: "citation", attrs: { citationIds: [id], label } } });
+  const cite = (id: string, label: string) => ({ type: "citation", attrs: { citationIds: [id], label } });
+  const twoClaims = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Mobile money reduced poverty " },
+          cite("c1", "(Suri & Jack, 2016)"),
+          { type: "text", text: ". Phones cut search costs " },
+          cite("c2", "(Aker, 2010)"),
+          { type: "text", text: "." },
+        ],
+      },
+    ],
+  };
 
-  it("keeps citations as real citation nodes and removes their labels from the model text", () => {
-    const content = withCitations(
-      "Mobile money reduced poverty (Suri & Jack, 2016).",
-      "Access to mobile money lowered poverty rates (Suri & Jack, 2016).",
-      [cite("c1", "(Suri & Jack, 2016)")],
-    );
-    expect(content).toEqual([
-      { type: "text", text: "Access to mobile money lowered poverty rates " },
-      { type: "citation", attrs: { citationIds: ["c1"], label: "(Suri & Jack, 2016)" } },
-      { type: "text", text: "." },
-    ]);
+  it("sends citations as numbered placeholders and keeps each with its own claim", () => {
+    const editor = makeEditor(twoClaims);
+    const input = buildRewriteInput(editor, 1, endOf(editor));
+    if (typeof input === "string") throw new Error(input);
+    expect(input.text).toBe("Mobile money reduced poverty [[C1]]. Phones cut search costs [[C2]].");
+    expect(applyRewrite(editor, input, "Mobile money lowered poverty [[C1]]. Mobile phones lowered search costs [[C2]].")).toBeNull();
+    const nodes = (editor.getJSON() as J).content?.[0]?.content ?? [];
+    expect(nodes.map((n) => n.type)).toEqual(["text", "citation", "text", "citation", "text"]);
+    expect(nodes[0]?.text).toBe("Mobile money lowered poverty ");
+    expect(nodes[1]?.attrs?.citationIds).toEqual(["c1"]);
+    expect(nodes[2]?.text).toBe(". Mobile phones lowered search costs ");
+    expect(nodes[3]?.attrs?.citationIds).toEqual(["c2"]);
   });
 
-  it("keeps surrounding spaces and passes plain text through", () => {
-    expect(withCitations(" a passage ", "A clearer passage.", [])).toEqual([{ type: "text", text: " A clearer passage. " }]);
+  it("refuses a proposal that moves, drops, repeats or invents a citation", () => {
+    const editor = makeEditor(twoClaims);
+    const input = buildRewriteInput(editor, 1, endOf(editor));
+    if (typeof input === "string") throw new Error(input);
+    for (const bad of [
+      "Phones cut search costs [[C2]] and mobile money reduced poverty [[C1]].",
+      "Mobile money and phones helped households [[C1]].",
+      "Mobile money reduced poverty [[C1]][[C1]]. Phones cut costs [[C2]].",
+      "Mobile money reduced poverty [[C1]]. Phones cut costs [[C2]] [[C3]].",
+    ]) {
+      expect(rewriteContent(input, bad)).toHaveProperty("error");
+    }
+    expect(applyRewrite(editor, input, "Phones cut search costs [[C2]] and mobile money reduced poverty [[C1]].")).toMatch(/moved, dropped or repeated/);
+    expect(editor.getText()).toContain("Mobile money reduced poverty");
+  });
+
+  it("refuses selections across paragraphs and keeps surrounding spaces", () => {
+    const editor = makeEditor("<p>First paragraph here.</p><p>Second paragraph here.</p>");
+    expect(buildRewriteInput(editor, 1, endOf(editor))).toBe("multiple-paragraphs");
+    const plain = makeEditor({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "a passage to improve " }] }] });
+    const input = buildRewriteInput(plain, 1, endOf(plain));
+    if (typeof input === "string") throw new Error(input);
+    expect(rewriteContent(input, "A clearer passage.")).toEqual({ content: [{ type: "text", text: "A clearer passage. " }] });
   });
 
   it("builds a short search from a selected sentence without citation labels", () => {
@@ -279,14 +317,14 @@ describe("selection menu", () => {
   });
 
   it("replaces the passage only on Replace, keeping its citation", async () => {
-    calls.post = async () => ({ text: "Mobile money lowered poverty (Suri & Jack, 2016).", model: "fake-model" });
+    calls.post = async () => ({ text: "Mobile money lowered poverty [[C1]].", model: "fake-model" });
     const editor = makeEditor(doc);
     wrap(<SelectionMenu editor={editor} aiEnabled onFindSource={vi.fn()} onCheck={vi.fn()} />);
     select(editor);
     await userEvent.click(await screen.findByRole("button", { name: /Rewrite/ }));
-    expect(await screen.findByText("Mobile money lowered poverty (Suri & Jack, 2016).")).toBeInTheDocument();
+    expect(await screen.findByText("Mobile money lowered poverty (Suri & Jack, 2016).")).toBeInTheDocument(); // shown with its label
     expect(editor.getText()).toContain("reduced"); // nothing changes before Replace
-    expect(calls.posts[0]).toEqual({ path: "/ai/rewrite", body: { text: "Mobile money reduced poverty (Suri & Jack, 2016).", mode: "academic" } });
+    expect(calls.posts[0]).toEqual({ path: "/ai/rewrite", body: { text: "Mobile money reduced poverty [[C1]].", mode: "academic" } });
     await userEvent.click(screen.getByRole("button", { name: /Replace/ }));
     const nodes = (editor.getJSON() as J).content?.[0]?.content ?? [];
     expect(nodes.map((n) => n.type)).toEqual(["text", "citation", "text"]);

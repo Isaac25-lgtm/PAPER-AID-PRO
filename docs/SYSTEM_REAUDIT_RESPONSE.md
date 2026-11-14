@@ -1,0 +1,33 @@
+# Response to the system re-audit
+
+Response to [PAPERAID_V2_SYSTEM_REAUDIT.md](PAPERAID_V2_SYSTEM_REAUDIT.md) (snapshot `6db03b0`, 14 November 2026).
+All 15 findings are fixed with tests: backend `backend/tests/test_system_reaudit.py`, frontend
+`frontend/src/test/reaudit.test.tsx`, `writing.test.tsx`, `contrast.test.ts` and `liveDemo.test.tsx`. Schema
+change: migration `f2a6c8e4b1d3` (expand-only). The policy version is now `2026-11-14.2`, because the AI notice now
+describes opt-in writing suggestions, so testers accept once more.
+
+| # | Severity | Finding | Fix | Tests |
+|---|---|---|---|---|
+| 1 | High | Find a source sent draft text to providers | Text taken from the draft is searched in the person's library only. Searching all sources is a separate button that shows the exact words that will be sent and says where they go. Words the person types themselves still search everywhere. | No external request until "Search all sources" is pressed; typed queries still search all sources. |
+| 2 | High | Quote and cite could attach the wrong page | The paper, the selected words, the start and end pages and the insertion point are captured when the person clicks. The insertion point is tracked through later edits. The quote and its citation are inserted in one transaction. A selection that spans pages gets a page range. | Codex's scenario: page 2 is selected and the draft edited while the request is in flight. The output is page 1's words with locator 1, at the mapped position. |
+| 3 | High | Local account deletion could reach production Firebase | Identity deletion fails closed outside `ENV=production`. It uses the Auth emulator when `FIREBASE_AUTH_EMULATOR_HOST` is set and otherwise skips the step. The README and DEPLOYMENT.md describe the setup. | No request reaches Identity Toolkit in development, even with the production project id. The emulator is used when configured. |
+| 4 | Medium | Rewrites could move or remove citations | One shared path serves the selection menu and AI assist. Citations become numbered placeholders, and a proposal applies only if every placeholder returns once, in order. A changed passage is never overwritten. Multi-paragraph selections are refused. Formatting loss is disclosed. | Two distinct citations stay with their claims. Moved, dropped, repeated or invented markers are refused. |
+| 5 | Medium | Adding an AI key would start default-on suggestions for everyone | There is a server-enforced cohort (`AI_ACCESS=pilot` by default, `AI_PILOT_EMAILS`, admins). Suggestions have their own deployment switch (off by default) and are off per person until turned on. `/ai/status` reports what this account can use. The AI notice describes what suggestions send. | Pilot refusal on rewrite and ask. Per-account status. The suggestions switch. |
+| 6 | Medium | Pending deletion looked finished | A closure completes only when its stored files are gone (`pending_keys`), with retries and back-off. The browser shows the "account closed, finishing automatically" message instead of silently signing out. | A storage failure gives 202 and an open request with its pending file, then maintenance completes it. |
+| 7 | Medium | Edits could slip into an export or restore | One edit gate covers every out-of-keyboard change (sources panel, cite palette, PDF quotes, rewrites, AI assist). Export and restore wait for operations in flight, then block new ones, and the toolbar is disabled meanwhile. | Pausing waits for an in-flight operation, refuses new ones and resumes. |
+| 8 | Medium | Late renders could overwrite newer previews | Each render has a generation number. Only the newest applies, and only if it matches the current style and citations; the reference list is published together with the labels. | A render for another style is ignored. |
+| 9 | Medium | Check silently checked a subset | Passages over 2,000 characters are refused, not truncated. The response lists exactly which sources were examined and how many were not (up to 30 visible sources, so stale links never take a slot). There is one overall evidence budget. | Scope reported; budget enforced. |
+| 10 | Medium | Highlights were per source, not per claim | Each quote carries the statements it supports. Clicking a marker emphasises that statement's words. Overlapping quotes are merged so no word is dropped. Offsets in stored answers are converted. | Claims per quote; merged overlaps; emphasis; legacy offsets. |
+| 11 | Medium | Account ZIP held a DB connection during file reads | Metadata is read in a short transaction and the connection released before files are read. DOCX is built off the event loop. A failed render is listed in the manifest. There are 5 exports per hour per account and 2 concurrent per instance. | An export survives a render failure; the 6th export in an hour gets 429. |
+| 12 | Medium | Timed-out dispatch could restore a stale status | Stable Cloud Tasks names (`job-<id>`), with ALREADY_EXISTS treated as queued. Timeouts are "uncertain": the job stays queued for normal lease recovery. Definite rejections fail only an unclaimed job and restore the paper only if no newer job owns it. | Uncertain dispatch keeps the job; a newer job's status is preserved; ALREADY_EXISTS and timeout classification. |
+| 13 | Medium | Low-contrast instructions | Token values were adjusted and small text moved off the weakest grey. An automated test checks every text role on every surface in both themes (at least 4.5:1) and icons (at least 3:1). | Contrast test from the real theme file. |
+| 14 | Medium | Landing demo unlabelled, no pause | The demo is labelled "Illustrative walkthrough with real papers" and says what "Matched" checks. It has a keyboard Play/Pause control (as do the section walkthroughs) and one pending timer. The trader claim now cites the primary study (Aker 2010, AEJ: Applied Economics), verified as matched by the live checker. | Label, pause and finished frame. |
+| 15 | Low | PDF reader kept every page and listed only 50 papers | Pages render only near the viewport and are released when far away. Switching papers aborts the previous download. The picker is searchable across the whole library, and list errors are shown. | Covered by the panel tests (two-page reader). |
+
+## Still open (decisions, not code)
+
+- **Scheduled maintenance** must run for automatic completion to be guaranteed. Until it does, maintenance runs
+  when an instance starts and from Admin → Maintenance. The command is in DEPLOYMENT.md and needs the
+  maintainer's approval.
+- **Signed-in run in isolated staging** (consent, PDF quoting, Word/PDF export, deletion). This waits on the
+  staging project decision.

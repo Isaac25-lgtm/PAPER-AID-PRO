@@ -67,7 +67,13 @@ async def test_deactivated_user_is_rejected(client):
 
 async def test_ai_status_reports_not_configured(client):
     status = (await client.get("/api/v1/ai/status")).json()
-    assert status == {"enabled": False, "provider": "none", "model": None, "embeddings_enabled": False}
+    assert status == {
+        "enabled": False,
+        "provider": "none",
+        "model": None,
+        "embeddings_enabled": False,
+        "autocomplete": False,
+    }
 
 
 async def test_openapi_published(client):

@@ -395,6 +395,8 @@ class GroundedAnswerOut(BaseModel):
     citations: list[dict[str, Any]]
     model: str | None
     conversation_id: uuid.UUID | None = None
+    # For "check against my sources": which sources were examined and how many were not.
+    scope: dict[str, Any] | None = None
 
 
 class ConversationSummaryOut(Model):
@@ -436,10 +438,11 @@ class TextResult(BaseModel):
 
 
 class AIStatus(BaseModel):
-    enabled: bool
+    enabled: bool  # for the signed-in account (provider configured AND in the AI cohort)
     provider: str
     model: str | None
     embeddings_enabled: bool
+    autocomplete: bool = False  # inline suggestions available (deployment switch on, and `enabled`)
 
 
 # --------------------------------------------------------------------------------------------------- admin

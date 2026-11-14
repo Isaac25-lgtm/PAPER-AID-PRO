@@ -49,6 +49,9 @@ os.environ.update(
         "MAINTENANCE_ON_STARTUP": "false",
         # Consent gating has its own tests (test_accounts.py); elsewhere accounts count as having accepted.
         "REQUIRE_POLICY_ACCEPTANCE": "false",
+        # The AI cohort and the suggestions switch have their own tests; elsewhere AI features are open to testers.
+        "AI_ACCESS": "everyone",
+        "AI_AUTOCOMPLETE_ENABLED": "true",
     }
 )
 

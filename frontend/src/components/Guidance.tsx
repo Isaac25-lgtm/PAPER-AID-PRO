@@ -7,7 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { Link } from "react-router";
 
 import { useAuth } from "@/lib/auth";
-import { DEMOS } from "@/lib/demos";
+import { DEMOS, NARRATION } from "@/lib/demos";
 import { EDITOR_SHORTCUTS, GUIDES, SECTION_ORDER, type SectionKey } from "@/lib/guides";
 import { usePreference } from "@/lib/preferences";
 import { DemoStage } from "./SectionDemo";
@@ -103,7 +103,7 @@ export function SectionGuide({ section }: { section: SectionKey; className?: str
         </button>
       </div>
       <div className="space-y-3 p-4">
-        <DemoStage scene={DEMOS[section]} playing onStep={setStep} />
+        <DemoStage scene={DEMOS[section]} playing onStep={setStep} narration={NARRATION[section]} />
         <ol className="space-y-1.5">
           {guide.steps.map((item, index) => (
             <li
@@ -325,7 +325,7 @@ function WelcomeTour({ open, name, onClose }: { open: boolean; name: string | nu
           </Button>
         </div>
       </div>
-      <p className="mt-4 text-center text-xs text-slate-400">Step {step + 1} of {TOUR.length}</p>
+      <p className="mt-4 text-center text-xs text-slate-500">Step {step + 1} of {TOUR.length}</p>
     </Modal>
   );
 }

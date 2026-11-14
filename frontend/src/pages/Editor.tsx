@@ -15,7 +15,7 @@ import {
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router";
 
-import { CitePalette, queryFromSelection, type CiteRequest } from "@/components/editor/CitePalette";
+import { CitePalette, insertCitationAt, queryFromSelection, type CiteRequest } from "@/components/editor/CitePalette";
 import { SelectionMenu, type Span } from "@/components/editor/SelectionMenu";
 import { useAutocomplete, type AutocompleteStatus } from "@/components/editor/useAutocomplete";
 import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
@@ -23,11 +23,13 @@ import { HelpButton, SectionGuide } from "@/components/Guidance";
 import { StyleOptions, useLibrarySearch, useStyles } from "@/components/papers";
 import { Alert, Badge, Button, Input, Modal, Select, Spinner, useDialogFocus } from "@/components/ui";
 import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
-import { applyCitationLabels } from "@/lib/citationLabels";
+import { applyRenderIfCurrent } from "@/lib/citationLabels";
 import { CitationNode, LABEL_META } from "@/lib/citationNode";
 import { CiteTrigger } from "@/lib/citeTrigger";
+import { EditGate, EditGateContext, trackPosition, useEditGate } from "@/lib/editGate";
 import { GhostText } from "@/lib/ghostText";
 import { usePreference } from "@/lib/preferences";
+import { applyRewrite, buildRewriteInput, REWRITE_PROBLEMS } from "@/lib/rewrite";
 import { relativeTime, sanitizeHtml } from "@/lib/format";
 import { SaveQueue, type Fields } from "@/lib/saveQueue";
 import { normalizeSuggestion } from "@/lib/templates";
@@ -54,6 +56,8 @@ function Toolbar({
   autocomplete,
   onToggleAutocomplete,
   autocompleteStatus,
+  suggestionsAvailable,
+  frozen,
 }: {
   editor: Editor;
   onAI: () => void;
@@ -62,9 +66,12 @@ function Toolbar({
   autocomplete: boolean;
   onToggleAutocomplete: () => void;
   autocompleteStatus: AutocompleteStatus;
+  suggestionsAvailable: boolean;
+  /** Export or restore in progress: no command may change the text. */
+  frozen: boolean;
 }) {
   const btn = (active: boolean, onClick: () => void, label: string, Icon: typeof Bold) => (
-    <button type="button" onClick={onClick} aria-label={label} title={label} className={`rounded p-1.5 ${active ? "bg-slate-200 text-slate-950" : "text-slate-600 hover:bg-slate-100"}`}>
+    <button type="button" onClick={onClick} disabled={frozen} aria-label={label} title={label} className={`rounded p-1.5 disabled:opacity-40 ${active ? "bg-slate-200 text-slate-950" : "text-slate-600 hover:bg-slate-100"}`}>
       <Icon className="h-4 w-4" />
     </button>
   );
@@ -84,17 +91,17 @@ function Toolbar({
       {btn(editor.isActive("blockquote"), () => chain().toggleBlockquote().run(), "Quote", Quote)}
       {btn(false, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), "Insert table", TableIcon)}
       <span className="mx-1 h-5 w-px bg-slate-200" />
-      <button type="button" onClick={onCite} title="Cite a source at the cursor (or type /cite)" className="flex items-center gap-1 rounded px-2 py-1 text-sm text-slate-700 hover:bg-slate-100">
+      <button type="button" onClick={onCite} disabled={frozen} title="Cite a source at the cursor (or type /cite)" className="flex items-center gap-1 rounded px-2 py-1 text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-40">
         <TextQuote className="h-4 w-4" /> Cite
       </button>
-      <button type="button" onClick={onAI} className="flex items-center gap-1 rounded px-2 py-1 text-sm text-brand-700 hover:bg-brand-50">
+      <button type="button" onClick={onAI} disabled={frozen} className="flex items-center gap-1 rounded px-2 py-1 text-sm text-brand-700 hover:bg-brand-50 disabled:opacity-40">
         <Sparkles className="h-4 w-4" /> AI assist
       </button>
-      {aiEnabled && (
-        <label className="ml-auto flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-50" title="Suggest the next words when you pause at the end of a paragraph. Tab accepts, Esc dismisses.">
+      {aiEnabled && suggestionsAvailable && (
+        <label className="ml-auto flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-50" title="Off until you turn it on. When on, the text before your cursor and the document title are sent to the AI provider when you pause at the end of a paragraph. Tab accepts, Esc dismisses.">
           <input type="checkbox" className="h-3.5 w-3.5 accent-slate-900" checked={autocomplete} onChange={onToggleAutocomplete} />
           Suggestions
-          {autocomplete && autocompleteStatus === "thinking" && <span className="text-slate-400">…</span>}
+          {autocomplete && autocompleteStatus === "thinking" && <span className="text-slate-500">…</span>}
           {autocomplete && autocompleteStatus === "paused" && <span className="text-amber-700">paused for a minute</span>}
         </label>
       )}
@@ -106,10 +113,21 @@ function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; 
   const [filter, setFilter] = useState("");
   const [locator, setLocator] = useState("");
   const library = useLibrarySearch(filter);
+  const gate = useEditGate();
   const insert = useMutation({
-    mutationFn: (paper: Paper) => api.post<Citation>(`/documents/${documentId}/citations`, { paper_id: paper.id, locator: locator.trim() || null }),
-    onSuccess: (citation) => {
-      editor.chain().focus().insertContent([{ type: "citation", attrs: { citationIds: [citation.id] } }, { type: "text", text: " " }]).run();
+    // Where the cursor was at the click, followed through later edits; part of the export/restore gate.
+    mutationFn: (paper: Paper) =>
+      gate.run(async () => {
+        const target = trackPosition(editor, editor.state.selection.to);
+        try {
+          const citation = await api.post<Citation>(`/documents/${documentId}/citations`, { paper_id: paper.id, locator: locator.trim() || null });
+          insertCitationAt(editor, target.pos, citation.id);
+          return citation;
+        } finally {
+          target.stop();
+        }
+      }),
+    onSuccess: () => {
       setLocator("");
       onInserted();
     },
@@ -164,14 +182,45 @@ function RevisionsPanel({ documentId, onRestore }: { documentId: string; onResto
 
 function AIAssistModal({ editor, documentId, open, onClose }: { editor: Editor; documentId: string; open: boolean; onClose: () => void }) {
   const [mode, setMode] = useState("academic");
-  const selection = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ");
-  const rewrite = useMutation({ mutationFn: () => api.post<{ text: string; model: string }>("/ai/rewrite", { text: selection, mode }) });
-  const preceding = editor.state.doc.textBetween(0, editor.state.selection.from, "\n").slice(-6000);
+  const gate = useEditGate();
+  // The passage is captured once, when the assistant opens (shared rewrite path: citations stay with their claims).
+  const [input] = useState(() => {
+    const { from, to, empty } = editor.state.selection;
+    return empty ? null : buildRewriteInput(editor, from, to);
+  });
+  const [cursor] = useState(() => editor.state.selection.from);
+  const [problem, setProblem] = useState<string | null>(typeof input === "string" ? REWRITE_PROBLEMS[input] : null);
+  const passage = input && typeof input !== "string" ? input : null;
+  const selection = passage ? passage.text.replace(/\[\[C(\d+)\]\]/g, (_m, n: string) => String((passage.citations[Number(n) - 1]?.attrs as { label?: string } | undefined)?.label ?? "[citation]")) : "";
+  const rewrite = useMutation({ mutationFn: () => api.post<{ text: string; model: string }>("/ai/rewrite", { text: passage?.text ?? "", mode }) });
+  const preceding = editor.state.doc.textBetween(0, cursor, "\n").slice(-6000);
   const complete = useMutation({ mutationFn: () => api.post<{ text: string; model: string }>("/ai/complete", { document_id: documentId, preceding_text: preceding }) });
   const result = rewrite.data ?? complete.data;
+  const keep = () => {
+    if (!result) return;
+    if (!gate.isOpen) {
+      setProblem("Editing is paused while the document is exported or restored. Try again in a moment.");
+      return;
+    }
+    if (passage) {
+      const error = applyRewrite(editor, passage, result.text);
+      if (error) {
+        setProblem(error);
+        return;
+      }
+    } else {
+      if (editor.state.doc.textBetween(0, Math.min(cursor, editor.state.doc.content.size), "\n").slice(-6000) !== preceding) {
+        setProblem("Your text changed since the suggestion was made, so it was not inserted.");
+        return;
+      }
+      editor.chain().focus().insertContentAt(cursor, normalizeSuggestion(preceding, result.text)).run();
+    }
+    onClose();
+  };
   return (
     <Modal open={open} onClose={onClose} title="AI writing assistant" wide>
-      {selection ? (
+      {problem && <div className="mb-3"><Alert kind="warning">{problem}</Alert></div>}
+      {typeof input === "string" ? null : selection ? (
         <div className="space-y-3">
           <p className="text-sm text-slate-600">Rewrite the selected passage. The assistant is instructed not to add facts or citations.</p>
           <blockquote className="max-h-40 overflow-auto rounded-lg bg-slate-50 p-3 font-serif text-sm">{selection}</blockquote>
@@ -195,14 +244,11 @@ function AIAssistModal({ editor, documentId, open, onClose }: { editor: Editor; 
       {(rewrite.error || complete.error) && <div className="mt-3"><AIError error={rewrite.error ?? complete.error} /></div>}
       {result && (
         <div className="mt-4 space-y-2">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-serif text-sm">{result.text}</div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-serif text-sm">{passage && rewrite.data ? result.text.replace(/\[\[C(\d+)\]\]/g, (_m, n: string) => String((passage.citations[Number(n) - 1]?.attrs as { label?: string } | undefined)?.label ?? "[citation]")) : result.text}</div>
           <p className="flex items-center gap-1 text-xs text-slate-500"><Bot className="h-3.5 w-3.5" /> Generated by {result.model}. Review before keeping it.</p>
           <Button
             size="sm"
-            onClick={() => {
-              editor.chain().focus().insertContentAt(selection ? { from: editor.state.selection.from, to: editor.state.selection.to } : editor.state.selection.from, selection ? result.text : normalizeSuggestion(preceding, result.text)).run();
-              onClose();
-            }}
+            onClick={keep}
           >
             {selection ? "Replace selection" : "Insert at cursor"}
           </Button>
@@ -212,20 +258,48 @@ function AIAssistModal({ editor, documentId, open, onClose }: { editor: Editor; 
   );
 }
 
+const MAX_CHECK_CHARS = 2000;
+
+interface CheckScope {
+  basis: "document" | "library";
+  sources: { id: string; title: string; full_text: boolean }[];
+  total: number;
+  limit: number;
+  not_checked: number;
+}
+
 function CheckPanel({ documentId, span }: { documentId: string; span: Span | null }) {
   const check = useMutation({ mutationFn: (text: string) => api.post<GroundedAnswer>(`/documents/${documentId}/check`, { text }) });
-  const text = span?.text.trim().slice(0, 2000) ?? "";
+  const text = span?.text.trim() ?? "";
+  const tooLong = text.length > MAX_CHECK_CHARS;
   const { mutate } = check;
   useEffect(() => {
-    if (text.length >= 3) mutate(text);
-  }, [span, text, mutate]);
+    if (text.length >= 3 && !tooLong) mutate(text);
+  }, [span, text, tooLong, mutate]);
   if (!span) return <p className="text-sm text-slate-600">Select a sentence or paragraph in your draft and choose “Check against my sources”.</p>;
+  const scope = check.data?.scope as CheckScope | undefined;
   return (
     <div className="space-y-3">
       <blockquote className="max-h-40 overflow-auto rounded-lg bg-slate-50 p-3 font-serif text-sm text-slate-800">{text}</blockquote>
-      <p className="text-xs text-slate-500">Compared with this document’s sources (or your library if the document has none yet). Every statement below quotes the source it relies on.</p>
+      {tooLong ? (
+        <Alert kind="warning" title="Select a shorter passage">Checks work on up to {MAX_CHECK_CHARS.toLocaleString()} characters so the whole passage is compared; this selection has {text.length.toLocaleString()}.</Alert>
+      ) : (
+        <p className="text-xs text-slate-600">Compared with this document’s sources (or your library if the document has none yet). Every statement below quotes the source it relies on.</p>
+      )}
       {check.isPending && <Spinner label="Reading your sources" />}
       {check.error && <AIError error={check.error} />}
+      {scope && (
+        <details className="rounded-lg border border-slate-200 p-2.5 text-xs text-slate-700">
+          <summary className="cursor-pointer font-medium text-slate-900">
+            Checked against {scope.sources.length} {scope.basis === "library" ? "papers in your library" : "of this document's sources"}
+            {scope.not_checked > 0 ? ` (${scope.not_checked} older ${scope.not_checked === 1 ? "one was" : "ones were"} not checked)` : ""}
+          </summary>
+          <ul className="mt-2 list-disc space-y-0.5 pl-5">
+            {scope.sources.map((s) => <li key={s.id}>{s.title}{s.full_text ? "" : " (abstract only)"}</li>)}
+          </ul>
+          {scope.not_checked > 0 && <p className="mt-2">Only the {scope.limit} most recently added sources are checked at once. Add the ones you need to this document to include them.</p>}
+        </details>
+      )}
       {check.data && <GroundedAnswerView answer={check.data} />}
     </div>
   );
@@ -238,6 +312,8 @@ export default function EditorPage() {
   const docQuery = useQuery({ queryKey: ["document", id], queryFn: () => api.get<ResearchDocument>(`/documents/${id}`), refetchOnMount: "always", staleTime: 0 });
   const [title, setTitle] = useState("");
   const [style, setStyle] = useState("apa");
+  const styleRef = useRef(style);
+  styleRef.current = style;
   const [saveState, setSaveState] = useState<SaveState>("saved");
   // The side panel is open by default only where there is room for it next to the page.
   const [panel, setPanel] = useState<Panel | null>(() =>
@@ -259,7 +335,11 @@ export default function EditorPage() {
   const [aiOpen, setAiOpen] = useState(false);
   const aiStatus = useQuery({ queryKey: ["ai-status"], queryFn: () => api.get<AIStatus>("/ai/status"), staleTime: 10 * 60_000 });
   const aiEnabled = Boolean(aiStatus.data?.enabled);
-  const [autocomplete, setAutocomplete] = usePreference<boolean>("editor_suggestions", true);
+  // Suggestions send draft text to the AI provider, so they are off until the person turns them on.
+  const [autocomplete, setAutocomplete] = usePreference<boolean>("editor_suggestions", false);
+  const suggestionsAvailable = Boolean(aiStatus.data?.autocomplete);
+  const gate = useRef(new EditGate()).current;
+  const renderGeneration = useRef(0);
   const [citeRequest, setCiteRequest] = useState<CiteRequest | null>(null);
   const [checkSpan, setCheckSpan] = useState<Span | null>(null);
   const openCiteRef = useRef<(pos: number) => void>(() => undefined);
@@ -317,10 +397,12 @@ export default function EditorPage() {
 
   const refreshCitations = useCallback(async () => {
     if (!editor) return;
+    const generation = ++renderGeneration.current;
     try {
       const result = await api.get<RenderedCitations>(`/documents/${id}/rendered-citations`);
-      setRendered(result);
-      applyCitationLabels(editor, result);
+      // Only the newest render may update the preview, and only if it still matches the text and style.
+      if (generation !== renderGeneration.current) return;
+      if (applyRenderIfCurrent(editor, result, styleRef.current)) setRendered(result);
     } catch {
       /* citation preview is best-effort; saving is unaffected */
     }
@@ -399,8 +481,11 @@ export default function EditorPage() {
     editor?.setEditable(false);
     setBusy(true);
     try {
+      // Citations, quotes and rewrites already in flight finish (and are saved) first; nothing new starts.
+      await gate.pause();
       return await task();
     } finally {
+      gate.resume();
       editor?.setEditable(true);
       setBusy(false);
     }
@@ -446,13 +531,14 @@ export default function EditorPage() {
   openCiteRef.current = (pos: number) => {
     if (!busy) setCiteRequest({ pos });
   };
-  const suggestionStatus = useAutocomplete(editor, id, aiEnabled && autocomplete && !busy && !citeRequest);
+  const suggestionStatus = useAutocomplete(editor, id, aiEnabled && suggestionsAvailable && autocomplete && !busy && !citeRequest);
 
   if (docQuery.isLoading || !editor) return <Spinner label="Opening document" />;
   if (docQuery.error) return <div className="p-8"><Alert kind="error">{errorMessage(docQuery.error)}</Alert></div>;
 
   const status = { saved: ["Saved", "green"], dirty: ["Unsaved changes", "slate"], saving: ["Saving…", "blue"], conflict: ["Conflict", "red"], error: ["Save failed — retrying on next edit", "red"] } as const;
   return (
+    <EditGateContext.Provider value={gate}>
     <div className="min-h-screen bg-slate-100">
       <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4">
         <RouterLink to="/documents" className="rounded p-1.5 text-slate-600 hover:bg-slate-100" aria-label="Back to documents"><ArrowLeft className="h-4 w-4" /></RouterLink>
@@ -511,6 +597,8 @@ export default function EditorPage() {
             aiEnabled={aiEnabled}
             autocomplete={autocomplete}
             onToggleAutocomplete={() => setAutocomplete(!autocomplete)}
+            suggestionsAvailable={suggestionsAvailable}
+            frozen={busy}
             autocompleteStatus={suggestionStatus}
           />
           <p className="sr-only" aria-live="polite">{suggestionStatus === "ready" ? "Suggestion shown after the cursor. Press Tab to accept or Escape to dismiss." : ""}</p>
@@ -525,7 +613,7 @@ export default function EditorPage() {
                     <li key={index} className="pl-6 -indent-6" dangerouslySetInnerHTML={{ __html: sanitizeHtml(entry) }} />
                   ))}
                 </ol>
-                <p className="mt-3 text-xs text-slate-400">Generated automatically in {styles.data?.find((s) => s.id === style)?.title ?? style}. Only cited works are listed.</p>
+                <p className="mt-3 text-xs text-slate-500">Generated automatically in {styles.data?.find((s) => s.id === style)?.title ?? style}. Only cited works are listed.</p>
               </section>
             )}
           </div>
@@ -563,7 +651,7 @@ export default function EditorPage() {
         editor={editor}
         aiEnabled={aiEnabled}
         disabled={busy || Boolean(citeRequest) || aiOpen}
-        onFindSource={(span) => setCiteRequest({ pos: span.to, query: queryFromSelection(span.text) })}
+        onFindSource={(span) => setCiteRequest({ pos: span.to, query: queryFromSelection(span.text), origin: "selection" })}
         onCheck={(span) => {
           setCheckSpan({ ...span });
           setPanel("check");
@@ -574,5 +662,6 @@ export default function EditorPage() {
       )}
       {aiOpen && <AIAssistModal editor={editor} documentId={id} open={aiOpen} onClose={() => setAiOpen(false)} />}
     </div>
+    </EditGateContext.Provider>
   );
 }

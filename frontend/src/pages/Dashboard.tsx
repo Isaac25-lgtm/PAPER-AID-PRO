@@ -60,7 +60,7 @@ function Checklist() {
           <h2 className="font-semibold text-slate-900">Getting started</h2>
           <p className="text-sm text-slate-600">{completed === items.length ? "All done. You know your way around." : `${completed} of ${items.length} steps complete. Each step ticks itself off when you do it.`}</p>
         </div>
-        <button className="rounded p-1 text-slate-400 hover:bg-slate-100" aria-label="Hide checklist" onClick={() => setHidden(true)}>
+        <button className="rounded p-1 text-slate-500 hover:bg-slate-100" aria-label="Hide checklist" onClick={() => setHidden(true)}>
           <X className="h-4 w-4" />
         </button>
       </div>

@@ -6,6 +6,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 
 import { AIError } from "@/components/GroundedAnswerView";
 import { api } from "@/lib/api";
+import { useEditGate } from "@/lib/editGate";
+import { applyRewrite, buildRewriteInput, REWRITE_PROBLEMS, type RewriteInput } from "@/lib/rewrite";
 
 export interface Span {
   from: number;
@@ -25,32 +27,6 @@ export function selectedSpan(editor: Editor): Span | null {
   const text = textOf(editor, selection.from, selection.to);
   if (text.trim().length < 3) return null;
   return { from: selection.from, to: selection.to, text };
-}
-
-type JSONNode = Record<string, unknown>;
-
-/**
- * Replacement content for a rewritten passage. Citation chips inside the original passage are kept as real
- * citations (never flattened to text): their labels are removed from the model's text and the chips are placed at
- * the end of the passage, before its final full stop. Leading/trailing spaces of the original are preserved.
- */
-export function withCitations(original: string, rewritten: string, cites: Array<{ label: string; json: JSONNode }>): JSONNode[] {
-  let body = rewritten;
-  for (const c of cites) if (c.label && c.label !== "[…]") body = body.split(c.label).join(" ");
-  body = body.replace(/\(\s*\)/g, " ").replace(/[ \t]{2,}/g, " ").replace(/\s+([.,;:!?])/g, "$1").trim();
-  const lead = /^\s/.test(original) ? " " : "";
-  const trail = /\s$/.test(original) ? " " : "";
-  const text = (value: string): JSONNode[] => (value ? [{ type: "text", text: value }] : []);
-  if (!cites.length) return text(lead + body + trail);
-  const match = /^([\s\S]*?)([.!?]?)$/.exec(body);
-  const main = match?.[1] ?? body;
-  const end = match?.[2] ?? "";
-  const out: JSONNode[] = text(lead + (main ? `${main} ` : ""));
-  cites.forEach((c, i) => {
-    out.push(c.json);
-    if (i < cites.length - 1) out.push({ type: "text", text: " " });
-  });
-  return [...out, ...text(end + trail)];
 }
 
 type RewriteMode = "academic" | "concise";
@@ -75,12 +51,13 @@ export function SelectionMenu({
   onCheck: (span: Span) => void;
 }) {
   const [span, setSpan] = useState<Span | null>(null);
-  const [proposal, setProposal] = useState<{ span: Span; mode: RewriteMode } | null>(null);
-  const [stale, setStale] = useState(false);
+  const [proposal, setProposal] = useState<{ span: Span; mode: RewriteMode; input: RewriteInput } | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const gate = useEditGate();
   const menuRef = useRef<HTMLDivElement>(null);
 
   const rewrite = useMutation({
-    mutationFn: ({ span: s, mode }: { span: Span; mode: RewriteMode }) => api.post<{ text: string; model: string }>("/ai/rewrite", { text: s.text, mode }),
+    mutationFn: ({ input, mode }: { input: RewriteInput; mode: RewriteMode }) => api.post<{ text: string; model: string }>("/ai/rewrite", { text: input.text, mode }),
   });
 
   const refresh = useCallback(() => {
@@ -135,37 +112,44 @@ export function SelectionMenu({
 
   const start = (mode: RewriteMode) => {
     if (!span) return;
-    if (span.text.length > MAX_REWRITE) {
-      window.alert("Select a shorter passage (up to about 1,200 words) to rewrite it.");
+    setProblem(null);
+    const input = buildRewriteInput(editor, span.from, span.to);
+    if (typeof input === "string") {
+      setProblem(REWRITE_PROBLEMS[input]);
       return;
     }
-    setStale(false);
-    setProposal({ span, mode });
-    rewrite.mutate({ span, mode });
+    if (input.text.length > MAX_REWRITE) {
+      setProblem("Select a shorter passage (up to about 1,200 words) to rewrite it.");
+      return;
+    }
+    setProposal({ span, mode, input });
+    rewrite.mutate({ input, mode });
   };
 
   const discard = () => {
     setProposal(null);
+    setProblem(null);
     rewrite.reset();
     editor.commands.focus();
   };
 
   const replace = () => {
     if (!proposal || !rewrite.data) return;
-    const { from, to, text } = proposal.span;
-    if (to > editor.state.doc.content.size || textOf(editor, from, to) !== text) {
-      setStale(true);
+    if (!gate.isOpen) {
+      setProblem("Editing is paused while the document is exported or restored. Try again in a moment.");
       return;
     }
-    const cites: Array<{ label: string; json: JSONNode }> = [];
-    editor.state.doc.nodesBetween(from, to, (node) => {
-      if (node.type.name === "citation") cites.push({ label: String(node.attrs.label ?? ""), json: node.toJSON() as JSONNode });
-    });
-    const content = withCitations(text, rewrite.data.text, cites);
-    if (content.length) editor.chain().focus().insertContentAt({ from, to }, content).run();
+    const error = applyRewrite(editor, proposal.input, rewrite.data.text);
+    if (error) {
+      setProblem(error);
+      return;
+    }
     setProposal(null);
     rewrite.reset();
   };
+  // Show citation placeholders as their labels while the writer reviews the proposal.
+  const readable = (text: string) =>
+    text.replace(/\[\[C(\d+)\]\]/g, (_m, n: string) => String((proposal?.input.citations[Number(n) - 1]?.attrs as { label?: string } | undefined)?.label ?? "[citation]"));
 
   const button = "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-white/90 hover:bg-white/10 focus:bg-white/10 focus:outline-none";
   return (
@@ -184,20 +168,24 @@ export function SelectionMenu({
           )}
         </div>
       )}
+      {!proposal && problem && (
+        <p role="alert" className="mt-1 rounded-md bg-white px-2 py-1 text-xs text-red-700 shadow">{problem}</p>
+      )}
       {proposal && (
         <div role="dialog" aria-label={proposal.mode === "concise" ? "Shorter version" : "Rewritten version"} className="w-[min(36rem,calc(100vw-24px))] rounded-xl border border-slate-200 bg-white p-3 shadow-2xl">
           {rewrite.isPending && <p className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /> {proposal.mode === "concise" ? "Shortening" : "Rewriting"}…</p>}
           {rewrite.error && <AIError error={rewrite.error} />}
+          {problem && <p role="alert" className="mb-2 text-xs text-red-700">{problem}</p>}
           {rewrite.data && (
             <>
-              <p className="max-h-60 overflow-y-auto whitespace-pre-wrap font-serif text-[15px] leading-relaxed text-slate-900">{rewrite.data.text}</p>
-              <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Bot className="h-3.5 w-3.5" aria-hidden /> {rewrite.data.model} · instructed not to add facts or citations. Any citations in the passage are kept. Review before keeping it.</p>
-              {stale && <p role="alert" className="mt-2 text-xs text-red-700">The original passage has changed, so it was not replaced. Select it again to rewrite it.</p>}
+              <p className="max-h-60 overflow-y-auto whitespace-pre-wrap font-serif text-[15px] leading-relaxed text-slate-900">{readable(rewrite.data.text)}</p>
+              <p className="mt-2 flex items-center gap-1 text-xs text-slate-600"><Bot className="h-3.5 w-3.5" aria-hidden /> {rewrite.data.model} · instructed not to add facts or citations; each citation stays with its claim. Review before keeping it.</p>
+              {proposal.input.hasFormatting && <p className="mt-1 text-xs text-slate-600">Bold, italics and links in this passage are not kept.</p>}
             </>
           )}
           <div className="mt-3 flex justify-end gap-2">
             <button type="button" onClick={discard} className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"><X className="h-3.5 w-3.5" aria-hidden /> {rewrite.data ? "Discard" : "Cancel"}</button>
-            {rewrite.data && !stale && (
+            {rewrite.data && !problem && (
               <button type="button" onClick={replace} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"><Check className="h-3.5 w-3.5" aria-hidden /> Replace</button>
             )}
           </div>

@@ -62,8 +62,11 @@ npm ci
 npm run dev                                    # http://localhost:5173 (proxies /api to the backend)
 ```
 
-Signing in locally uses the real Firebase project (`paperaid`); local accounts and production accounts are the same
-Firebase users, but each environment has its own database.
+Signing in locally uses the Firebase project in `frontend/.env.development`. Identity administration is
+production-only: outside `ENV=production` the API never deletes Firebase sign-ins (closing an account locally deletes
+the local data and skips the identity step). To exercise identity deletion locally, run the Firebase Auth emulator
+(`firebase emulators:start --only auth`) and set `FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099` for the API; or use a
+dedicated development Firebase project. Never point a development setup at production credentials.
 
 ## Tests
 

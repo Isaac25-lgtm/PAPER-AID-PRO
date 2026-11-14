@@ -93,7 +93,7 @@ export function HomePage() {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search the literature in any field"
                 aria-label="Search the literature"
-                className="min-w-0 flex-1 bg-transparent py-3.5 text-[15px] text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                className="min-w-0 flex-1 bg-transparent py-3.5 text-[15px] text-slate-900 placeholder:text-slate-500 focus:outline-none"
               />
               <button type="submit" className="rounded-md px-2 py-1 text-sm font-medium text-slate-700 hover:bg-slate-100">Search</button>
             </form>

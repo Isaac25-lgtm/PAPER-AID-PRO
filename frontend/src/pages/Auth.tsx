@@ -92,7 +92,7 @@ export function LoginPage() {
       </form>
       {GOOGLE_ENABLED && (
         <>
-          <div className="my-4 text-center text-xs uppercase tracking-wide text-slate-400">or</div>
+          <div className="my-4 text-center text-xs uppercase tracking-wide text-slate-500">or</div>
           <GoogleButton />
         </>
       )}
@@ -146,7 +146,7 @@ export function RegisterPage() {
       </form>
       {GOOGLE_ENABLED && (
         <>
-          <div className="my-4 text-center text-xs uppercase tracking-wide text-slate-400">or</div>
+          <div className="my-4 text-center text-xs uppercase tracking-wide text-slate-500">or</div>
           <GoogleButton />
         </>
       )}

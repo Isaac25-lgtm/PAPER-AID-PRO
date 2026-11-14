@@ -499,6 +499,8 @@ class ClosedAccount(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     last_error: Mapped[str | None] = mapped_column(Text)
     not_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Stored files the closure still has to delete (it completes only when this is empty).
+    pending_keys: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}", nullable=False)
 
 
 class ConsentRecord(Base):

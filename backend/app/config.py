@@ -71,6 +71,13 @@ class Settings(BaseSettings):
 
     # --- AI (configured later; every AI endpoint returns 503 AI_NOT_CONFIGURED until then) -----------
     ai_provider: AIProvider = "none"
+    # Who may use AI features once a provider key is set. "pilot" (default): only AI_PILOT_EMAILS (and admins);
+    # "everyone": every verified, consenting tester. Nobody gets AI by accident when a key is added.
+    ai_access: Literal["pilot", "everyone"] = "pilot"
+    ai_pilot_emails: str = ""
+    # Inline writing suggestions send draft context automatically, so they have their own switch (off by default)
+    # and each person must also turn them on in the editor.
+    ai_autocomplete_enabled: bool = False
     ai_model: str = ""  # empty = provider default
     ai_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
     anthropic_api_key: str = ""
@@ -126,6 +133,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def ai_pilot_email_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.ai_pilot_emails.split(",") if e.strip()}
 
     @property
     def max_upload_bytes(self) -> int:

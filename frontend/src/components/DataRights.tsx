@@ -39,11 +39,17 @@ export function DeleteMyAccount({ email }: { email: string }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
+  const [pending, setPending] = useState<string | null>(null);
+  const leave = async () => {
+    await signOut();
+    navigate("/", { replace: true });
+  };
   const remove = useMutation({
-    mutationFn: () => api.delete("/me", { confirm_email: typed }),
-    onSuccess: async () => {
-      await signOut();
-      navigate("/", { replace: true });
+    mutationFn: () => api.delete<{ status?: string; message?: string } | undefined>("/me", { confirm_email: typed }),
+    onSuccess: async (result) => {
+      // 202: the account is closed and locked, but part of the deletion is still finishing. Say so before leaving.
+      if (result?.status === "pending") setPending(result.message ?? "Your account is closed. Removing the rest of your data will finish automatically.");
+      else await leave();
     },
   });
   return (
@@ -52,6 +58,12 @@ export function DeleteMyAccount({ email }: { email: string }) {
       <p className="mt-0.5 text-red-900/80">Permanently deletes your sign-in, documents, library, research conversations and uploaded PDFs. This cannot be undone. Download your data first if you want a copy.</p>
       <Button className="mt-3" size="sm" variant="danger" onClick={() => setOpen(true)}>Delete my account…</Button>
       <Modal open={open} onClose={() => setOpen(false)} title="Delete your account permanently?">
+        {pending ? (
+          <div className="space-y-3 text-sm">
+            <Alert kind="info" title="Account closed">{pending}</Alert>
+            <div className="flex justify-end"><Button onClick={() => void leave()}>Sign out</Button></div>
+          </div>
+        ) : (
         <div className="space-y-3 text-sm">
           <p>Type your email address <strong>{email}</strong> to confirm. Everything is deleted and cannot be recovered.</p>
           <Input value={typed} onChange={(e) => setTyped(e.target.value)} aria-label="Confirm email address" autoComplete="off" />
@@ -61,6 +73,7 @@ export function DeleteMyAccount({ email }: { email: string }) {
             <Button variant="danger" loading={remove.isPending} disabled={typed.trim().toLowerCase() !== email.toLowerCase()} onClick={() => remove.mutate()}>Delete everything</Button>
           </div>
         </div>
+        )}
       </Modal>
     </div>
   );

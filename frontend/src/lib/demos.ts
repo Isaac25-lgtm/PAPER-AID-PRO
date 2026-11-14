@@ -218,3 +218,70 @@ export const DEMOS: Record<SectionKey, DemoScene> = {
     ],
   },
 };
+
+/**
+ * Narration under each walkthrough: one short, plain line per frame (same order as `frames`) saying what is
+ * happening and why it matters. Keep it brief and true to what the product does.
+ */
+export const NARRATION: Record<SectionKey, string[]> = {
+  dashboard: [
+    "Discover finds papers. Saving one starts your library.",
+    "Documents is where you write, starting from a ready outline.",
+    "Your recent work is always one click away.",
+    "Help explains every part of PaperAid Pro.",
+  ],
+  discover: [
+    "Your field decides which scholarly indexes are searched.",
+    "Describe what you need in your own words.",
+    "One search covers several indexes, with duplicates merged.",
+    "Saving keeps the official record, so citations are accurate.",
+    "The paper's page has its citation and full text.",
+  ],
+  catalog: [
+    "Every paper already in PaperAid Pro, plus your private uploads.",
+    "Sort to see recent or influential work first.",
+    "Open a paper for its details, citation and full text.",
+  ],
+  paper: [
+    "Saving puts the paper in your library, ready to cite.",
+    "The full text lets PaperAid Pro find exact passages.",
+    "Search inside the paper to find a passage and its page.",
+    "Answers quote passages like this, so you can check them.",
+  ],
+  library: [
+    "Add a paper by its DOI, PubMed ID or arXiv ID.",
+    "The details come from the official registry, not retyping.",
+    "Bring your Zotero, Mendeley or EndNote library across.",
+    "Collections keep sources for each chapter together.",
+    "A paper can sit in several collections.",
+    "Export your library any time: you are never locked in.",
+  ],
+  documents: [
+    "Start a document from your topic.",
+    "Your topic shapes the suggested outline.",
+    "Type, approach and style set sections and references.",
+    "Edit the outline before you create the document.",
+    "It saves automatically, with a version history.",
+  ],
+  editor: [
+    "Type /cite to find a source without leaving your draft.",
+    "The citation and reference list format themselves.",
+    "Select text to find a source for a claim.",
+    "Read the PDF beside your draft and cite its page.",
+    "Export to Word or PDF in your chosen style.",
+  ],
+  research: [
+    "Choose which papers the assistant may use.",
+    "Full-text papers give the most detailed answers.",
+    "Ask in your own words.",
+    "Every statement must quote one of your papers.",
+    "Click a marker to see the supporting words.",
+    "Follow-up questions keep the conversation going.",
+  ],
+  citations: [
+    "Paste an identifier: details come from the registries.",
+    "Get the reference in your style, ready to copy.",
+    "Check a reference list against Crossref.",
+    "Matched means title, first author and year agree.",
+  ],
+};

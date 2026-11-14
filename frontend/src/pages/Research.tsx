@@ -84,9 +84,9 @@ export default function ResearchPage() {
               <li key={c.id} className="group flex items-center">
                 <button onClick={() => { setSelected(null); setParams({ c: c.id }); }} className={`flex-1 rounded-lg px-2 py-1.5 text-left text-sm ${conversationId === c.id ? "bg-slate-100 text-slate-950" : "text-slate-700 hover:bg-slate-100"}`}>
                   <span className="line-clamp-2">{c.title}</span>
-                  <span className="text-xs text-slate-400">{relativeTime(c.updated_at)}</span>
+                  <span className="text-xs text-slate-500">{relativeTime(c.updated_at)}</span>
                 </button>
-                <button className="p-1 text-slate-400 opacity-100 hover:text-red-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" aria-label="Delete conversation" onClick={() => remove.mutate(c.id)}><Trash2 className="h-3.5 w-3.5" /></button>
+                <button className="p-1 text-slate-500 opacity-100 hover:text-red-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" aria-label="Delete conversation" onClick={() => remove.mutate(c.id)}><Trash2 className="h-3.5 w-3.5" /></button>
               </li>
             ))}
           </ul>

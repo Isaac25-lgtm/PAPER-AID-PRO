@@ -59,4 +59,5 @@ npm ci && npx tsc -b --noEmit && npx vitest run && npx vite build
 - **Every discipline.** Keep defaults discipline-neutral (sources, templates, examples, styles); health-only
   sources are queried only for health/life-science subjects.
 - Audit history: `docs/PAPERAID_V2_AUDIT.md` → `docs/AUDIT_RESPONSE.md`; `docs/PAPERAID_V2_REAUDIT.md` →
-  `docs/REAUDIT_RESPONSE.md`; `docs/PAPERAID_V2_RELEASE_AUDIT.md` → `docs/RELEASE_AUDIT_RESPONSE.md`.
+  `docs/REAUDIT_RESPONSE.md`; `docs/PAPERAID_V2_RELEASE_AUDIT.md` → `docs/RELEASE_AUDIT_RESPONSE.md`; `docs/PAPERAID_V2_SYSTEM_REAUDIT.md` →
+  `docs/SYSTEM_REAUDIT_RESPONSE.md`.

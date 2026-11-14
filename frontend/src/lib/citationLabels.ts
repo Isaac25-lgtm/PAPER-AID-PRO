@@ -40,3 +40,13 @@ export function applyCitationLabels(editor: Editor, rendered: RenderedCitations)
   if (changed) editor.view.dispatch(tr.setMeta(LABEL_META, true).setMeta("addToHistory", false));
   return true;
 }
+
+/**
+ * Apply a citation render to the editor only if it is still current: rendered in the style the document now uses,
+ * and for exactly the citations now in the text. Returns whether it was applied (callers then show its reference
+ * list); a stale render changes nothing and the next save renders again.
+ */
+export function applyRenderIfCurrent(editor: Editor, rendered: RenderedCitations, currentStyle: string): boolean {
+  if (rendered.style !== currentStyle) return false;
+  return applyCitationLabels(editor, rendered);
+}

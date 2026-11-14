@@ -118,7 +118,7 @@ export function Badge({ children, tone = "slate" }: { children: ReactNode; tone?
 export function EmptyState({ icon, title, children, action }: { icon?: ReactNode; title: string; children?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-      {icon && <div className="mb-3 text-slate-400">{icon}</div>}
+      {icon && <div className="mb-3 text-slate-500">{icon}</div>}
       <p className="font-medium text-slate-900">{title}</p>
       {children && <div className="mt-1 max-w-md text-sm text-slate-600">{children}</div>}
       {action && <div className="mt-4">{action}</div>}

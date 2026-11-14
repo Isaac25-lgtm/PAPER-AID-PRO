@@ -27,6 +27,7 @@ from app.db.models import AuditEvent, ClosedAccount, User, UserRole
 from app.db.session import get_db
 from app.errors import (
     AccountConflict,
+    AINotEnabledForAccount,
     ConsentRequired,
     EmailNotVerified,
     Forbidden,
@@ -247,6 +248,22 @@ async def get_verified_user(user: Annotated[User, Depends(get_current_user)]) ->
     return user
 
 
+def ai_allowed_for(user: User | None) -> bool:
+    """Server-side AI cohort: everyone, or only the pilot list (and administrators)."""
+    if user is None:
+        return False
+    settings = get_settings()
+    if settings.ai_access == "everyone" or user.role == UserRole.ADMIN:
+        return True
+    return user.email.lower() in settings.ai_pilot_email_set
+
+
+async def get_ai_user(user: Annotated[User, Depends(get_verified_user)]) -> User:
+    if not ai_allowed_for(user):
+        raise AINotEnabledForAccount()
+    return user
+
+
 def require_role(role: UserRole) -> Callable[..., Any]:
     async def dependency(user: Annotated[User, Depends(get_verified_user)]) -> User:
         if user.role != role:
@@ -261,3 +278,4 @@ VerifiedUser = Annotated[User, Depends(get_verified_user)]
 OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 AccountUser = Annotated[User, Depends(get_account_user)]
 AdminUser = Annotated[User, Depends(require_role(UserRole.ADMIN))]
+AIUser = Annotated[User, Depends(get_ai_user)]

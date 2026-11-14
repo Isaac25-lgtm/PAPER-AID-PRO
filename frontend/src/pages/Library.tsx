@@ -244,10 +244,10 @@ export default function LibraryPage() {
             {collections.data?.map((c) => (
               <div key={c.id} className="group flex items-center">
                 <button onClick={() => setParams({ collection: c.id })} className={`flex-1 truncate rounded-lg px-3 py-2 text-left text-sm ${collectionId === c.id ? "bg-slate-100 font-medium text-slate-950" : "text-slate-700 hover:bg-slate-100"}`}>
-                  {c.name} <span className="text-slate-400">({c.paper_count})</span>
+                  {c.name} <span className="text-slate-500">({c.paper_count})</span>
                 </button>
-                <button className="p-1 text-slate-400 opacity-100 hover:text-slate-700 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" aria-label={`Rename ${c.name}`} onClick={() => setCollectionModal(c)}><Pencil className="h-3.5 w-3.5" /></button>
-                <button className="p-1 text-slate-400 opacity-100 hover:text-red-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" aria-label={`Delete ${c.name}`} onClick={() => window.confirm(`Delete collection “${c.name}”? Papers stay in your library.`) && deleteCollection.mutate(c.id)}><Trash2 className="h-3.5 w-3.5" /></button>
+                <button className="p-1 text-slate-500 opacity-100 hover:text-slate-700 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" aria-label={`Rename ${c.name}`} onClick={() => setCollectionModal(c)}><Pencil className="h-3.5 w-3.5" /></button>
+                <button className="p-1 text-slate-500 opacity-100 hover:text-red-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" aria-label={`Delete ${c.name}`} onClick={() => window.confirm(`Delete collection “${c.name}”? Papers stay in your library.`) && deleteCollection.mutate(c.id)}><Trash2 className="h-3.5 w-3.5" /></button>
               </div>
             ))}
             <button onClick={() => setCollectionModal("new")} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-brand-700 hover:bg-brand-50">

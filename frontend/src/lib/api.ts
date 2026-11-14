@@ -98,7 +98,7 @@ export const api = {
   delete: <T>(path: string, body?: unknown) => request<T>("DELETE", path, { body }),
   page: <T>(path: string, query?: Query) => request<Page<T>>("GET", path, { query, paged: true }),
   upload: <T>(path: string, form: FormData) => request<T>("POST", path, { form }),
-  blob: (path: string, query?: Query) => request<Blob>("GET", path, { query, raw: true }),
+  blob: (path: string, query?: Query, signal?: AbortSignal) => request<Blob>("GET", path, { query, raw: true, signal }),
 };
 
 export function errorMessage(error: unknown): string {

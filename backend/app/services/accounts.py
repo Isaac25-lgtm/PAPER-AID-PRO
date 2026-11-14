@@ -12,6 +12,7 @@ Closure order (each step idempotent, so a re-run after a partial failure complet
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import tempfile
@@ -39,6 +40,7 @@ from app.db.models import (
     Paper,
     PaperAuthor,
     PaperVisibility,
+    StorageDeletion,
     User,
 )
 from app.policy import POLICY_VERSION
@@ -124,6 +126,10 @@ async def _finish_closure(
 ) -> ClosureResult:
     # 2. Sign-in identity.
     identity_deleted = await identity.delete_firebase_account(uid) if delete_identity else False
+    request = await db.get(ClosedAccount, uid)
+    if request is not None and request.pending_keys and await db.get(User, user_id) is None:
+        # A resumed closure whose data is already deleted: only stored files remain.
+        return await _finish_files(db, uid, list(request.pending_keys), papers=0, identity_deleted=identity_deleted)
     # 3. Data, with durable storage-deletion records in the same transaction.
     private = list((await db.execute(select(Paper).where(Paper.owner_id == user_id))).scalars())
     public: list[Paper] = []
@@ -143,16 +149,36 @@ async def _finish_closure(
     if public:
         await db.execute(delete(Paper).where(Paper.id.in_([p.id for p in public])))
     await db.execute(delete(User).where(User.id == user_id))  # cascades; consent records keep user_id NULL
+    # The closure stays open (with the files it still has to remove) until the stored objects are really gone.
     await db.execute(
-        update(ClosedAccount)
-        .where(ClosedAccount.firebase_uid == uid)
-        .values(completed_at=_now(), last_error=None, not_before=None)
+        update(ClosedAccount).where(ClosedAccount.firebase_uid == uid).values(pending_keys=paths, last_error=None)
     )
     await db.commit()
-    # 4. Objects (anything that fails here stays queued for maintenance).
-    removed = await process_deletions(db, limit=len(paths) or 1, keys=paths) if paths else 0
+    return await _finish_files(db, uid, paths, papers=len(private) + len(public), identity_deleted=identity_deleted)
+
+
+async def _finish_files(
+    db: AsyncSession, uid: str, keys: list[str], *, papers: int, identity_deleted: bool
+) -> ClosureResult:
+    """4. Delete the account's stored files; complete the closure only when none remain queued."""
+    removed = await process_deletions(db, limit=len(keys) or 1, keys=keys) if keys else 0
+    remaining = (
+        list((await db.execute(select(StorageDeletion.key).where(StorageDeletion.key.in_(keys)))).scalars())
+        if keys
+        else []
+    )
+    request = await db.get(ClosedAccount, uid)
+    if request is not None:
+        request.pending_keys = remaining
+        if remaining:
+            request.attempts += 1
+            request.last_error = f"{len(remaining)} stored file(s) still to delete"
+            request.not_before = _now() + min(timedelta(minutes=2**request.attempts), MAX_RESUME_BACKOFF)
+        else:
+            request.completed_at, request.last_error, request.not_before = _now(), None, None
+    await db.commit()
     return ClosureResult(
-        papers_deleted=len(private) + len(public), files_deleted=removed, identity_deleted=identity_deleted
+        papers_deleted=papers, files_deleted=removed, identity_deleted=identity_deleted, pending=bool(remaining)
     )
 
 
@@ -186,8 +212,8 @@ async def resume_closures(db: AsyncSession, limit: int = 20) -> int:
     completed = 0
     for uid, user_id, purge_public, delete_identity in claimed:
         try:
-            await _finish_closure(db, uid, user_id, purge_public=purge_public, delete_identity=delete_identity)
-            completed += 1
+            result = await _finish_closure(db, uid, user_id, purge_public=purge_public, delete_identity=delete_identity)
+            completed += 0 if result.pending else 1
         except Exception as exc:
             await db.rollback()
             await _record_closure_failure(db, uid, exc)
@@ -195,7 +221,16 @@ async def resume_closures(db: AsyncSession, limit: int = 20) -> int:
     return completed
 
 
+# At most two archives are built at once per instance, so exports cannot crowd out ordinary requests.
+EXPORT_SLOTS = asyncio.Semaphore(2)
+
+
 async def export_account(db: AsyncSession, user: User) -> tempfile.SpooledTemporaryFile[bytes]:
+    async with EXPORT_SLOTS:
+        return await _build_export(db, user)
+
+
+async def _build_export(db: AsyncSession, user: User) -> tempfile.SpooledTemporaryFile[bytes]:
     """A ZIP of everything the person created, all with stable IDs: profile, consents, library (BibTeX, CSL-JSON,
     notes and tags), collections and their papers, documents (structured JSON, Word, revision history and the
     citation records their content refers to), research conversations and every PDF they uploaded (whether or not
@@ -306,21 +341,20 @@ async def export_account(db: AsyncSession, user: User) -> tempfile.SpooledTempor
             ],
         )
         # Every PDF this person uploaded, in the library or not.
-        owned = list(
-            (
-                await db.execute(
-                    select(Paper)
-                    .where(Paper.owner_id == user.id, Paper.storage_path.is_not(None))
-                    .order_by(Paper.created_at)
-                )
-            ).scalars()
-        )
-        for paper in owned:
-            name = f"uploads/{paper.id}.pdf"
+        owned = (
+            await db.execute(
+                select(Paper.id, Paper.title, Paper.storage_path)
+                .where(Paper.owner_id == user.id, Paper.storage_path.is_not(None))
+                .order_by(Paper.created_at)
+            )
+        ).all()
+        await db.commit()  # release the database connection while files are read from storage
+        for paper_id, title, storage_path in owned:
+            name = f"uploads/{paper_id}.pdf"
             try:
-                write(name, await storage.get(paper.storage_path or ""))
+                write(name, await storage.get(storage_path or ""))
             except Exception:  # a missing object must not block the rest of the export
-                missing.append({"file": name, "title": paper.title, "reason": "could not be read from storage"})
+                missing.append({"file": name, "title": title, "reason": "could not be read from storage"})
         documents = list(
             (
                 await db.execute(select(Document).where(Document.user_id == user.id).order_by(Document.created_at))
@@ -383,8 +417,18 @@ async def export_account(db: AsyncSession, user: User) -> tempfile.SpooledTempor
                     for r in revisions
                 ],
             )
-            rendered = await render_citations(db, doc, user, output="text")
-            write(f"documents/{doc.id}.docx", to_docx(doc.title, doc.content, rendered))
+            try:
+                rendered = await render_citations(db, doc, user, output="text")
+                write(f"documents/{doc.id}.docx", await asyncio.to_thread(to_docx, doc.title, doc.content, rendered))
+            except Exception:  # one document that cannot be rendered must not lose the whole archive
+                log.warning("account.export_render_failed", extra={"document_id": str(doc.id)}, exc_info=True)
+                missing.append(
+                    {
+                        "file": f"documents/{doc.id}.docx",
+                        "title": doc.title,
+                        "reason": "the Word version could not be produced; the JSON copy is included",
+                    }
+                )
         conversations = list(
             (
                 await db.execute(

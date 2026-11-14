@@ -3,7 +3,7 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DemoStage, finalState } from "@/components/SectionDemo";
-import { DEMOS } from "@/lib/demos";
+import { DEMOS, NARRATION } from "@/lib/demos";
 import { GUIDES, type SectionKey } from "@/lib/guides";
 
 function setReducedMotion(reduce: boolean) {
@@ -42,5 +42,16 @@ describe("section walkthroughs", () => {
     render(<DemoStage scene={DEMOS.discover} playing />);
     expect(screen.getByTestId("section-demo")).toHaveTextContent("Saved ✓");
     expect(finalState(DEMOS.discover).hidden.size).toBe(0);
+  });
+
+  it("narrates every action with what it does and why it matters", async () => {
+    for (const [key, scene] of Object.entries(DEMOS)) {
+      expect(NARRATION[key as SectionKey], key).toHaveLength(scene.frames.length);
+    }
+    setReducedMotion(false);
+    vi.useFakeTimers();
+    render(<DemoStage scene={DEMOS.discover} playing narration={NARRATION.discover} />);
+    await act(async () => vi.advanceTimersByTimeAsync(400));
+    expect(screen.getByTestId("demo-narration")).toHaveTextContent(NARRATION.discover[0]!);
   });
 });

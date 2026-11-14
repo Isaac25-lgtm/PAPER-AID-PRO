@@ -11,7 +11,7 @@ from app.api.deps import DB, AppSettings
 from app.db.models import Paper, PaperVisibility
 from app.errors import ValidationFailed
 from app.schemas import GroundedAnswerOut, ProviderStatusOut, SearchResponse, SnapshotRequest, WorkOut
-from app.security.auth import OptionalUser, VerifiedUser
+from app.security.auth import AIUser, OptionalUser
 from app.security.rate_limit import enforce_caller_limit, enforce_rate_limit
 from app.services.ai.features import discovery_snapshot
 from app.services.papers import upsert_public_paper
@@ -114,7 +114,7 @@ async def search(
 
 
 @router.post("/snapshot", response_model=GroundedAnswerOut)
-async def snapshot(body: SnapshotRequest, db: DB, user: VerifiedUser, settings: AppSettings) -> GroundedAnswerOut:
+async def snapshot(body: SnapshotRequest, db: DB, user: AIUser, settings: AppSettings) -> GroundedAnswerOut:
     """AI overview of the top search results, grounded only in their abstracts (records are resolved server-side)."""
     await enforce_rate_limit(
         db, key=f"ai:{user.id}", limit=settings.rate_limit_ai_per_min, window_seconds=60, action="AI requests"

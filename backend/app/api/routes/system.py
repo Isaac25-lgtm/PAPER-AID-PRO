@@ -33,7 +33,8 @@ from app.schemas import (
     UserOut,
     UserUpdate,
 )
-from app.security.auth import AccountUser, CurrentUser, VerifiedUser
+from app.security.auth import AccountUser, CurrentUser, OptionalUser, VerifiedUser, ai_allowed_for
+from app.security.rate_limit import enforce_rate_limit
 from app.services.accounts import close_account, export_account, record_consents
 from app.services.ai.providers import ANTHROPIC_DEFAULT_MODEL
 from app.services.papers import visible_papers_clause
@@ -202,6 +203,7 @@ async def update_optional_consents(body: dict[str, bool], user: CurrentUser, db:
 @router.get("/me/export", tags=["account"])
 async def export_my_data(user: AccountUser, db: DB) -> StreamingResponse:
     """Download everything you created (documents, library, research conversations, uploads, consents) as ZIP."""
+    await enforce_rate_limit(db, key=f"export:{user.id}", limit=5, window_seconds=3600, action="data exports")
     archive = await export_account(db, user)
     archive.seek(0, 2)
     size = archive.tell()
@@ -237,19 +239,22 @@ async def delete_me(body: DeleteAccountIn, user: AccountUser, db: DB) -> Respons
             status_code=202,
             content={
                 "status": "pending",
-                "message": "Your account is closed and can no longer be used. Deleting your data is taking longer "
-                "than usual and will finish automatically.",
+                "message": "Your account is closed and can no longer be used. Removing the rest of your data is "
+                "taking longer than usual and will finish automatically.",
             },
         )
     return Response(status_code=204)
 
 
 @router.get("/ai/status", response_model=AIStatus, tags=["ai"])
-async def ai_status(settings: AppSettings) -> AIStatus:
+async def ai_status(settings: AppSettings, user: OptionalUser) -> AIStatus:
+    """What AI this account can use: the provider must be configured and the account in the AI cohort."""
     model = settings.ai_model or (ANTHROPIC_DEFAULT_MODEL if settings.ai_provider == "anthropic" else None)
+    enabled = settings.ai_enabled and ai_allowed_for(user)
     return AIStatus(
-        enabled=settings.ai_enabled,
+        enabled=enabled,
         provider=settings.ai_provider,
-        model=model if settings.ai_enabled else None,
+        model=model if enabled else None,
         embeddings_enabled=settings.embeddings_enabled,
+        autocomplete=enabled and settings.ai_autocomplete_enabled,
     )

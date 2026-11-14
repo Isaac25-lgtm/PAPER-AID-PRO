@@ -54,7 +54,7 @@ function wrap(ui: ReactNode) {
 
 beforeEach(() => {
   window.localStorage.clear();
-  authState.user = { id: "u1", name: "Grace Namaganda", email: "g@example.edu", role: "user", preferences: {}, accepted_policy_version: "2026-11-14" };
+  authState.user = { id: "u1", name: "Grace Namaganda", email: "g@example.edu", role: "user", preferences: {}, accepted_policy_version: "2026-11-14.2" };
   authState.refresh.mockReset();
   apiData.responses = {};
   apiData.failing = new Set();
@@ -145,7 +145,7 @@ describe("Consent gate", () => {
     await userEvent.click(submit);
     expect(apiData.posts.at(-1)).toEqual({
       path: "/me/consent",
-      body: { terms: true, privacy: true, ai_processing: true, age_18: true, product_emails: false, analytics: false, policy_version: "2026-11-14" },
+      body: { terms: true, privacy: true, ai_processing: true, age_18: true, product_emails: false, analytics: false, policy_version: "2026-11-14.2" },
     });
   });
 

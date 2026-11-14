@@ -31,6 +31,8 @@ export interface QuoteSpan {
   text: string;
   start: number;
   end: number;
+  /** Statements (0-based, in answer order) that this quote supports. */
+  claims?: number[];
 }
 
 export interface Paper {
@@ -275,6 +277,8 @@ export interface GroundedAnswer {
   citations: AnswerCitation[];
   model: string | null;
   conversation_id?: string | null;
+  /** "Check against my sources": which sources were examined. */
+  scope?: unknown;
 }
 
 export interface ConversationSummary {
@@ -327,6 +331,8 @@ export interface AIStatus {
   provider: string;
   model: string | null;
   embeddings_enabled: boolean;
+  /** Inline suggestions available to this account (deployment switch and AI cohort). */
+  autocomplete?: boolean;
 }
 
 export interface AdminUser extends User {

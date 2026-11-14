@@ -6,11 +6,20 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import DB, AppSettings
 from app.api.downloads import content_disposition
-from app.db.models import Document, DocumentCitation, DocumentRevision, DocumentSource, LibraryItem, PaperChunk
+from app.db.models import (
+    Document,
+    DocumentCitation,
+    DocumentRevision,
+    DocumentSource,
+    LibraryItem,
+    Paper,
+    PaperChunk,
+    PaperStatus,
+)
 from app.errors import NotFound, ValidationFailed
 from app.schemas import (
     CitationCreate,
@@ -26,14 +35,14 @@ from app.schemas import (
     RevisionOut,
     RevisionSummaryOut,
 )
-from app.security.auth import VerifiedUser
+from app.security.auth import AIUser, VerifiedUser
 from app.security.rate_limit import enforce_rate_limit
 from app.services import documents as svc
 from app.services.ai import features as ai_features
 from app.services.ai.providers import get_llm
 from app.services.citations.csl import STYLES
 from app.services.export import to_docx, to_pdf
-from app.services.papers import get_paper_for_user, get_papers_for_user
+from app.services.papers import get_paper_for_user, get_papers_for_user, visible_papers_clause
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -144,7 +153,7 @@ MAX_CHECK_SOURCES = 30
 
 @router.post("/{document_id}/check", response_model=GroundedAnswerOut, tags=["ai"])
 async def check_passage(
-    document_id: uuid.UUID, body: PassageCheckRequest, db: DB, user: VerifiedUser, settings: AppSettings
+    document_id: uuid.UUID, body: PassageCheckRequest, db: DB, user: AIUser, settings: AppSettings
 ) -> GroundedAnswerOut:
     """Compare a passage of the draft with the document's sources (or, if it has none yet, the library)."""
     get_llm("Checking against your sources")  # report AI_NOT_CONFIGURED before anything else
@@ -152,30 +161,35 @@ async def check_passage(
         db, key=f"ai:{user.id}", limit=settings.rate_limit_ai_per_min, window_seconds=60, action="AI requests"
     )
     doc = await svc.get_owned_document(db, document_id, user)
-    ids = list(
-        (
-            await db.execute(
-                select(DocumentSource.paper_id)
-                .where(DocumentSource.document_id == doc.id)
-                .order_by(DocumentSource.added_at.desc())
-                .limit(MAX_CHECK_SOURCES)
-            )
-        ).scalars()
+    visible = visible_papers_clause(user)  # links to papers the person can no longer see never take a slot
+    basis = "document"
+    query = (
+        select(DocumentSource.paper_id)
+        .join(Paper, Paper.id == DocumentSource.paper_id)
+        .where(DocumentSource.document_id == doc.id, visible)
+        .order_by(DocumentSource.added_at.desc())
     )
-    if not ids:
-        ids = list(
-            (
-                await db.execute(
-                    select(LibraryItem.paper_id)
-                    .where(LibraryItem.user_id == user.id)
-                    .order_by(LibraryItem.created_at.desc())
-                    .limit(MAX_CHECK_SOURCES)
-                )
-            ).scalars()
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
+    if not total:
+        basis = "library"
+        query = (
+            select(LibraryItem.paper_id)
+            .join(Paper, Paper.id == LibraryItem.paper_id)
+            .where(LibraryItem.user_id == user.id, visible)
+            .order_by(LibraryItem.created_at.desc())
         )
+        total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
+    ids = list((await db.execute(query.limit(MAX_CHECK_SOURCES))).scalars())
     papers = await get_papers_for_user(db, ids, user)
     result = await ai_features.check_passage(db, papers, body.text.strip())
-    return GroundedAnswerOut(**result)
+    scope = {
+        "basis": basis,
+        "sources": [{"id": str(p.id), "title": p.title, "full_text": p.status == PaperStatus.READY} for p in papers],
+        "total": total,
+        "limit": MAX_CHECK_SOURCES,
+        "not_checked": max(0, total - len(papers)),
+    }
+    return GroundedAnswerOut(**result, scope=scope)
 
 
 @router.get("/{document_id}/citations", response_model=list[CitationOut])
