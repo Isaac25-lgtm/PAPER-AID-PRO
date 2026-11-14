@@ -27,7 +27,7 @@ jobs:
       - run: npm ci --omit=dev --no-audit --no-fund
         working-directory: backend/app/services/citations/engine
       - run: ruff check app tests alembic scripts && ruff format --check app tests alembic scripts
-      - run: python -m pytest -q
+      - run: python -m pytest -v --durations=15  # -v names each test as it starts, so a hang is attributable
 
   # The production image itself: fonts, Node/citeproc, migrations and readiness exactly as deployed.
   container:
