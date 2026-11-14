@@ -288,7 +288,7 @@ const TOUR = [
   { icon: FileText, title: "3. Write with citations", body: "Documents start from a guided outline for your study design. Cite from your library at the cursor; the reference list builds itself in your chosen style.", to: "/documents" },
   { icon: FlaskConical, title: "4. Ask your sources", body: "The Research assistant answers questions across papers you choose, and every statement links to the passage it came from.", to: "/research" },
   { icon: Quote, title: "5. Check your references", body: "Before you submit, Citation tools check each reference against Crossref and format identifiers in 18 styles, from APA and Harvard to OSCOLA and IEEE.", to: "/tools/citations" },
-  { icon: BookOpen, title: "Help is always one click away", body: "Each page has a “How to use” guide at the top, and the Help button in the top bar opens guides for every section.", to: null },
+  { icon: BookOpen, title: "Help is always one click away", body: "Each page has a “How to use” guide, and Help in the sidebar opens guides for every section.", to: null },
 ] as const;
 
 function WelcomeTour({ open, name, onClose }: { open: boolean; name: string | null; onClose: () => void }) {

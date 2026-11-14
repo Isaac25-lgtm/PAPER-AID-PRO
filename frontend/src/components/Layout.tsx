@@ -9,6 +9,7 @@ import { ConsentGate } from "./Consent";
 import { HelpButton, useGuidance } from "./Guidance";
 import { ThemeSwitch } from "@/lib/theme";
 import { Alert, Button, Spinner } from "./ui";
+import { WorkspaceShell } from "./Workspace";
 
 const NAV = [
   { to: "/dashboard", label: "Home", icon: House, auth: true },
@@ -45,10 +46,12 @@ export function Logo() {
 }
 
 export function Layout() {
-  const { user, signOut, loading } = useAuth();
+  const { user, firebaseUser, signOut, loading } = useAuth();
   const { openHelp } = useGuidance();
   const [open, setOpen] = useState(false);
   const links = NAV.filter((item) => !item.auth || user);
+  // Signed in: the workspace with its sidebar. Signed out (and while sign-in is being restored): the public header.
+  if (!loading && user) return <WorkspaceShell />;
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur-md">
@@ -77,7 +80,8 @@ export function Layout() {
           </nav>
           <div className="ml-auto hidden items-center gap-2 md:flex">
             <ThemeSwitch compact />
-            {loading ? null : user ? (
+            {/* Signed in but the account is still loading: no Sign in / Create account buttons meanwhile. */}
+            {loading || (firebaseUser && !user) ? null : user ? (
               <>
                 <HelpButton />
                 <Link to="/account" title={user.name || user.email} className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 text-sm text-slate-700 hover:bg-slate-100">

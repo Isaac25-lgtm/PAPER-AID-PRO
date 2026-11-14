@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
@@ -24,12 +24,12 @@ const TOPIC_EXAMPLES = [
 ];
 const TOPIC_EXAMPLE = TOPIC_EXAMPLES[Math.floor(Math.random() * TOPIC_EXAMPLES.length)];
 
-function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function NewDocumentModal({ open, onClose, initialType = "manuscript" }: { open: boolean; onClose: () => void; initialType?: DocumentType }) {
   const navigate = useNavigate();
   const styles = useStyles();
   const [step, setStep] = useState<1 | 2>(1);
   const [topic, setTopic] = useState("");
-  const [docType, setDocType] = useState<DocumentType>("manuscript");
+  const [docType, setDocType] = useState<DocumentType>(initialType);
   const [design, setDesign] = useState("");
   const [style, setStyle] = useState("apa");
   const [general, setGeneral] = useState("");
@@ -135,6 +135,16 @@ function NewDocumentModal({ open, onClose }: { open: boolean; onClose: () => voi
 export default function DocumentsPage() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [initialType, setInitialType] = useState<DocumentType>("manuscript");
+  const [params, setParams] = useSearchParams();
+  // "New document" from the sidebar or the home page arrives as ?new=1 (optionally &type=proposal, ...).
+  useEffect(() => {
+    if (params.get("new") !== "1") return;
+    const type = params.get("type");
+    setInitialType(DOC_TYPES.some((t) => t.value === type) ? (type as DocumentType) : "manuscript");
+    setOpen(true);
+    setParams({}, { replace: true });
+  }, [params, setParams]);
   const docs = useQuery({ queryKey: ["documents"], queryFn: () => api.get<DocumentSummary[]>("/documents") });
   const remove = useMutation({
     mutationFn: (id: string) => api.delete(`/documents/${id}`),
@@ -142,12 +152,12 @@ export default function DocumentsPage() {
   });
   return (
     <Container>
-      <PageHeader title="Documents" subtitle="Write with sources from your library and correctly formatted citations." actions={<Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> New document</Button>} />
+      <PageHeader title="Documents" subtitle="Write with sources from your library and correctly formatted citations." actions={<Button onClick={() => { setInitialType("manuscript"); setOpen(true); }}><Plus className="h-4 w-4" /> New document</Button>} />
       <SectionGuide section="documents" />
       {docs.isLoading && <Spinner />}
       {docs.error && <Alert kind="error">{errorMessage(docs.error)}</Alert>}
       {docs.data?.length === 0 && (
-        <EmptyState icon={<FileText className="h-8 w-8" />} title="No documents yet" action={<Button onClick={() => setOpen(true)}>Create your first document</Button>}>
+        <EmptyState icon={<FileText className="h-8 w-8" />} title="No documents yet" action={<Button onClick={() => { setInitialType("manuscript"); setOpen(true); }}>Create your first document</Button>}>
           Start a manuscript, proposal, literature review or thesis chapter.
         </EmptyState>
       )}
@@ -172,7 +182,7 @@ export default function DocumentsPage() {
           </div>
         ))}
       </div>
-      <NewDocumentModal open={open} onClose={() => setOpen(false)} />
+      {open && <NewDocumentModal key={initialType} open={open} initialType={initialType} onClose={() => setOpen(false)} />}
     </Container>
   );
 }

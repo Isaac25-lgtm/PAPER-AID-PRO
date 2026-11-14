@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router";
+import { Navigate, Route, Routes } from "react-router";
 
 import { GuidanceProvider } from "./components/Guidance";
 import { Layout, RequireAuth } from "./components/Layout";
@@ -7,6 +7,7 @@ import { Spinner } from "./components/ui";
 import { HomePage } from "./pages/Home";
 import { LoginPage, RegisterPage, ResetPasswordPage } from "./pages/Auth";
 import { AINoticePage, NotFoundPage, PrivacyPage, TermsPage } from "./pages/Static";
+import { useAuth } from "./lib/auth";
 
 // Heavier screens are code-split so the landing page stays fast.
 const DiscoverPage = lazy(() => import("./pages/Discover"));
@@ -21,13 +22,20 @@ const AccountPage = lazy(() => import("./pages/Account"));
 const DashboardPage = lazy(() => import("./pages/Dashboard"));
 const AdminPage = lazy(() => import("./pages/Admin"));
 
+/** Signed-in people land in their workspace; everyone else sees the landing page. */
+function IndexPage() {
+  const { user, loading } = useAuth();
+  if (!loading && user) return <Navigate to="/dashboard" replace />;
+  return <HomePage />;
+}
+
 export function App() {
   return (
     <GuidanceProvider>
     <Suspense fallback={<Spinner />}>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<HomePage />} />
+          <Route index element={<IndexPage />} />
           <Route path="login" element={<LoginPage />} />
           <Route path="register" element={<RegisterPage />} />
           <Route path="reset-password" element={<ResetPasswordPage />} />
