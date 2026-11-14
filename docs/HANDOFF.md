@@ -7,7 +7,7 @@ at tag `legacy-v1`.
 |---|---|
 | App | https://paperaid.web.app |
 | API | https://paperaid-api-307658066472.europe-west4.run.app/api/v1/health |
-| Running revision | `paperaid-api-00012-zor`, database schema `e5f3a8c1d927` |
+| Running revision | `paperaid-api-00015-kaf`, database schema `f2a6c8e4b1d3` |
 | Google Cloud / Firebase project | `paperaid` (main Google account) |
 | Start reading | this file → `docs/DEPLOYMENT.md` (operations) → `docs/ARCHITECTURE.md` → `AGENTS.md` (for coding agents) |
 
@@ -69,6 +69,15 @@ yet").
   - concurrent uploads are deduplicated, with a retry for private uploads
   - staging is defined in isolation
   - editor citation labels are applied by occurrence
+- **System re-audit (Codex):** 15 findings, 3 of them high severity, all fixed with tests
+  (`docs/SYSTEM_REAUDIT_RESPONSE.md`):
+  - draft text never leaves the app without the writer confirming it
+  - PDF quotes keep the words, page and place captured at the click
+  - local setups can never delete production sign-ins
+  - AI is limited to a pilot list, and suggestions are opt-in
+  - every other finding is listed in that document
+- **Guides:** a floating guide per section with a narrated ghost-cursor walkthrough (collapse or reopen in one
+  click), a new logo, and a README for GitHub with live screenshots.
 - **First audit:** 28 findings fixed (`docs/AUDIT_RESPONSE.md`).
 - **Codex follow-up audit:** 24 findings, 7 of them high severity, all fixed with regression tests
   (`docs/REAUDIT_RESPONSE.md`). Highlights:
@@ -100,9 +109,9 @@ yet").
 
 | Check | Result |
 |---|---|
-| Backend tests (real PostgreSQL + pgvector) | **235 passed** locally and in GitHub CI |
+| Backend tests (real PostgreSQL + pgvector) | **249 passed** locally and in GitHub CI |
 | Live checks against real scholarly APIs | **7 passed** (OpenAlex, Crossref, PubMed, arXiv, DOAJ, Europe PMC, Crossref verification) |
-| Frontend tests + strict type-check + build | **68 passed**, clean |
+| Frontend tests + strict type-check + build | **91 passed**, clean |
 | Production image smoke test (CI container job) | fonts, all 18 styles, migrations, readiness: **passed** |
 | Migration on existing rows | upgrade from the previous schema with seeded legacy-policy rows; repairs verified |
 | Dependency audits | npm: 0 vulnerabilities; pip-audit: no known vulnerabilities |
