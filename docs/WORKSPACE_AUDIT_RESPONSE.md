@@ -75,7 +75,7 @@ committed before dispatch, and the 403 was being retried as if transient (fixed 
 
 | | Status |
 |---|---|
-| Staging | Holds these fixes after verification there. |
-| Production frontend | Not deployed. The workspace (sidebar dashboard) and finding 1 ship together, after the maintainer approves. |
-| Production API | Not deployed. Waits for the maintainer's approval and a green Linux CI run; the release then uses the new candidate checks. |
+| Staging | `paperaid-api-staging-00008-zuc` plus the frontend at `90e4880`, verified before production. |
+| Production API | `paperaid-api-00027-dar` at `90e4880` (15 November 2026), after a green Linux CI run. The release passed the environment, candidate and readiness checks. |
+| Production frontend | Deployed at `90e4880`, including the workspace (sidebar dashboard) and finding 1. |
 | Inherited IAM and database isolation behind the secret reference | Remain as the audit recorded: observed, not independently proven. |
