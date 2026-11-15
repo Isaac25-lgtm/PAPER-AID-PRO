@@ -17,6 +17,7 @@ const LibraryPage = lazy(() => import("./pages/Library"));
 const DocumentsPage = lazy(() => import("./pages/Documents"));
 const EditorPage = lazy(() => import("./pages/Editor"));
 const ResearchPage = lazy(() => import("./pages/Research"));
+const DeepResearchPage = lazy(() => import("./pages/DeepResearch"));
 const CitationToolsPage = lazy(() => import("./pages/CitationTools"));
 const AccountPage = lazy(() => import("./pages/Account"));
 const DashboardPage = lazy(() => import("./pages/Dashboard"));
@@ -59,6 +60,7 @@ export function App() {
           <Route path="library" element={<RequireAuth><LibraryPage /></RequireAuth>} />
           <Route path="documents" element={<RequireAuth><DocumentsPage /></RequireAuth>} />
           <Route path="research" element={<RequireAuth><ResearchPage /></RequireAuth>} />
+          <Route path="research/deep" element={<RequireAuth><DeepResearchPage /></RequireAuth>} />
           <Route path="account" element={<RequireAuth><AccountPage /></RequireAuth>} />
           <Route path="admin" element={<RequireAuth admin><AdminPage /></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />

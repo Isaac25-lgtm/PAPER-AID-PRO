@@ -178,6 +178,20 @@ grounding checks on real papers from your testers' fields, then widen. Support v
 (`AI_VERIFY_CLAIMS=true`). OpenAI / Gemini work the same way (`AI_PROVIDER=openai|gemini`; `AI_MODEL` required).
 Optional semantic search: `EMBEDDING_PROVIDER=openai` with `OPENAI_API_KEY` (1536 dimensions).
 
+## Turning on web search for Deep research (optional)
+
+Deep research always searches the scholarly databases. With a Tavily key it also searches the general web; web
+pages are cited by address and labelled "not peer-reviewed". The key is sent only to Tavily, in a header.
+
+```bash
+printf '%s' "tvly-..." | gcloud secrets create tavily-api-key --data-file=- --project paperaid
+# then release with:
+EXTRA_DEPLOY_FLAGS="--update-secrets TAVILY_API_KEY=tavily-api-key:latest --update-env-vars WEB_SEARCH_PROVIDER=tavily"
+```
+
+Runs are limited per person (`RATE_LIMIT_DEEP_RESEARCH_PER_HOUR`, default 12). Each run with AI makes about three
+model calls (plan, report, support check).
+
 ## Free API keys worth adding
 
 | Key | Effect |

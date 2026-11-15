@@ -286,7 +286,7 @@ const TOUR = [
   { icon: Compass, title: "1. Find papers", body: "Discover searches major scholarly databases in every field at once; choose a subject to focus it. Save to library brings in a paper with metadata from the official registry.", to: "/discover" },
   { icon: LibraryBig, title: "2. Build your library", body: "Your Library holds saved papers and your own PDFs. Organise them into collections, add notes and tags, and import or export BibTeX and RIS.", to: "/library" },
   { icon: FileText, title: "3. Write with citations", body: "Documents start from a guided outline for your study design. Cite from your library at the cursor; the reference list builds itself in your chosen style.", to: "/documents" },
-  { icon: FlaskConical, title: "4. Ask your sources", body: "The Research assistant answers questions across papers you choose, and every statement links to the passage it came from.", to: "/research" },
+  { icon: FlaskConical, title: "4. Ask your sources", body: "The Research assistant answers questions across papers you choose, and every statement links to the passage it came from. Deep research goes further: it searches the databases and the web for new sources and writes a checked report.", to: "/research" },
   { icon: Quote, title: "5. Check your references", body: "Before you submit, Citation tools check each reference against Crossref and format identifiers in 18 styles, from APA and Harvard to OSCOLA and IEEE.", to: "/tools/citations" },
   { icon: BookOpen, title: "Help is always one click away", body: "Each page has a “How to use” guide, and Help in the sidebar opens guides for every section.", to: null },
 ] as const;

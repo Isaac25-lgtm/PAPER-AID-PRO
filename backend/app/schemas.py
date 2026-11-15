@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.db.models import DocumentType, Paper, PaperStatus
-from app.services.scholarly.models import ProviderName
+from app.services.scholarly.models import ProviderName, Subject
 
 
 class Model(BaseModel):
@@ -397,6 +397,45 @@ class GroundedAnswerOut(BaseModel):
     conversation_id: uuid.UUID | None = None
     # For "check against my sources": which sources were examined and how many were not.
     scope: dict[str, Any] | None = None
+
+
+class DeepResearchRequest(BaseModel):
+    question: str = Field(min_length=10, max_length=2000)
+    subject: Subject = "all"
+    year_from: int | None = Field(default=None, ge=1500, le=2100)
+    year_to: int | None = Field(default=None, ge=1500, le=2100)
+    include_web: bool = True
+
+
+class DeepResearchStatusOut(BaseModel):
+    databases: list[str]
+    ai: bool  # a report can be written for this account
+    web_search: bool  # the general web search service is connected
+
+
+class DeepResearchOut(Model):
+    id: uuid.UUID
+    question: str
+    options: dict[str, Any]
+    queries: list[str]
+    sources: list[dict[str, Any]]
+    services: list[dict[str, Any]]
+    report: str | None
+    citations: list[dict[str, Any]]
+    insufficient_evidence: bool
+    gaps: str
+    model: str | None
+    # complete | ai_not_connected | withheld (failed the citation checks) | ai_failed
+    report_status: str
+    created_at: datetime
+
+
+class DeepResearchSummaryOut(Model):
+    id: uuid.UUID
+    question: str
+    report_status: str
+    source_count: int
+    created_at: datetime
 
 
 class ConversationSummaryOut(Model):

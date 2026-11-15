@@ -33,6 +33,7 @@ from app.db.models import (
     CollectionPaper,
     ConsentRecord,
     Conversation,
+    DeepResearchRun,
     Document,
     DocumentCitation,
     DocumentRevision,
@@ -489,6 +490,30 @@ async def _build_export(db: AsyncSession, user: User) -> tempfile.SpooledTempora
                     ],
                 },
             )
+        runs = list(
+            (
+                await db.execute(
+                    select(DeepResearchRun)
+                    .where(DeepResearchRun.user_id == user.id)
+                    .order_by(DeepResearchRun.created_at)
+                )
+            ).scalars()
+        )
+        for run in runs:
+            write_json(
+                f"research/deep/{run.id}.json",
+                {
+                    "id": run.id,
+                    "question": run.question,
+                    "options": run.options,
+                    "searches": run.queries,
+                    "report": run.report,
+                    "report_status": run.report_status,
+                    "citations": run.citations,
+                    "sources": run.sources,
+                    "at": run.created_at,
+                },
+            )
         write("README.txt", README)
         archive.writestr(
             "manifest.json",
@@ -503,7 +528,7 @@ README = (
     "library/: your references (BibTeX for Zotero, Mendeley, EndNote; CSL-JSON), notes, tags and collections\n"
     "documents/: each document as Word and as structured JSON with its citation records, plus its version history "
     "(*.history.json)\n"
-    "research/: your research conversations\n"
+    "research/: your research conversations; research/deep/: your Deep research reports and the sources found\n"
     "uploads/: every PDF you uploaded\n"
     "consents.json: what you agreed to and when\n"
     "manifest.json: every file in this archive and any that could not be included\n"

@@ -1,9 +1,10 @@
-import { Bot, FileText, Info } from "lucide-react";
+import { Bot, ExternalLink, FileText, Globe, Info } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 
 import { ApiError } from "@/lib/api";
 import type { AnswerCitation, GroundedAnswer } from "@/lib/types";
+import { safeHref } from "@/lib/format";
 import { Alert, Badge } from "./ui";
 
 interface Selection {
@@ -81,17 +82,31 @@ export function AnswerText({ text, citations }: { text: string; citations: Answe
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-brand-800">{index + 1}.</span>
-                <Link to={`/papers/${c.paper_id}`} className="font-medium text-slate-900 hover:text-brand-700">
-                  {c.title}
-                </Link>
-                <span className="text-slate-500">
-                  {c.authors[0] ?? "Unknown"}
-                  {c.authors.length > 1 ? " et al." : ""} ({c.year ?? "n.d."})
-                </span>
-                <Badge tone={c.kind === "passage" ? "green" : "slate"}>
-                  <FileText className="h-3 w-3" />
-                  {c.kind === "passage" ? `${c.section ?? "Full text"}${c.page_start ? `, p. ${c.page_start}` : ""}` : "Abstract"}
-                </Badge>
+                {c.kind === "web" ? (
+                  <>
+                    <a href={safeHref(c.url)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-slate-900 hover:text-brand-700">
+                      {c.title} <ExternalLink className="h-3 w-3" />
+                    </a>
+                    <span className="text-slate-500">{c.site} ({c.year ?? "n.d."})</span>
+                    <Badge tone="amber">
+                      <Globe className="h-3 w-3" /> Web page · not peer-reviewed
+                    </Badge>
+                  </>
+                ) : (
+                  <>
+                    <Link to={`/papers/${c.paper_id}`} className="font-medium text-slate-900 hover:text-brand-700">
+                      {c.title}
+                    </Link>
+                    <span className="text-slate-500">
+                      {c.authors[0] ?? "Unknown"}
+                      {c.authors.length > 1 ? " et al." : ""} ({c.year ?? "n.d."})
+                    </span>
+                    <Badge tone={c.kind === "passage" ? "green" : "slate"}>
+                      <FileText className="h-3 w-3" />
+                      {c.kind === "passage" ? `${c.section ?? "Full text"}${c.page_start ? `, p. ${c.page_start}` : ""}` : "Abstract"}
+                    </Badge>
+                  </>
+                )}
               </div>
               <blockquote className="mt-2 border-l-2 border-slate-300 pl-3 text-slate-600">
                 <HighlightedExcerpt citation={c} activeClaim={active?.key === c.key ? active.claim : undefined} />

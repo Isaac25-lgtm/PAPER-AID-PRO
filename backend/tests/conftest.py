@@ -75,6 +75,7 @@ TABLES = [
     "closed_accounts",
     "consent_records",
     "rate_limit_buckets",
+    "deep_research_runs",
     "messages",
     "conversations",
     "document_revisions",

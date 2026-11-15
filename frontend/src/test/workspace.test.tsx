@@ -90,6 +90,7 @@ describe("workspace sidebar", () => {
     for (const name of ["Home", "Documents", "Research", "Citations", "Discover", "Catalog"]) {
       expect(within(sidebar).getByRole("link", { name: new RegExp(name) })).toBeInTheDocument();
     }
+    expect(within(sidebar).getByRole("link", { name: "Deep research" })).toHaveAttribute("href", "/research/deep");
     expect(within(sidebar).queryByRole("link", { name: /Admin/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument(); // no public header
   });

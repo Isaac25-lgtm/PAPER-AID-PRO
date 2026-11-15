@@ -7,6 +7,7 @@ import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
 import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
 import { useLibrarySearch } from "@/components/papers";
+import { ResearchModes } from "@/components/ResearchModes";
 import { Alert, Badge, Button, Card, EmptyState, Input, PageHeader, Spinner, Textarea } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
@@ -70,6 +71,7 @@ export default function ResearchPage() {
   return (
     <Container>
       <PageHeader title="Research assistant" subtitle="Ask a question across papers you choose. Every claim is linked to the passage or abstract it came from." />
+      <ResearchModes />
       <SectionGuide section="research" />
       <div className="grid gap-6 lg:grid-cols-[260px_1fr_300px]">
         <aside>

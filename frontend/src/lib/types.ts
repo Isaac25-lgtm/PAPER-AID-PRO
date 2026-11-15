@@ -251,12 +251,15 @@ export interface VerifyResult {
 
 export interface AnswerCitation {
   key: string;
-  paper_id: string;
+  /** Null for a web page (Deep research): it is not a catalogue record and is linked by `url`. */
+  paper_id: string | null;
   title: string;
   authors: string[];
   year: number | null;
   doi: string | null;
-  kind: "passage" | "abstract";
+  kind: "passage" | "abstract" | "web";
+  url?: string;
+  site?: string;
   chunk_id: string | null;
   section: string | null;
   page_start: number | null;
@@ -279,6 +282,67 @@ export interface GroundedAnswer {
   conversation_id?: string | null;
   /** "Check against my sources": which sources were examined. */
   scope?: unknown;
+}
+
+export interface DeepResearchStatus {
+  databases: string[];
+  /** A written report is available for this account (otherwise runs list the sources only). */
+  ai: boolean;
+  /** The general web search service is connected. */
+  web_search: boolean;
+}
+
+export interface DeepResearchSource {
+  kind: "scholarly" | "web";
+  title: string;
+  url: string | null;
+  year: number | null;
+  /** Read for the report (its abstract or page excerpt was evidence). */
+  read: boolean;
+  authors?: string[];
+  journal?: string | null;
+  doi?: string | null;
+  identifier?: string | null;
+  is_open_access?: boolean;
+  citation_count?: number;
+  has_abstract?: boolean;
+  databases?: string[];
+  paper_id?: string | null;
+  site?: string;
+}
+
+export interface DeepResearchService {
+  name: string;
+  kind: "scholarly" | "web";
+  ok: boolean;
+  count: number;
+  error: string | null;
+}
+
+export type DeepReportStatus = "complete" | "ai_not_connected" | "withheld" | "ai_failed";
+
+export interface DeepResearchRun {
+  id: string;
+  question: string;
+  options: { subject?: Subject; year_from?: number | null; year_to?: number | null; include_web?: boolean; planned_by_ai?: boolean };
+  queries: string[];
+  sources: DeepResearchSource[];
+  services: DeepResearchService[];
+  report: string | null;
+  citations: AnswerCitation[];
+  insufficient_evidence: boolean;
+  gaps: string;
+  model: string | null;
+  report_status: DeepReportStatus;
+  created_at: string;
+}
+
+export interface DeepResearchSummary {
+  id: string;
+  question: string;
+  report_status: DeepReportStatus;
+  source_count: number;
+  created_at: string;
 }
 
 export interface ConversationSummary {

@@ -90,6 +90,12 @@ class Settings(BaseSettings):
     # Verify each AI claim against its cited passages with a second model call (recommended).
     ai_verify_claims: bool = True
 
+    # --- General web search for Deep research (optional; off until a key is set) ----------------------
+    # Deep research always searches the scholarly databases above. With a Tavily key it also reads web pages
+    # (reports, guidelines, news). Web pages are labelled as such and never presented as peer-reviewed.
+    web_search_provider: Literal["none", "tavily"] = "none"
+    tavily_api_key: str = ""
+
     # --- Operations ---------------------------------------------------------------------------------------
     maintenance_on_startup: bool = True
     # Cloud Run's front end appends the caller's address as the LAST X-Forwarded-For entry; trust only that.
@@ -100,6 +106,7 @@ class Settings(BaseSettings):
     rate_limit_search_per_min: int = 30
     rate_limit_ai_per_min: int = 10
     rate_limit_upload_per_hour: int = 30
+    rate_limit_deep_research_per_hour: int = 12
 
     @field_validator("database_url")
     @classmethod
@@ -150,6 +157,10 @@ class Settings(BaseSettings):
             "gemini": self.gemini_api_key,
         }.get(self.ai_provider, "")
         return self.ai_provider != "none" and bool(key)
+
+    @property
+    def web_search_enabled(self) -> bool:
+        return self.web_search_provider == "tavily" and bool(self.tavily_api_key)
 
     @property
     def embeddings_enabled(self) -> bool:

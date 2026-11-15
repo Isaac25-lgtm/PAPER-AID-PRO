@@ -46,3 +46,14 @@ export const DOC_TYPES: { value: string; label: string }[] = [
   { value: "thesis", label: "Thesis / dissertation" },
   { value: "report", label: "Report" },
 ];
+
+/** An external address that is safe to put in a link: http(s) only, otherwise nothing. */
+export function safeHref(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : undefined;
+  } catch {
+    return undefined;
+  }
+}

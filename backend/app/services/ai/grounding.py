@@ -43,12 +43,22 @@ _QUOTES = re.compile("[" + chr(0x2018) + "-" + chr(0x201F) + "]")
 INSUFFICIENT_MESSAGE = "The selected sources do not contain enough evidence to answer this question."
 
 
+@dataclass(frozen=True)
+class WebPage:
+    """A general web page found by Deep research. Not a catalogue record: it is cited by its address only."""
+
+    url: str
+    title: str
+    site: str
+    year: int | None = None
+
+
 @dataclass
 class EvidenceItem:
     key: str  # "E1"
-    paper: Paper
+    paper: Paper | WebPage
     text: str
-    kind: str  # "passage" | "abstract"
+    kind: str  # "passage" | "abstract" | "web"
     chunk_id: uuid.UUID | None = None
     section: str | None = None
     page_start: int | None = None
@@ -60,7 +70,9 @@ class EvidenceItem:
         return self.text[:MAX_EVIDENCE_CHARS]
 
 
-def short_ref(paper: Paper) -> str:
+def short_ref(paper: Paper | WebPage) -> str:
+    if isinstance(paper, WebPage):
+        return f"{paper.site} (web page, {paper.year or 'n.d.'})"
     names = author_names(paper)
     lead = names[0].split(" ")[-1] if names else "Unknown author"
     suffix = " et al." if len(names) > 2 else (f" & {names[1].split(' ')[-1]}" if len(names) == 2 else "")
@@ -70,7 +82,7 @@ def short_ref(paper: Paper) -> str:
 def render_evidence(items: list[EvidenceItem]) -> str:
     blocks = []
     for item in items:
-        location = item.section or ("Abstract" if item.kind == "abstract" else "Passage")
+        location = item.section or {"abstract": "Abstract", "web": "Web page excerpt"}.get(item.kind, "Passage")
         if item.page_start:
             pages = (
                 f"p. {item.page_start}"
@@ -423,6 +435,26 @@ def citation_payload(claims: list[CheckedClaim], items: list[EvidenceItem]) -> l
         if item.key not in used:
             continue
         excerpt = evidence_excerpt(item.shown_text, spans.get(item.key, []), owners=owners.get(item.key, {}))
+        if isinstance(item.paper, WebPage):
+            payload.append(
+                {
+                    "key": item.key,
+                    "paper_id": None,
+                    "url": item.paper.url,
+                    "site": item.paper.site,
+                    "title": item.paper.title,
+                    "authors": [],
+                    "year": item.paper.year,
+                    "doi": None,
+                    "kind": "web",
+                    "chunk_id": None,
+                    "section": None,
+                    "page_start": None,
+                    "page_end": None,
+                    **excerpt,
+                }
+            )
+            continue
         payload.append(
             {
                 "key": item.key,

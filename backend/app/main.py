@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.routes import admin, discovery, documents, library, papers, system, tools
+from app.api.routes import admin, deep_research, discovery, documents, library, papers, system, tools
 from app.config import get_settings
 from app.db.session import dispose_engine
 from app.errors import AppError, RateLimited
@@ -134,7 +134,7 @@ def create_app() -> FastAPI:
         log.exception("app.unhandled_error")
         return _error(500, "INTERNAL_ERROR", "Something went wrong on our side. Please try again.")
 
-    for module in (system, discovery, papers, library, documents, tools):
+    for module in (system, discovery, papers, library, documents, tools, deep_research):
         app.include_router(module.router, prefix=API_PREFIX)
     app.include_router(admin.router, prefix=API_PREFIX)
     app.include_router(admin.internal)

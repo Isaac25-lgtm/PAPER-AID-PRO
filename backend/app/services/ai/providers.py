@@ -228,6 +228,11 @@ def set_llm(llm: LLM | None) -> None:
     _llm_override = llm
 
 
+def llm_available() -> bool:
+    """Whether get_llm() would return a model (a configured provider, or the test hook)."""
+    return _llm_override is not None or get_settings().ai_enabled
+
+
 def get_llm(feature: str = "This feature") -> LLM:
     if _llm_override is not None:
         return _llm_override

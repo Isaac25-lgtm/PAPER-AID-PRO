@@ -459,6 +459,34 @@ class Message(Base):
     __table_args__ = (Index("ix_messages_conversation", "conversation_id", "created_at"),)
 
 
+class DeepResearchRun(Base):
+    """One Deep research report: the question, the searches run, the sources found and the verified report."""
+
+    __tablename__ = "deep_research_runs"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    # Search settings as asked (subject, years, whether the web was included).
+    options: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    queries: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    # Every source found, in rank order, each marked with whether it was read for the report.
+    sources: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    # Per search service: reached or not, and how many results it returned.
+    services: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    # The verified report (None when AI is not connected: the run then lists sources only).
+    report: Mapped[str | None] = mapped_column(Text)
+    citations: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    insufficient_evidence: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    gaps: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    model: Mapped[str | None] = mapped_column(String(100))
+    # Why there is no report, when there is none (e.g. "ai_not_connected").
+    report_status: Mapped[str] = mapped_column(String(40), default="complete", nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+    __table_args__ = (Index("ix_deep_research_runs_user_created", "user_id", "created_at"),)
+
+
 # ------------------------------------------------------------------------------------------- operational
 class RateLimitBucket(Base):
     __tablename__ = "rate_limit_buckets"
