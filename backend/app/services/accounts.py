@@ -23,6 +23,7 @@ from typing import Any
 
 from sqlalchemy import delete, exists, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -105,7 +106,9 @@ async def close_account(
     user.is_active = False
     await db.commit()
     try:
-        return await _finish_closure(db, uid, user_id, purge_public=purge_public, delete_identity=delete_identity)
+        return await _finish_closure_retrying(
+            db, uid, user_id, purge_public=purge_public, delete_identity=delete_identity
+        )
     except Exception as exc:
         await db.rollback()
         await _record_closure_failure(db, uid, exc)
@@ -120,6 +123,28 @@ async def _record_closure_failure(db: AsyncSession, uid: str, exc: Exception) ->
         row.last_error = repr(exc)[:500]
         row.not_before = _now() + min(timedelta(minutes=2**row.attempts), MAX_RESUME_BACKOFF)
     await db.commit()
+
+
+DEADLOCK_RETRIES = 3
+
+
+async def _finish_closure_retrying(
+    db: AsyncSession, uid: str, user_id: Any, *, purge_public: bool, delete_identity: bool
+) -> ClosureResult:
+    """A closure's cascade touches papers and jobs of the account. Workers take locks in the same order, but if
+    any other transaction ever meets it the other way round and PostgreSQL aborts the closure, it runs again at
+    once (bounded) instead of waiting for maintenance: every step is idempotent."""
+    from app.services.processing import is_deadlock
+
+    for remaining in range(DEADLOCK_RETRIES, -1, -1):
+        try:
+            return await _finish_closure(db, uid, user_id, purge_public=purge_public, delete_identity=delete_identity)
+        except DBAPIError as exc:
+            if not (remaining and is_deadlock(exc)):
+                raise
+            await db.rollback()
+            log.warning("account.closure_deadlock_retry", extra={"user_id": str(user_id)})
+    raise AssertionError("unreachable")
 
 
 async def _finish_closure(

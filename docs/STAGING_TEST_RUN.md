@@ -41,8 +41,10 @@ All 108 frontend tests pass; the fixed build is deployed to staging and re-verif
   address is sent to Unpaywall, Crossref and OpenAlex.
 - While the consent overlay is open, the editor retries its failed save every ~10 s (each a 403 plus a profile
   reload). Harmless and bounded, but it could pause retries until consent is given.
-- The first Cloud Tasks delivery of a new job can get a 503 "retry" before the job row is visible; the next delivery
-  (≈2–5 s later) runs it. Expected behaviour.
+- The 503, 503, 204 deliveries seen for the PLOS paper were retries, not a job that was not yet visible (the job is
+  committed before it is queued). Europe PMC's 403 was then treated as transient, so attempts 1 and 2 asked Cloud
+  Tasks to retry (503) and attempt 3 failed for good (204). Fixed in `c82bce6`: a refusal is final for that
+  location (see STAGING_AUDIT_RESPONSE.md, finding 6). Corrected after the workspace audit.
 - `tester-b` was deleted by scenario 6 (its Firebase identity too). Recreate it to repeat that scenario.
 - The Restore and delete-upload confirmations use the browser's native `confirm()`; automation cannot click those, so
   a future in-app dialog would make them testable end to end.

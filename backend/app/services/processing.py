@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, exists, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import JobKind, JobStatus, Paper, PaperChunk, PaperStatus, ProcessingJob, User
@@ -131,9 +131,32 @@ async def store_pdf(db: AsyncSession, paper: Paper, data: bytes) -> str:
     return key
 
 
+async def _owner_allows_writes(db: AsyncSession, owner_id: uuid.UUID | None) -> bool:
+    """Take the closure fence for a private paper (shared papers have no owner and need none)."""
+    return owner_id is None or await lock_active_owner(db, owner_id)
+
+
+def is_deadlock(exc: BaseException) -> bool:
+    """PostgreSQL chose this transaction as the victim of a deadlock (SQLSTATE 40P01): safe to run again."""
+    return getattr(getattr(exc, "orig", None), "sqlstate", None) == "40P01"
+
+
 # ------------------------------------------------------------------------------------------- job control
 async def reclaim_abandoned_jobs(db: AsyncSession, paper_id: uuid.UUID | None = None) -> int:
-    """Fail queued/running jobs whose lease expired (worker died, task lost) and release their papers."""
+    """Fail queued/running jobs whose lease expired (worker died, task lost) and release their papers.
+    It touches jobs and papers of many owners at once, so it cannot take each owner's fence; if it ever meets a
+    closure in the opposite order, PostgreSQL aborts one of them and this simply runs again (bounded)."""
+    for remaining in (2, 1, 0):
+        try:
+            return await _reclaim_abandoned_jobs(db, paper_id)
+        except DBAPIError as exc:
+            await db.rollback()
+            if not (remaining and is_deadlock(exc)):
+                raise
+    return 0
+
+
+async def _reclaim_abandoned_jobs(db: AsyncSession, paper_id: uuid.UUID | None) -> int:
     now = _now()
     stmt = (
         update(ProcessingJob)
@@ -287,7 +310,18 @@ async def _obtain_pdf(db: AsyncSession, paper: Paper, attempt: Attempt) -> bytes
         return await get_storage().get(paper.storage_path)
     errors: list[str] = []
     transient = False
-    async for url, origin in pdf_candidates(paper):
+    candidates = pdf_candidates(paper).__aiter__()
+    while True:
+        try:
+            url, origin = await anext(candidates)
+        except StopAsyncIteration:
+            break
+        except UpstreamError as exc:
+            # A location service (Unpaywall, OpenAlex) could not be reached: there may be a PDF we could not ask
+            # about, so the job is worth another attempt (workspace audit: this used to fail it for good).
+            errors.append(f"lookup: {exc.message}")
+            transient = True
+            break
         try:
             data = await fetch_pdf(url)
         except AppError as exc:
@@ -373,7 +407,15 @@ async def run_job(job_id: uuid.UUID) -> Outcome:
             await _finish(db, attempt, status=JobStatus.FAILED, error="Paper no longer exists.", finished_at=_now())
             await db.commit()
             return Outcome.DONE
+        # Plain value: still usable after a rollback expires the ORM object.
+        owner_id = paper.owner_id
         try:
+            # Lock order for every joint job + paper write: the owner's row first (the closure fence), then the
+            # job, then the paper. A closure takes the owner's row before its cascade reaches papers and jobs, so
+            # the two can never wait on each other (workspace audit: starting a job deadlocked with a closure).
+            if not await _owner_allows_writes(db, owner_id):
+                await db.rollback()
+                return Outcome.DONE  # the account is closing: the closure removes the paper and this job
             await _hold(db, attempt)  # fenced: a superseded attempt must not touch the paper at all
         except LeaseLost:
             await db.rollback()
@@ -404,6 +446,10 @@ async def run_job(job_id: uuid.UUID) -> Outcome:
             if not isinstance(exc, AppError):
                 log.exception("processing.unexpected_error", extra={"job_id": str(job_id)})
             retry = _is_retryable(exc) and attempt.number < MAX_ATTEMPTS
+            # Same lock order as everywhere else (owner, job, paper); nothing to record for a closing account.
+            if not await _owner_allows_writes(db, owner_id):
+                await db.rollback()
+                return Outcome.DONE
             if retry:
                 owned = await _finish(
                     db,

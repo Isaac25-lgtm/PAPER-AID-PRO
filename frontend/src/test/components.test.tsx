@@ -194,6 +194,26 @@ describe("Route guard (hardening audit)", () => {
     authState.user = null;
   });
 
+  it("offers a retry above the page when the account cannot be checked, keeping unsaved work (workspace audit)", async () => {
+    authState.firebaseUser = { emailVerified: true, email: "a@b.edu" };
+    authState.user = { id: "u1", role: "user", email: "a@b.edu", needs_consent: false };
+    const { RequireAuth } = await import("@/components/Layout");
+    const view = wrap(<RequireAuth><Draft /></RequireAuth>);
+    fireEvent.change(screen.getByLabelText("draft"), { target: { value: "unsaved edits" } });
+    authState.profileError = true; // the reload after a policy change failed
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter><RequireAuth><Draft /></RequireAuth></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(/couldn’t check your account/);
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect((screen.getByLabelText("draft", { selector: "input" }) as HTMLInputElement).value).toBe("unsaved edits");
+    authState.profileError = false;
+    authState.firebaseUser = null;
+    authState.user = null;
+  });
+
   it("offers data rights to former testers, not to a conflicting identity", async () => {
     const { RequireAuth } = await import("@/components/Layout");
     authState.firebaseUser = { emailVerified: true, email: "former@example.edu" };

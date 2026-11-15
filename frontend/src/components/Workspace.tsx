@@ -18,7 +18,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useId, useRef, useState, type ComponentType } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
 import { api } from "@/lib/api";
@@ -26,6 +26,7 @@ import { useAuth } from "@/lib/auth";
 import { ThemeSwitch } from "@/lib/theme";
 import type { DocumentSummary, Progress } from "@/lib/types";
 import { useGuidance } from "./Guidance";
+import { useDialogFocus } from "./ui";
 import { Logo, LogoMark } from "./Layout";
 
 /**
@@ -62,6 +63,8 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
   const { openHelp } = useGuidance();
   const navigate = useNavigate();
   const { documents, progress } = useWorkspaceData();
+  // Unique per sidebar instance: the desktop sidebar and the phone drawer can both be in the page.
+  const uid = useId();
   const recent = [...(documents.data ?? [])].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, RECENT);
   const items: Item[] = [
     { to: "/dashboard", label: "Home", icon: House, end: true },
@@ -117,9 +120,9 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
 
       <nav className={clsx("mt-4 min-h-0 flex-1 overflow-y-auto", collapsed ? "px-2" : "px-3")} aria-label="Workspace">
         {!collapsed && (
-          <section aria-labelledby="sidebar-recent" className="mb-4">
+          <section aria-labelledby={`${uid}-recent`} className="mb-4">
             <div className="mb-1 flex items-center justify-between px-2.5">
-              <h2 id="sidebar-recent" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Recent documents</h2>
+              <h2 id={`${uid}-recent`} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Recent documents</h2>
             </div>
             {documents.isLoading && <p className="px-2.5 py-1.5 text-xs text-slate-500">Loading…</p>}
             {documents.data?.length === 0 && <p className="px-2.5 py-1.5 text-xs text-slate-500">Your documents will appear here.</p>}
@@ -140,9 +143,9 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
             </ul>
           </section>
         )}
-        <section aria-labelledby="sidebar-workspace">
+        <section aria-labelledby={collapsed ? undefined : `${uid}-workspace`} aria-label={collapsed ? "Workspace" : undefined}>
           {!collapsed && (
-            <h2 id="sidebar-workspace" className="mb-1 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Workspace</h2>
+            <h2 id={`${uid}-workspace`} className="mb-1 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Workspace</h2>
           )}
           <ul className="space-y-0.5">
             {items.map(({ to, label, icon: Icon, count, end }) => (
@@ -201,11 +204,16 @@ export function WorkspaceShell() {
   const [drawer, setDrawer] = useState(false);
   const location = useLocation();
   useEffect(() => setDrawer(false), [location.pathname]);
+  // The phone drawer is a modal: focus moves into it, Tab stays inside, Escape closes it and focus returns to the
+  // menu button; the page behind is inert meanwhile (workspace audit).
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(drawerRef, drawer, () => setDrawer(false));
   useEffect(() => {
-    if (!drawer) return;
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setDrawer(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const page = pageRef.current;
+    if (!page) return;
+    if (drawer) page.setAttribute("inert", "");
+    else page.removeAttribute("inert");
   }, [drawer]);
   const toggle = () =>
     setCollapsed((value) => {
@@ -231,16 +239,23 @@ export function WorkspaceShell() {
       {drawer && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/40" aria-hidden onClick={() => setDrawer(false)} />
-          <aside className="absolute inset-y-0 left-0 w-72 max-w-[85vw] border-r border-slate-200 bg-white shadow-xl" aria-label="Sidebar">
+          <div
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
+            tabIndex={-1}
+            className="absolute inset-y-0 left-0 w-72 max-w-[85vw] border-r border-slate-200 bg-white shadow-xl"
+          >
             <button type="button" className="absolute right-3 top-3.5 rounded-md p-1.5 text-slate-500 hover:bg-slate-100" onClick={() => setDrawer(false)} aria-label="Close menu">
               <X className="h-4 w-4" />
             </button>
             <Sidebar collapsed={false} onNavigate={() => setDrawer(false)} />
-          </aside>
+          </div>
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div ref={pageRef} className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur-md lg:hidden">
           <button type="button" className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100" onClick={() => setDrawer(true)} aria-label="Open menu" aria-expanded={drawer}>
             <Menu className="h-5 w-5" />

@@ -22,17 +22,23 @@ high availability, worker split, Redis) are in the recommendations report and HA
 ```bash
 DEPLOY_ENV=production PYTHON="$PWD/backend/.venv/Scripts/python.exe" deploy/release.sh
 DEPLOY_ENV=staging    PYTHON="$PWD/backend/.venv/Scripts/python.exe" deploy/release.sh
-# optional settings that should ride through the same gate:
-DEPLOY_ENV=production PYTHON=... EXTRA_DEPLOY_FLAGS="--update-env-vars=KEY=value" deploy/release.sh
+# optional tuning that rides through the same gate (allowlisted settings only, see deploy/release_checks.py):
+DEPLOY_ENV=production PYTHON=... EXTRA_DEPLOY_FLAGS="--update-env-vars=DB_POOL_SIZE=3" deploy/release.sh
 ```
 
 `deploy/release.sh` (fail-fast, `set -euo pipefail`) refuses to run with uncommitted backend changes, then:
 
-- **one explicit environment:** `DEPLOY_ENV` is required (`production` or `staging`). The service, migration job,
-  database secret, runtime service account, bucket, queue and Firebase project all come from it; `SERVICE` and
+- **one explicit environment:** `DEPLOY_ENV` is required (`production` or `staging`). The profiles live in
+  `deploy/release_checks.py`: service, migration job, database secret, runtime service account, bucket, Firebase
+  project and the complete Cloud Tasks routing (project, location, queue, target URL, OIDC sender). `SERVICE` and
   `MIGRATE_JOB` cannot be set separately. Before any change, it reads the live service and migration job and
-  refuses if either runs as another identity, uses another database secret, or (service) points at another
-  bucket, queue or Firebase project. A staging release can therefore never run the production migration;
+  refuses on any mismatch, so a staging release can never run the production migration;
+- **allowlisted overrides:** `EXTRA_DEPLOY_FLAGS` accepts only `--update-env-vars` / `--update-secrets` for tuning
+  settings (pool sizes, log level, tester lists, API keys, AI settings). Anything that decides which environment a
+  revision belongs to is refused before any cloud call;
+- **candidate check:** after deploying without traffic, it describes the exact tagged revision and refuses to move
+  traffic unless that revision has this environment's bindings and runs the image digest just built;
+- **no credentials in logs:** an inline `DATABASE_URL` is reported only as "an inline value";
 
 0. takes a per-service **release lock** (`gs://paperaid_cloudbuild/release-locks/<service>.lock`, created only if
    absent) so two releases can never interleave; the lock is removed when the script exits;

@@ -37,6 +37,7 @@ const meResponses = vi.hoisted(() => ({ queue: [] as { resolve: (v: unknown) => 
 vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof import("@/lib/api")>()),
   setTokenGetter: vi.fn(),
+  setConsentRequiredHandler: vi.fn(),
   api: {
     get: () => new Promise((resolve, reject) => meResponses.queue.push({ resolve, reject })),
     patch: vi.fn(),
@@ -44,7 +45,7 @@ vi.mock("@/lib/api", async (original) => ({
 }));
 
 const { AuthProvider, useAuth } = await import("@/lib/auth");
-const { ApiError, setTokenGetter } = await import("@/lib/api");
+const { ApiError, setConsentRequiredHandler, setTokenGetter } = await import("@/lib/api");
 const tokenGetter = vi.mocked(setTokenGetter).mock.calls[0]![0] as () => Promise<string | null>;
 
 describe("request tokens", () => {
@@ -99,8 +100,13 @@ describe("request tokens", () => {
 });
 
 function Who() {
-  const { user, accountConflict } = useAuth();
-  return <p>{accountConflict ? "conflict" : user ? `signed in as ${user.email}` : "nobody"}</p>;
+  const { user, accountConflict, profileError } = useAuth();
+  return (
+    <>
+      <p>{accountConflict ? "conflict" : user ? `signed in as ${user.email}` : "nobody"}</p>
+      <p>{profileError ? "profile error" : "profile ok"}</p>
+    </>
+  );
 }
 
 function setup() {
@@ -156,6 +162,31 @@ describe("AuthProvider", () => {
     await act(async () => bobRequest.resolve({ email: "bob@example.edu" }));
     await act(async () => aliceRequest.resolve({ email: "alice@example.edu" })); // arrives last
     await waitFor(() => expect(screen.getByText("signed in as bob@example.edu")).toBeInTheDocument());
+  });
+
+  it("retries a failed policy reload (bounded), then reports it, and recovers on the next successful reload", async () => {
+    // Workspace audit: a failed /me after CONSENT_REQUIRED kept the old profile but hid the error, so parked
+    // autosave waited for a consent screen that never came.
+    setup();
+    await signInAs("alice");
+    await act(async () => meResponses.queue.shift()!.resolve({ email: "alice@example.edu", needs_consent: false }));
+    const onConsentRequired = vi.mocked(setConsentRequiredHandler).mock.calls.at(-1)![0];
+    vi.useFakeTimers();
+    try {
+      act(() => onConsentRequired());
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await act(async () => meResponses.queue.shift()!.reject(new ApiError(503, "HTTP_ERROR", "Service unavailable")));
+        await act(async () => void (await vi.advanceTimersByTimeAsync(6000)));
+      }
+      expect(meResponses.queue).toHaveLength(0); // three attempts, then it stops
+      expect(screen.getByText("profile error")).toBeInTheDocument(); // visible to the guard's retry banner
+      expect(screen.getByText("signed in as alice@example.edu")).toBeInTheDocument(); // the page is kept
+    } finally {
+      vi.useRealTimers();
+    }
+    act(() => onConsentRequired()); // e.g. the person presses Try again or another request asks again
+    await act(async () => meResponses.queue.shift()!.resolve({ email: "alice@example.edu", needs_consent: true }));
+    expect(screen.getByText("profile ok")).toBeInTheDocument();
   });
 
   it("surfaces an account conflict instead of signing in", async () => {

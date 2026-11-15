@@ -40,4 +40,13 @@ describe.each([
   it("icons and placeholders reach 3:1 on the main surface", () => {
     expect(ratio(t["slate-400"]!, t.white!)).toBeGreaterThanOrEqual(3);
   });
+
+  // Section edges were reported as too faint. The card border (line-200) must stand clearly apart from both the card
+  // and the page behind it; dividers (line-100) inside cards a little less; input borders (line-300) more.
+  it("section borders are clearly visible against cards and the page", () => {
+    expect(ratio(t["line-200"]!, t.white!), "card border on card").toBeGreaterThanOrEqual(1.5);
+    expect(ratio(t["line-200"]!, t["slate-50"]!), "card border on page").toBeGreaterThanOrEqual(1.4);
+    expect(ratio(t["line-100"]!, t.white!), "divider on card").toBeGreaterThanOrEqual(1.3);
+    expect(ratio(t["line-300"]!, t.white!), "input border on card").toBeGreaterThanOrEqual(1.9);
+  });
 });

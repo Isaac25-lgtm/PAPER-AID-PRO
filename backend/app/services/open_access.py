@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 
 from app.config import get_settings
 from app.db.models import Paper
-from app.errors import AppError
+from app.errors import AppError, UpstreamError
 from app.services.scholarly.http import get_json
 from app.services.scholarly.providers import OpenAlex
 
@@ -22,6 +22,8 @@ async def _unpaywall_pdf(doi: str) -> tuple[str | None, str | None]:
         data = await get_json(
             f"https://api.unpaywall.org/v2/{doi}", params={"email": contact}, not_found_ok=True, retries=1
         )
+    except UpstreamError:
+        raise  # an outage is not "no PDF": the caller keeps the job retryable
     except AppError:
         return None, None
     best = (data or {}).get("best_oa_location") or {}
@@ -52,13 +54,26 @@ async def pdf_candidates(paper: Paper) -> AsyncIterator[tuple[str, str]]:
             yield url, origin  # type: ignore[misc]
     if not paper.doi:
         return
-    url, license_ = await _unpaywall_pdf(paper.doi)
+    # A lookup service that cannot be reached is remembered while the other one is still tried. If no location
+    # worked, the outage is raised at the end (UpstreamError), so "we could not ask" is never reported as "there
+    # is no open-access PDF". A real "not found" answer stays silent.
+    unavailable: list[str] = []
+    try:
+        url, license_ = await _unpaywall_pdf(paper.doi)
+    except UpstreamError:
+        url, license_ = None, None
+        unavailable.append("Unpaywall")
     if fresh(url):
         paper.oa_license = paper.oa_license or license_
         yield url, "unpaywall"  # type: ignore[misc]
     try:
         work = await OpenAlex.lookup("doi", paper.doi)
+    except UpstreamError:
+        work = None
+        unavailable.append("OpenAlex")
     except AppError:
         work = None
     if work and fresh(work.oa_pdf_url):
         yield work.oa_pdf_url, "openalex"  # type: ignore[misc]
+    if unavailable:
+        raise UpstreamError(f"{' and '.join(unavailable)} could not be reached to look for an open-access copy.")

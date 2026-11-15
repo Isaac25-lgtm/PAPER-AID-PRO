@@ -8,3 +8,4 @@ firebase-debug*.log
 frontend/dist-staging/
 firebase.staging.json
 deploy/staging-testers.local.txt
+__pycache__/

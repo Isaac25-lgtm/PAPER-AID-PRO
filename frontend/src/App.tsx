@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router";
+import { Navigate, Route, Routes, useParams } from "react-router";
 
 import { GuidanceProvider } from "./components/Guidance";
 import { Layout, RequireAuth } from "./components/Layout";
@@ -29,6 +29,15 @@ function IndexPage() {
   return <HomePage />;
 }
 
+/**
+ * One editor instance per document: its save queue, version, title, content and palette all belong to that document.
+ * Without the key, moving from draft A to draft B reused A's instance, and A's pending edits could be saved into B.
+ */
+function EditorRoute() {
+  const { id = "" } = useParams();
+  return <EditorPage key={id} />;
+}
+
 export function App() {
   return (
     <GuidanceProvider>
@@ -54,7 +63,7 @@ export function App() {
           <Route path="admin" element={<RequireAuth admin><AdminPage /></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
-        <Route path="documents/:id" element={<RequireAuth><EditorPage /></RequireAuth>} />
+        <Route path="documents/:id" element={<RequireAuth><EditorRoute /></RequireAuth>} />
       </Routes>
     </Suspense>
     </GuidanceProvider>

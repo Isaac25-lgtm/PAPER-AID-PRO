@@ -338,24 +338,43 @@ echo "gcloud $*" >> "$CALLS"
 case "$*" in
   *"storage cp"*) [[ -n "${LOCK_HELD:-}" ]] && exit 1; exit 0 ;;
   *"artifacts docker images describe"*) echo "sha256:0123abcd" ;;
-  *"jobs describe"*)
-    printf '{"spec": {"template": {"spec": {"template": {"spec": '
-    printf '{"serviceAccountName": "%s", "containers": [{"env": [' "$FAKE_JOB_SA"
-    printf '{"name": "DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": "%s", "key": "latest"}}}' "$FAKE_JOB_SECRET"
-    printf ']}]}}}}}}' ;;
-  *"services describe"*)
-    tag=$(grep -o -- '--tag [^ ]*' "$CALLS" | tail -1 | cut -d' ' -f2)
-    printf '{"spec": {"template": {"spec": {"serviceAccountName": "%s", "containers": [{"env": [' "$FAKE_SA"
-    printf '{"name": "DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": "%s", "key": "latest"}}},' "$FAKE_SECRET"
-    printf '{"name": "GCS_BUCKET", "value": "%s"}, {"name": "TASKS_QUEUE", "value": "%s"},' "$FAKE_BUCKET" "$FAKE_QUEUE"
-    printf '{"name": "FIREBASE_PROJECT_ID", "value": "%s"}]}]}}},' "$FAKE_FIREBASE"
-    # Another release created rev-B after ours: latestCreatedRevisionName is NOT our revision.
-    printf '"status": {"latestCreatedRevisionName": "rev-B", "traffic": ['
-    printf '{"revisionName": "rev-live", "percent": 100},'
-    printf '{"revisionName": "rev-A", "tag": "%s", "url": "https://%s.example"},' "$tag" "$tag"
-    printf '{"revisionName": "rev-B", "tag": "rc-other", "url": "https://other.example"}]}}' ;;
+  *"jobs describe"*) "$PYTHON" "$FAKE_JSON" job ;;
+  *"revisions describe"*) "$PYTHON" "$FAKE_JSON" candidate ;;
+  *"services describe"*) "$PYTHON" "$FAKE_JSON" service ;;
   *) exit 0 ;;
 esac
+"""
+# What the fake cloud "has": built from JSON in the environment, so each test states it exactly.
+FAKE_JSON = r"""
+import json, os, re, sys
+
+def spec(prefix):
+    env = []
+    for name, value in json.loads(os.environ[prefix + "_ENV"]).items():
+        if value.startswith("secret:"):
+            env.append({"name": name, "valueFrom": {"secretKeyRef": {"name": value[7:], "key": "latest"}}})
+        else:
+            env.append({"name": name, "value": value})
+    container = {"image": os.environ.get(prefix + "_IMAGE", ""), "env": env}
+    return {"serviceAccountName": os.environ[prefix + "_SA"], "containers": [container]}
+
+kind = sys.argv[1]
+if kind == "job":
+    out = {"spec": {"template": {"spec": {"template": {"spec": spec("FAKE_JOB")}}}}}
+elif kind == "candidate":
+    out = {"spec": spec("FAKE_CAND")}
+else:
+    tags = re.findall(r"--tag (\S+)", open(os.environ["CALLS"]).read())
+    tag = tags[-1] if tags else ""
+    # Another release created rev-B after ours: latestCreatedRevisionName is NOT our revision.
+    traffic = [
+        {"revisionName": "rev-live", "percent": 100},
+        {"revisionName": "rev-A", "tag": tag, "url": f"https://{tag}.example"},
+        {"revisionName": "rev-B", "tag": "rc-other", "url": "https://other.example"},
+    ]
+    status = {"latestCreatedRevisionName": "rev-B", "traffic": traffic}
+    out = {"spec": {"template": {"spec": spec("FAKE_SERVICE")}}, "status": status}
+print(json.dumps(out))
 """
 FAKE_CURL = r"""#!/usr/bin/env bash
 echo "curl $*" >> "$CALLS"
@@ -371,6 +390,7 @@ case "$*" in
   *) exit 0 ;;
 esac
 """
+IMAGE_REF = "europe-west4-docker.pkg.dev/paperaid/cloud-run-source-deploy/paperaid-api@sha256:0123abcd"
 
 
 def _bash() -> str | None:
@@ -380,27 +400,34 @@ def _bash() -> str | None:
     return None
 
 
-PROFILES = {
-    "production": {
-        "FAKE_SA": "paperaid-api@paperaid.iam.gserviceaccount.com",
-        "FAKE_SECRET": "paperaid-database-url",
-        "FAKE_BUCKET": "paperaid-papers-307658066472",
-        "FAKE_QUEUE": "paper-processing",
-        "FAKE_FIREBASE": "paperaid",
-    },
-    "staging": {
-        "FAKE_SA": "paperaid-staging-api@paperaid.iam.gserviceaccount.com",
-        "FAKE_SECRET": "paperaid-staging-database-url",
-        "FAKE_BUCKET": "paperaid-staging-files-307658066472",
-        "FAKE_QUEUE": "paper-processing-staging",
-        "FAKE_FIREBASE": "paperaid-staging",
-    },
-}
+def _profile(name: str) -> dict:
+    """The environment profile the release script itself uses (deploy/release_checks.py)."""
+    import importlib.util
+
+    path = Path(__file__).parents[2] / "deploy" / "release_checks.py"
+    spec = importlib.util.spec_from_file_location("release_checks", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.PROFILES[name]
 
 
-def run_release(tmp_path, ready_revision="rev-A", lock_held=False, deploy_env="production", live=None, extra_env=None):
-    """Run deploy/release.sh against fake gcloud/curl/git. `live` describes what the cloud really has (defaults to
-    the profile of `deploy_env`); `extra_env` adds or overrides variables (e.g. SERVICE)."""
+def run_release(
+    tmp_path,
+    ready_revision="rev-A",
+    lock_held=False,
+    deploy_env="production",
+    service=None,
+    service_sa=None,
+    job=None,
+    job_sa=None,
+    candidate=None,
+    candidate_sa=None,
+    candidate_image=IMAGE_REF,
+    extra_env=None,
+):
+    """Run deploy/release.sh against a fake gcloud/curl/git. By default the fake cloud matches the profile of
+    `deploy_env`; `service`, `job` and `candidate` override single settings of the live service, the migration job
+    and the candidate revision (`*_sa` their identity). `extra_env` adds variables (e.g. SERVICE)."""
     bash = _bash()
     if bash is None:
         pytest.skip("bash is not available")
@@ -408,7 +435,7 @@ def run_release(tmp_path, ready_revision="rev-A", lock_held=False, deploy_env="p
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for name, body in {"gcloud": FAKE_GCLOUD, "curl": FAKE_CURL, "git": FAKE_GIT}.items():
+    for name, body in {"gcloud": FAKE_GCLOUD, "curl": FAKE_CURL, "git": FAKE_GIT, "fake_json.py": FAKE_JSON}.items():
         path = bin_dir / name
         path.write_text(body, encoding="utf-8", newline="\n")
         path.chmod(0o755)
@@ -417,25 +444,30 @@ def run_release(tmp_path, ready_revision="rev-A", lock_held=False, deploy_env="p
     env = {
         **os.environ,
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-        "CALLS": str(calls),
+        "CALLS": calls.as_posix(),
         "GCLOUD": (bin_dir / "gcloud").as_posix(),
         "CURL": (bin_dir / "curl").as_posix(),
         "GIT": (bin_dir / "git").as_posix(),
-        "PYTHON": sys.executable,
+        "FAKE_JSON": (bin_dir / "fake_json.py").as_posix(),
+        "PYTHON": Path(sys.executable).as_posix(),
         "READY_BODY": json.dumps({"status": "ready", "schema": expected_schema_revision(), "revision": ready_revision}),
     }
     if lock_held:
         env["LOCK_HELD"] = "1"
-    env.pop("SERVICE", None)
-    env.pop("MIGRATE_JOB", None)
-    env.pop("DEPLOY_ENV", None)
+    for name in ("SERVICE", "MIGRATE_JOB", "DEPLOY_ENV", "EXTRA_DEPLOY_FLAGS"):
+        env.pop(name, None)
     if deploy_env is not None:
         env["DEPLOY_ENV"] = deploy_env
-    cloud = dict(PROFILES.get(deploy_env or "production"))
-    cloud.update(live or {})
-    cloud.setdefault("FAKE_JOB_SA", cloud["FAKE_SA"])
-    cloud.setdefault("FAKE_JOB_SECRET", cloud["FAKE_SECRET"])
-    env.update(cloud)
+    profile = _profile(deploy_env or "production")
+    database = {"DATABASE_URL": f"secret:{profile['database_secret']}"}
+    correct = {**profile["env"], **database}
+    env["FAKE_SERVICE_ENV"] = json.dumps({**correct, **(service or {})})
+    env["FAKE_SERVICE_SA"] = service_sa or profile["identity"]
+    env["FAKE_JOB_ENV"] = json.dumps({**database, **(job or {})})
+    env["FAKE_JOB_SA"] = job_sa or profile["identity"]
+    env["FAKE_CAND_ENV"] = json.dumps({**correct, **(candidate or {})})
+    env["FAKE_CAND_SA"] = candidate_sa or profile["identity"]
+    env["FAKE_CAND_IMAGE"] = candidate_image
     env.update(extra_env or {})
     script = Path(__file__).parents[2] / "deploy" / "release.sh"
     result = subprocess.run([bash, str(script)], env=env, capture_output=True, text=True, timeout=120, check=False)
@@ -469,6 +501,10 @@ def test_releases_of_the_same_service_are_serialized(tmp_path):
 MUTATING = ("storage cp", "builds submit", "jobs update", "jobs execute", "run deploy", "update-traffic")
 
 
+def _mutations(calls: str) -> list[str]:
+    return [line for line in calls.splitlines() if any(m in line for m in MUTATING)]
+
+
 def test_a_release_without_an_explicit_environment_is_refused_before_any_cloud_call(tmp_path):
     result, calls = run_release(tmp_path, deploy_env=None)
     assert result.returncode != 0 and "DEPLOY_ENV=production or DEPLOY_ENV=staging" in result.stderr
@@ -485,7 +521,7 @@ def test_service_or_migration_job_cannot_be_chosen_separately(tmp_path, override
 def test_a_staging_release_only_touches_staging_resources(tmp_path):
     result, calls = run_release(tmp_path, deploy_env="staging")
     assert result.returncode == 0, result.stdout + result.stderr
-    mutations = [line for line in calls.splitlines() if any(m in line for m in MUTATING)]
+    mutations = _mutations(calls)
     jobs = [line for line in mutations if " jobs " in line]
     assert jobs and all("paperaid-migrate-staging" in line for line in jobs)
     deploys = [line for line in mutations if "run deploy" in line or "update-traffic" in line]
@@ -497,21 +533,96 @@ def test_a_staging_release_only_touches_staging_resources(tmp_path):
     assert len(tag) + len("paperaid-api-staging") <= 46, tag
 
 
+PROD = {
+    "sa": "paperaid-api@paperaid.iam.gserviceaccount.com",
+    "db": "secret:paperaid-database-url",
+    "target": "https://paperaid-api-307658066472.europe-west4.run.app",
+    "tasks_sa": "paperaid-tasks@paperaid.iam.gserviceaccount.com",
+}
+
+
 @pytest.mark.parametrize(
     "live, problem",
     [
-        ({"FAKE_JOB_SECRET": "paperaid-database-url"}, "migration job DATABASE_URL"),  # staging job on the prod DB
-        ({"FAKE_JOB_SA": "paperaid-api@paperaid.iam.gserviceaccount.com"}, "migration job runs as"),
-        ({"FAKE_SECRET": "paperaid-database-url"}, "service DATABASE_URL"),
-        ({"FAKE_BUCKET": "paperaid-papers-307658066472"}, "GCS_BUCKET"),
-        ({"FAKE_QUEUE": "paper-processing"}, "TASKS_QUEUE"),
-        ({"FAKE_FIREBASE": "paperaid"}, "FIREBASE_PROJECT_ID"),
+        ({"job": {"DATABASE_URL": PROD["db"]}}, "migration job DATABASE_URL"),  # staging job on the prod DB
+        ({"job_sa": PROD["sa"]}, "migration job runs as"),
+        ({"service": {"DATABASE_URL": PROD["db"]}}, "service DATABASE_URL"),
+        ({"service_sa": PROD["sa"]}, "service runs as"),
+        ({"service": {"GCS_BUCKET": "paperaid-papers-307658066472"}}, "GCS_BUCKET"),
+        ({"service": {"TASKS_QUEUE": "paper-processing"}}, "TASKS_QUEUE"),
+        ({"service": {"FIREBASE_PROJECT_ID": "paperaid"}}, "FIREBASE_PROJECT_ID"),
+        # workspace audit 2: the complete task routing, not only the queue name
+        ({"service": {"TASKS_TARGET_URL": PROD["target"]}}, "TASKS_TARGET_URL"),
+        ({"service": {"TASKS_SERVICE_ACCOUNT": PROD["tasks_sa"]}}, "TASKS_SERVICE_ACCOUNT"),
+        ({"service": {"TASKS_PROJECT": "another-project"}}, "TASKS_PROJECT"),
+        ({"service": {"TASKS_LOCATION": "europe-west4"}}, "TASKS_LOCATION"),
     ],
 )
 def test_a_staging_release_against_mismatched_live_configuration_changes_nothing(tmp_path, live, problem):
-    result, calls = run_release(tmp_path, deploy_env="staging", live=live)
+    result, calls = run_release(tmp_path, deploy_env="staging", **live)
     assert result.returncode != 0 and problem in result.stderr
-    assert not [line for line in calls.splitlines() if any(m in line for m in MUTATING)]
+    assert not _mutations(calls)
+
+
+# --- workspace audit 2: the candidate that would receive traffic is itself validated, and overrides are allowlisted
+@pytest.mark.parametrize(
+    "drift, problem",
+    [
+        ({"candidate": {"TASKS_TARGET_URL": PROD["target"]}}, "candidate TASKS_TARGET_URL"),  # the audit's probe
+        ({"candidate": {"TASKS_SERVICE_ACCOUNT": PROD["tasks_sa"]}}, "candidate TASKS_SERVICE_ACCOUNT"),
+        ({"candidate": {"DATABASE_URL": PROD["db"]}}, "candidate DATABASE_URL"),
+        ({"candidate": {"GCS_BUCKET": "paperaid-papers-307658066472"}}, "candidate GCS_BUCKET"),
+        ({"candidate": {"FIREBASE_PROJECT_ID": "paperaid"}}, "candidate FIREBASE_PROJECT_ID"),
+        ({"candidate_sa": PROD["sa"]}, "candidate runs as"),
+        ({"candidate_image": IMAGE_REF.replace("0123abcd", "ffff0000")}, "candidate runs image"),
+    ],
+)
+def test_a_candidate_that_drifted_from_the_environment_never_receives_traffic(tmp_path, drift, problem):
+    result, calls = run_release(tmp_path, deploy_env="staging", **drift)  # readiness would be green
+    assert result.returncode != 0 and problem in result.stderr and "no traffic was moved" in result.stderr
+    assert "update-traffic" not in calls and "/api/v1/ready" not in calls
+    assert "storage rm" in calls  # the lock is still released
+
+
+@pytest.mark.parametrize(
+    "flags, problem",
+    [
+        ("--update-env-vars=TASKS_TARGET_URL=https://elsewhere.example", "'TASKS_TARGET_URL' cannot be changed"),
+        ("--update-env-vars=DB_POOL_SIZE=3,DATABASE_URL=postgresql://x", "'DATABASE_URL' cannot be changed"),
+        ("--update-env-vars=^|^ALLOWED_EMAILS=a@x.org|GCS_BUCKET=other", "'GCS_BUCKET' cannot be changed"),
+        ("--update-secrets=DATABASE_URL=paperaid-database-url:latest", "'DATABASE_URL' cannot be changed"),
+        ("--service-account=paperaid-api@paperaid.iam.gserviceaccount.com", "'--service-account' is not allowed"),
+        ("--set-env-vars=LOG_LEVEL=DEBUG", "'--set-env-vars' is not allowed"),  # would wipe every other setting
+        ("--image=elsewhere/image", "'--image' is not allowed"),
+    ],
+)
+def test_release_overrides_outside_the_allowlist_are_refused_before_any_cloud_call(tmp_path, flags, problem):
+    result, calls = run_release(tmp_path, deploy_env="staging", extra_env={"EXTRA_DEPLOY_FLAGS": flags})
+    assert result.returncode != 0 and problem in result.stderr
+    assert calls == ""
+
+
+def test_allowlisted_tuning_rides_through_the_release(tmp_path):
+    flags = (
+        "--update-env-vars=DB_POOL_SIZE=3,DB_MAX_OVERFLOW=2 "
+        "--update-env-vars=^|^ALLOWED_EMAILS=a@x.org,b@x.org|LOG_LEVEL=INFO"
+    )
+    result, calls = run_release(tmp_path, extra_env={"EXTRA_DEPLOY_FLAGS": flags})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert flags in next(line for line in calls.splitlines() if "run deploy" in line)
+
+
+# --- workspace audit 4: a misconfigured inline database URL is never printed
+INLINE = "postgresql://owner:SYNTHETIC-PASSWORD@db.example/app"
+
+
+@pytest.mark.parametrize("where", ["service", "job", "candidate"])
+def test_an_inline_database_url_is_reported_without_its_value(tmp_path, where):
+    result, calls = run_release(tmp_path, deploy_env="staging", **{where: {"DATABASE_URL": INLINE}})
+    output = result.stdout + result.stderr
+    assert result.returncode != 0 and "DATABASE_URL is an inline value" in output
+    assert "SYNTHETIC-PASSWORD" not in output and "db.example" not in output
+    assert "update-traffic" not in calls
 
 
 # ------------------------------------------------------------------------ 9. highlights match each claim

@@ -6,10 +6,11 @@
 #   DEPLOY_ENV=production deploy/release.sh
 #   DEPLOY_ENV=staging    deploy/release.sh
 #
-# The environment is ONE required choice. The service, migration job, database secret, runtime identity, bucket,
-# queue and Firebase project all come from it, and the live service and migration job are checked against that
-# profile before anything is changed, so a staging release can never run the production migration (or the
-# reverse). SERVICE and MIGRATE_JOB cannot be set separately.
+# The environment is ONE required choice (profiles in deploy/release_checks.py). The service, migration job,
+# database secret, runtime identity, bucket, Firebase project and the complete Cloud Tasks routing come from it.
+# The live service and migration job are checked against that profile before anything is changed, and the exact
+# candidate revision (its bindings and image digest) is checked again before any traffic moves. SERVICE and
+# MIGRATE_JOB cannot be set separately, and EXTRA_DEPLOY_FLAGS may only tune allowlisted settings.
 #
 # Releases to the same environment are serialized by a lock object in Cloud Storage (created only if absent). If a
 # release was killed and left its lock, check nobody is releasing, then remove it:
@@ -20,19 +21,12 @@ if [[ -n "${SERVICE:-}" || -n "${MIGRATE_JOB:-}" ]]; then
   echo "Refusing to release: SERVICE and MIGRATE_JOB are derived from DEPLOY_ENV; unset them." >&2
   exit 1
 fi
-case "${DEPLOY_ENV:-}" in
-  production)
-    SERVICE=paperaid-api; MIGRATE_JOB=paperaid-migrate
-    RUNTIME_SA=paperaid-api@paperaid.iam.gserviceaccount.com; DB_SECRET=paperaid-database-url
-    BUCKET=paperaid-papers-307658066472; QUEUE=paper-processing; FIREBASE_PROJECT=paperaid ;;
-  staging)
-    SERVICE=paperaid-api-staging; MIGRATE_JOB=paperaid-migrate-staging
-    RUNTIME_SA=paperaid-staging-api@paperaid.iam.gserviceaccount.com; DB_SECRET=paperaid-staging-database-url
-    BUCKET=paperaid-staging-files-307658066472; QUEUE=paper-processing-staging; FIREBASE_PROJECT=paperaid-staging ;;
-  *)
-    echo "Refusing to release: set DEPLOY_ENV=production or DEPLOY_ENV=staging." >&2
-    exit 1 ;;
-esac
+PYTHON="${PYTHON:-python}"  # needs alembic installed (e.g. PYTHON=backend/.venv/Scripts/python)
+CHECKS="$(cd "$(dirname "$0")" && pwd)/release_checks.py"   # the environment profiles and every check
+PROFILE_VARS="$("$PYTHON" "$CHECKS" shell "${DEPLOY_ENV:-}" | tr -d '\r')"
+eval "$PROFILE_VARS"   # SERVICE and MIGRATE_JOB
+# Extra settings may only tune the service; nothing that says which environment a revision belongs to.
+EXTRA_DEPLOY_FLAGS="${EXTRA_DEPLOY_FLAGS:-}" "$PYTHON" "$CHECKS" flags "$DEPLOY_ENV"
 
 PROJECT="${PROJECT:-paperaid}"
 REGION="${REGION:-europe-west4}"
@@ -41,7 +35,6 @@ LOCK_BUCKET="${LOCK_BUCKET:-${PROJECT}_cloudbuild}"
 GCLOUD="${GCLOUD:-gcloud}"   # overridable for the fake-cloud tests
 CURL="${CURL:-curl}"
 GIT="${GIT:-git}"
-PYTHON="${PYTHON:-python}"  # needs alembic installed (e.g. PYTHON=backend/.venv/Scripts/python)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SHA="$("$GIT" -C "$ROOT" rev-parse --short HEAD)"
 STAMP="$(date -u +%Y%m%d%H%M%S)"
@@ -74,40 +67,7 @@ echo "check: $SERVICE and $MIGRATE_JOB belong to $DEPLOY_ENV (read-only)"
 SERVICE_JSON="$("$GCLOUD" run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format=json)"
 JOB_JSON="$("$GCLOUD" run jobs describe "$MIGRATE_JOB" --project "$PROJECT" --region "$REGION" --format=json)"
 export SERVICE_JSON JOB_JSON
-"$PYTHON" - "$RUNTIME_SA" "$DB_SECRET" "$BUCKET" "$QUEUE" "$FIREBASE_PROJECT" <<'PY'
-import json, os, sys
-service, job = json.loads(os.environ["SERVICE_JSON"]), json.loads(os.environ["JOB_JSON"])
-runtime_sa, db_secret, bucket, queue, firebase = sys.argv[1:6]
-
-def container_spec(spec):
-    return spec, spec["containers"][0]
-
-def env_of(container):
-    out = {}
-    for e in container.get("env", []):
-        ref = (e.get("valueFrom") or {}).get("secretKeyRef") or {}
-        out[e["name"]] = f"secret:{ref['name']}" if ref else e.get("value")
-    return out
-
-problems = []
-for label, spec in (
-    ("service", service["spec"]["template"]["spec"]),
-    ("migration job", job["spec"]["template"]["spec"]["template"]["spec"]),
-):
-    _, container = container_spec(spec)
-    env = env_of(container)
-    if spec.get("serviceAccountName") != runtime_sa:
-        problems.append(f"{label} runs as {spec.get('serviceAccountName')!r}, expected {runtime_sa!r}")
-    if env.get("DATABASE_URL") != f"secret:{db_secret}":
-        problems.append(f"{label} DATABASE_URL is {env.get('DATABASE_URL')!r}, expected secret {db_secret!r}")
-    if label == "service":
-        for key, expected in (("GCS_BUCKET", bucket), ("TASKS_QUEUE", queue), ("FIREBASE_PROJECT_ID", firebase)):
-            if env.get(key) != expected:
-                problems.append(f"service {key} is {env.get(key)!r}, expected {expected!r}")
-if problems:
-    sys.exit("Refusing to release: the live configuration does not match this environment:\n  " + "\n  ".join(problems))
-print("environment verified")
-PY
+"$PYTHON" "$CHECKS" live "$DEPLOY_ENV"
 
 echo "0/6 lock $SERVICE"
 LOCKFILE="$(mktemp)"
@@ -133,7 +93,7 @@ echo "3/6 migrate (expand-only; the running revision keeps working)"
 "$GCLOUD" run jobs execute "$MIGRATE_JOB" --project "$PROJECT" --region "$REGION" --wait
 
 echo "4/6 deploy without traffic"
-# EXTRA_DEPLOY_FLAGS: optional settings that ride through the same gate, e.g.
+# EXTRA_DEPLOY_FLAGS: optional tuning that rides through the same gate (allowlisted in release_checks.py), e.g.
 #   EXTRA_DEPLOY_FLAGS="--update-env-vars=DB_POOL_SIZE=3,DB_MAX_OVERFLOW=2"
 # shellcheck disable=SC2086
 "$GCLOUD" run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --image "$IMAGE_REF" \
@@ -147,6 +107,12 @@ if len(entries) != 1 or not entries[0].get('revisionName') or not entries[0].get
     sys.exit('No unique traffic entry for tag ' + sys.argv[1])
 print(entries[0]['revisionName'], entries[0]['url'])
 " "$TAG" | tr -d '\r')
+
+# The exact revision that would receive traffic must itself carry this environment's bindings and this build: the
+# deploy step can change settings, so the check made before it says nothing about the candidate.
+REVISION_JSON="$("$GCLOUD" run revisions describe "$REVISION" --project "$PROJECT" --region "$REGION" --format=json)"
+export REVISION_JSON
+"$PYTHON" "$CHECKS" candidate "$DEPLOY_ENV" "$IMAGE_REF"
 
 echo "5/6 readiness gate on $REVISION ($URL)"
 READY="$("$CURL" -fsS --retry 5 --retry-delay 3 --retry-all-errors "$URL/api/v1/ready")"

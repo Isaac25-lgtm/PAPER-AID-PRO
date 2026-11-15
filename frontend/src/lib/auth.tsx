@@ -37,6 +37,9 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+/** Waits between automatic profile reloads after a policy change (then the banner offers a manual retry). */
+export const PROFILE_RETRY_MS: (number | undefined)[] = [2000, 5000, undefined];
+
 /** How long a request waits for sign-in to be restored, or for a fresh token, before failing (never anonymously). */
 export const AUTH_WAIT_MS = 15_000;
 
@@ -109,23 +112,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfileError(false);
     if (!uid) {
       setUser(null);
-      return;
+      return true;
     }
     try {
       const profile = await api.get<User>("/me");
       if (current()) setUser(profile);
+      return true;
     } catch (error) {
-      if (!current()) return; // a newer sign-in state owns the UI now
+      if (!current()) return true; // a newer sign-in state owns the UI now
       const code = error instanceof ApiError ? error.code : "";
       if (code === "NOT_INVITED" || code === "ACCOUNT_CONFLICT") {
         setUser(null);
         setNotInvited(code === "NOT_INVITED");
         setAccountConflict(code === "ACCOUNT_CONFLICT");
-        return;
+        return true;
       }
       // A transient failure (network, server) must not tear down the page someone is working in: keep the
-      // profile already loaded and report the problem; with no profile yet, the guard offers a retry.
+      // profile already loaded and report the problem. The guard shows a retry: a full screen with no profile
+      // yet, or a banner above the page (which stays mounted, unsaved work included) when one is loaded.
       setProfileError(true);
+      return false;
     }
   }, []);
 
@@ -136,7 +142,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setConsentRequiredHandler(() => {
       if (consentReload.current) return;
       consentReload.current = true;
-      void loadProfile().finally(() => {
+      // A failed reload is retried a few times (bounded) before the guard's banner asks the person to retry.
+      void (async () => {
+        for (const wait of PROFILE_RETRY_MS) {
+          if (await loadProfile()) return;
+          if (wait === undefined) return;
+          await new Promise((resolve) => setTimeout(resolve, wait));
+        }
+      })().finally(() => {
         consentReload.current = false;
       });
     });
@@ -204,7 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loadProfile();
       },
     }),
-    [firebaseUser, user, loading, notInvited, accountConflict, loadProfile, queryClient],
+    [firebaseUser, user, loading, notInvited, accountConflict, profileError, loadProfile, queryClient],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

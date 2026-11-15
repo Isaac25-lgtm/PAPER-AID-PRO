@@ -256,6 +256,16 @@ export function RequireAuth({ children, admin = false }: { children: ReactNode; 
   // page underneath mounted, so unsaved work (e.g. the editor's pending saves) survives and saves after acceptance.
   return (
     <>
+      {profileError && (
+        // The profile could not be refreshed (e.g. after a policy change): the page stays as it is, with its
+        // unsaved edits, and the person can retry. A successful reload resumes saving or shows the consent screen.
+        <div className="sticky top-0 z-30 border-b border-amber-200 bg-amber-50 px-4 py-2.5" role="alert">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 text-sm text-amber-900">
+            <span>We couldn’t check your account just now. Your work on this page is kept and saves once it’s checked.</span>
+            <Button size="sm" variant="secondary" onClick={() => void refresh()}>Try again</Button>
+          </div>
+        </div>
+      )}
       <div ref={inertRef} aria-hidden={user.needs_consent || undefined}>{children}</div>
       {user.needs_consent && (
         <div className="fixed inset-0 z-[70] overflow-y-auto bg-black/50" role="presentation">

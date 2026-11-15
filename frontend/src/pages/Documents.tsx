@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { SectionGuide } from "@/components/Guidance";
@@ -26,6 +26,16 @@ const TOPIC_EXAMPLE = TOPIC_EXAMPLES[Math.floor(Math.random() * TOPIC_EXAMPLES.l
 
 function NewDocumentModal({ open, onClose, initialType = "manuscript" }: { open: boolean; onClose: () => void; initialType?: DocumentType }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  // Once the dialog is closed (or the person has gone elsewhere), a create that finishes late must not take them
+  // to the new draft: the page they are on (perhaps another draft with unsaved edits) stays where it is.
+  const dismissed = useRef(false);
+  useEffect(() => {
+    dismissed.current = false;
+    return () => {
+      dismissed.current = true;
+    };
+  }, []);
   const styles = useStyles();
   const [step, setStep] = useState<1 | 2>(1);
   const [topic, setTopic] = useState("");
@@ -58,9 +68,15 @@ function NewDocumentModal({ open, onClose, initialType = "manuscript" }: { open:
           headings: headings.split(NL),
         }),
       }),
-    onSuccess: (doc) => navigate(`/documents/${doc.id}`),
+    onSuccess: (doc) => {
+      // The new draft exists either way: lists and counts include it at once.
+      void queryClient.invalidateQueries({ queryKey: ["documents"] });
+      void queryClient.invalidateQueries({ queryKey: ["progress"] });
+      if (!dismissed.current) navigate(`/documents/${doc.id}`);
+    },
   });
   const close = () => {
+    dismissed.current = true;
     setStep(1);
     onClose();
   };
@@ -148,7 +164,10 @@ export default function DocumentsPage() {
   const docs = useQuery({ queryKey: ["documents"], queryFn: () => api.get<DocumentSummary[]>("/documents") });
   const remove = useMutation({
     mutationFn: (id: string) => api.delete(`/documents/${id}`),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["documents"] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["documents"] });
+      void queryClient.invalidateQueries({ queryKey: ["progress"] });
+    },
   });
   return (
     <Container>

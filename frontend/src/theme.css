@@ -60,6 +60,11 @@
   --c-emerald-950: 2 44 34;
   --page: var(--c-slate-50);
   --ink: var(--c-slate-950);
+  /* Lines (borders and dividers) have their own, firmer tokens so every section edge is clearly visible without
+     darkening the backgrounds that share the slate scale. border-slate-100/200/300 and divide-* map to these. */
+  --c-line-100: 222 224 229;
+  --c-line-200: 204 207 214;
+  --c-line-300: 184 188 197;
 }
 
 :root.dark {
@@ -120,4 +125,8 @@
   --c-emerald-800: 167 243 208;
   --c-emerald-900: 209 250 229;
   --c-emerald-950: 236 253 245;
+  /* Lines on dark surfaces: firm enough to separate cards from the page and from each other. */
+  --c-line-100: 50 53 60;
+  --c-line-200: 66 70 78;
+  --c-line-300: 86 90 100;
 }

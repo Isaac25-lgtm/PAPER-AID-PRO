@@ -34,7 +34,7 @@ import { applyRewrite, buildRewriteInput, inputText, proposalText, requestRewrit
 import { relativeTime, sanitizeHtml } from "@/lib/format";
 import { SaveQueue, type Fields } from "@/lib/saveQueue";
 import { normalizeSuggestion } from "@/lib/templates";
-import type { AIStatus, Citation, GroundedAnswer, JSONContent, Paper, RenderedCitations, ResearchDocument, Revision } from "@/lib/types";
+import type { AIStatus, Citation, DocumentSummary, GroundedAnswer, JSONContent, Paper, RenderedCitations, ResearchDocument, Revision } from "@/lib/types";
 
 // pdf.js is large: the PDF panel and its worker load only when the panel is first opened.
 const PdfPanel = lazy(() => import("@/components/editor/PdfPanel"));
@@ -431,6 +431,10 @@ export default function EditorPage() {
     const saved = await api.patch<ResearchDocument>(`/documents/${id}`, { base_version: versionRef.current, ...fields });
     versionRef.current = saved.version;
     queryClient.setQueryData(["document", id], saved);
+    // Home and the sidebar read the list: keep this draft's title, words and "edited" time current there too.
+    queryClient.setQueryData<DocumentSummary[]>(["documents"], (list) =>
+      list?.map((doc) => (doc.id === id ? { ...doc, title: saved.title, word_count: saved.word_count, updated_at: saved.updated_at, version: saved.version } : doc)),
+    );
     void refreshCitations();
   };
 
@@ -475,9 +479,10 @@ export default function EditorPage() {
     return () => {
       window.removeEventListener("beforeunload", handler);
       window.clearTimeout(retryTimer.current);
-      void flush();
+      // Save what is pending, then refresh the list once (order, counts) for wherever the person goes next.
+      void flush().finally(() => void queryClient.invalidateQueries({ queryKey: ["documents"] }));
     };
-  }, [flush, saves]);
+  }, [flush, saves, queryClient]);
 
   const reloadLatest = async () => {
     const latest = await api.get<ResearchDocument>(`/documents/${id}`);
@@ -536,6 +541,7 @@ export default function EditorPage() {
       setSaveState("saved");
       queryClient.setQueryData(["document", id], doc);
       void queryClient.invalidateQueries({ queryKey: ["revisions", id] });
+      void queryClient.invalidateQueries({ queryKey: ["documents"] });
       void refreshCitations();
     });
 

@@ -16,6 +16,15 @@ export default {
       amber: scale("amber"),
       emerald: scale("emerald"),
       },
+      // Borders and dividers use the firmer line tokens (theme.css); backgrounds keep the slate scale.
+      borderColor: {
+        slate: {
+          ...scale("slate"),
+          100: "rgb(var(--c-line-100) / <alpha-value>)",
+          200: "rgb(var(--c-line-200) / <alpha-value>)",
+          300: "rgb(var(--c-line-300) / <alpha-value>)",
+        },
+      },
       fontFamily: {
         sans: ["Inter Tight Variable", "Inter Tight", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
         serif: ["Source Serif 4 Variable", "Source Serif 4", "Georgia", "Cambria", "Times New Roman", "serif"],

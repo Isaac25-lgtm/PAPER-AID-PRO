@@ -124,6 +124,35 @@ describe("workspace sidebar", () => {
     expect(apiData.gets).not.toContain("/me/progress");
   });
 
+  it("the phone menu is a real modal: focus inside, Tab stays inside, Escape closes and returns focus (workspace audit)", async () => {
+    layoutAt("/library");
+    const opener = screen.getByRole("button", { name: "Open menu" });
+    await userEvent.click(opener);
+    const drawer = screen.getByRole("dialog", { name: "Menu" });
+    expect(drawer).toHaveAttribute("aria-modal", "true");
+    expect(drawer.contains(document.activeElement)).toBe(true); // focus moved in
+    expect(opener.closest("[inert]")).not.toBeNull(); // the page behind cannot be reached meanwhile
+    for (let i = 0; i < 30; i++) {
+      await userEvent.tab();
+      expect(drawer.contains(document.activeElement)).toBe(true); // forward Tab never leaves the drawer
+    }
+    await userEvent.tab({ shift: true });
+    expect(drawer.contains(document.activeElement)).toBe(true);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Menu" })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(opener); // back where the person was
+    expect(opener.closest("[inert]")).toBeNull();
+  });
+
+  it("gives each sidebar copy its own heading ids, so section labels resolve uniquely", async () => {
+    layoutAt("/library");
+    await userEvent.click(screen.getByRole("button", { name: "Open menu" }));
+    const ids = [...document.querySelectorAll("[id]")].map((element) => element.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const drawer = screen.getByRole("dialog", { name: "Menu" });
+    expect(within(drawer).getByRole("region", { name: "Recent documents" })).toBeInTheDocument();
+  });
+
   it("keeps the public header for signed-out visitors", () => {
     authState.user = null;
     layoutAt("/discover");
