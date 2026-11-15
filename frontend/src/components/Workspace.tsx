@@ -18,7 +18,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ComponentType } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentType } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
 import { api } from "@/lib/api";
@@ -37,6 +37,8 @@ import { Logo, LogoMark } from "./Layout";
  */
 
 const COLLAPSE_KEY = "paperaid.sidebar.collapsed";
+/** Tailwind `lg`: from here the sidebar is shown beside the page and the phone drawer is hidden. */
+const DESKTOP_QUERY = "(min-width: 1024px)";
 const RECENT = 6;
 
 type Item = { to: string; label: string; icon: ComponentType<{ className?: string }>; count?: number; end?: boolean };
@@ -208,12 +210,27 @@ export function WorkspaceShell() {
   // menu button; the page behind is inert meanwhile (workspace audit).
   const drawerRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(drawerRef, drawer, () => setDrawer(false));
-  useEffect(() => {
+  // The page is inert only while the drawer is open. A layout effect's cleanup runs before any passive effect's
+  // cleanup, so `inert` is gone before the dialog hook returns focus to the menu button (a browser will not focus
+  // an element inside an inert subtree; workspace follow-up).
+  useLayoutEffect(() => {
     const page = pageRef.current;
-    if (!page) return;
-    if (drawer) page.setAttribute("inert", "");
-    else page.removeAttribute("inert");
+    if (!drawer || !page) return;
+    page.setAttribute("inert", "");
+    return () => page.removeAttribute("inert");
+  }, [drawer]);
+  useDialogFocus(drawerRef, drawer, () => setDrawer(false));
+  // Widening the window to the desktop layout hides the drawer (lg:hidden): close it, so nothing stays inert.
+  useEffect(() => {
+    if (!drawer || typeof window.matchMedia !== "function") return;
+    const desktop = window.matchMedia(DESKTOP_QUERY);
+    if (desktop.matches) {
+      setDrawer(false);
+      return;
+    }
+    const onChange = (event: MediaQueryListEvent) => event.matches && setDrawer(false);
+    desktop.addEventListener("change", onChange);
+    return () => desktop.removeEventListener("change", onChange);
   }, [drawer]);
   const toggle = () =>
     setCollapsed((value) => {

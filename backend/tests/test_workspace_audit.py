@@ -181,3 +181,63 @@ async def test_one_lookup_down_the_other_still_delivers_the_pdf(client, monkeypa
     assert await processing.run_job(job_id) == processing.Outcome.DONE
     async with get_sessionmaker()() as db:
         assert (await db.get(Paper, paper_id)).storage_path
+
+
+# ---------------------------------------------------------- follow-up 1: a deadlock retry inside the reclaim
+async def test_a_full_text_request_survives_a_deadlock_retry_in_the_reclaim(client, monkeypatch):
+    """The retry rolls the session back, which expires the paper and user the endpoint loaded; the request must
+    still answer 202 instead of failing on an expired object (MissingGreenlet)."""
+    from tests.test_hardening_audit import upload
+
+    paper_id = (await upload(client, "Deadlock retry study")).json()["id"]
+    real = processing._reclaim_abandoned_jobs
+    calls = {"n": 0}
+
+    class Victim(Exception):
+        sqlstate = "40P01"
+
+    async def deadlock_once(db, pid):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            await db.execute(text("SELECT 1"))  # inside a transaction, as the real statement would be
+            raise DBAPIError("UPDATE processing_jobs", {}, Victim())
+        return await real(db, pid)
+
+    monkeypatch.setattr(processing, "_reclaim_abandoned_jobs", deadlock_once)
+    response = await client.post(f"/api/v1/papers/{paper_id}/full-text", headers=ALICE)
+    assert response.status_code == 202, response.text
+    assert calls["n"] == 2
+
+
+# ---------------------------------------------------------- follow-up 3: concurrent first requests of a new account
+async def test_concurrent_first_requests_of_a_new_account_are_not_an_account_conflict(client, monkeypatch):
+    """Request A finds no profile; request B creates it and commits; A then finds B's row by email. Same Firebase
+    identity, so it is this account (CI saw ACCOUNT_CONFLICT here)."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.db.models import ClosedAccount
+
+    real_get = AsyncSession.get
+    created = {"done": False}
+
+    async def get_with_a_concurrent_signup(self, entity, ident, *args, **kwargs):
+        if entity is ClosedAccount and not created["done"]:
+            created["done"] = True  # between A's "no profile" and A's email check, B commits the profile
+            async with get_sessionmaker()() as other:
+                other.add(User(firebase_uid="alice", email="alice@example.edu", name="alice", email_verified=True))
+                await other.commit()
+        return await real_get(self, entity, ident, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "get", get_with_a_concurrent_signup)
+    response = await client.get("/api/v1/me", headers=ALICE)
+    assert created["done"]
+    assert response.status_code == 200, response.text
+    assert response.json()["email"] == "alice@example.edu"
+
+
+async def test_a_different_identity_with_the_same_email_is_still_a_conflict(client):
+    async with get_sessionmaker()() as db:
+        db.add(User(firebase_uid="someone-else", email="alice@example.edu", name="x", email_verified=True))
+        await db.commit()
+    response = await client.get("/api/v1/me", headers=ALICE)
+    assert response.status_code == 409 and response.json()["error"]["code"] == "ACCOUNT_CONFLICT"

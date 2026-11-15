@@ -184,12 +184,17 @@ async def _reclaim_abandoned_jobs(db: AsyncSession, paper_id: uuid.UUID | None) 
 
 
 async def queue_ingest(db: AsyncSession, paper: Paper, requested_by: User | None) -> ProcessingJob:
-    await reclaim_abandoned_jobs(db, paper.id)
+    # Plain values first: a deadlock retry inside the reclaim rolls the session back, which expires every loaded
+    # object (the paper, the requester), and reading an expired attribute in async code fails (workspace follow-up).
+    paper_id = paper.id
+    requested_by_id = requested_by.id if requested_by else None
+    await reclaim_abandoned_jobs(db, paper_id)
+    await db.refresh(paper)  # fresh after a possible rollback, and after the reclaim may have changed its status
     previous_status, previous_detail = paper.status, paper.status_detail
     job = ProcessingJob(
-        paper_id=paper.id,
+        paper_id=paper_id,
         kind=JobKind.INGEST_PDF,
-        requested_by_id=requested_by.id if requested_by else None,
+        requested_by_id=requested_by_id,
         status=JobStatus.QUEUED,
         lease_expires_at=_now() + QUEUED_LEASE,
     )

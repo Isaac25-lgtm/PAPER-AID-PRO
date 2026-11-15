@@ -133,6 +133,10 @@ async def _upsert_user(db: AsyncSession, claims: TokenClaims) -> User:
             # re-create a profile (or re-bootstrap an admin) after closure.
             raise Unauthenticated("This account has been closed.")
         holder = (await db.execute(select(User).where(User.email == claims.email))).scalar_one_or_none()
+        if holder is not None and holder.firebase_uid == claims.uid:
+            # The same identity, created a moment ago by a concurrent first request (e.g. parallel uploads right
+            # after sign-up): it is this person's account, not a conflict (workspace follow-up; flaked CI).
+            return holder
         if holder is not None:
             # A different Firebase identity with this email (e.g. a deleted and re-created Firebase account).
             # Linking must be an explicit, verified operator action (scripts/relink_user.py), never implicit.

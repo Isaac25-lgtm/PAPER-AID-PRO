@@ -34,6 +34,22 @@ There is no schema change.
 | 7 | Medium | The phone drawer left keyboard focus behind it | The drawer is a modal (`role="dialog"`, `aria-modal`, "Menu") using the shared `useDialogFocus`: focus moves in, Tab and Shift+Tab stay inside, Escape closes it and focus returns to the menu button. The page behind is `inert` while it is open. Each sidebar instance uses `useId` for its heading IDs. | Focus inside on open; 30 Tabs and a Shift+Tab stay inside; Escape returns focus to the opener; the page is inert only while open; no duplicate IDs with both sidebars mounted. |
 | 8 | Low | Recent documents and counts could be stale after writing | Each save updates the cached document list (title, words, edited time, version). Leaving the editor refreshes the list once after its queue drains. Restore refreshes the list. Create and delete refresh the list and the progress counts. | Warm cache: a renamed draft's new title and version appear in the cached list right after saving; the late-create test checks the list refresh. |
 
+## Follow-up (Codex's re-check of `8b16c35` and its CI run)
+
+Three gaps, each fixed with a test that fails on `f30dd90`.
+
+| # | Issue | Fix | Tests |
+|---|---|---|---|
+| F1 | After the reclaim's deadlock retry succeeded, `POST /papers/{id}/full-text` failed with `MissingGreenlet`. The rollback expired the paper and user the endpoint had loaded. | `queue_ingest` keeps the paper and requester IDs as plain values before the reclaim, then refreshes the paper. That is also more correct in general: the reclaim may itself have changed the paper's status. | API entry point: one deadlock at the retry boundary, and the request still returns 202 after two reclaim attempts. |
+| F2 | Closing the phone menu could lose keyboard focus. Escape returned focus to the menu button while the page was still `inert`, which a browser refuses. Widening the window could also hide the drawer and leave the page inert. | `inert` is set in a layout effect whose cleanup runs before the dialog hook restores focus. The drawer closes at the desktop breakpoint (`min-width: 1024px`, matching `lg`). | Escape returns focus to the button with the browser's inert rule enforced in the test; widening past `lg` closes the drawer and clears `inert`. **Real Chrome** (staging, desktop width): opening the drawer closes it at once with nothing inert. |
+| F3 | CI flake: concurrent first requests from a new account got `ACCOUNT_CONFLICT`. One request found, by email, the profile its sibling had just created for the same Firebase ID. | A profile with this email **and this Firebase ID** is the same account and is returned. A different Firebase ID with the same email is still a conflict. | The sibling commit is injected deterministically in the race window, and `/me` returns 200. A different identity with the same email is still a 409 conflict. |
+
+**What the real-Chrome check did not cover.** Chrome's window could not be narrowed, and the site's CSP (rightly)
+blocks framing, so Escape-focus at phone width is covered by the test that enforces the inert rule, not by a
+real-browser run.
+
+**Totals after the follow-up:** backend 317, frontend 146.
+
 ## Also changed
 
 **Clearer section borders** (requested by the maintainer during this round). Borders and dividers now use their own

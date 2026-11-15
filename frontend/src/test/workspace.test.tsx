@@ -1,7 +1,7 @@
 // The signed-in workspace: a sidebar with New document, recent documents and the workspace sections; the
 // signed-out header for visitors; a home page that continues and starts work; links that open the guided outline.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
@@ -142,6 +142,48 @@ describe("workspace sidebar", () => {
     expect(screen.queryByRole("dialog", { name: "Menu" })).not.toBeInTheDocument();
     expect(document.activeElement).toBe(opener); // back where the person was
     expect(opener.closest("[inert]")).toBeNull();
+  });
+
+  it("returns focus to the menu button even where the browser refuses focus inside an inert page", async () => {
+    // jsdom ignores `inert`; browsers do not. Enforce the browser rule so the order of cleanup matters here too.
+    const realFocus = HTMLElement.prototype.focus;
+    const spy = vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+      if (this.closest("[inert]")) return; // what Chrome does
+      realFocus.call(this, options);
+    });
+    try {
+      layoutAt("/library");
+      const opener = screen.getByRole("button", { name: "Open menu" });
+      await userEvent.click(opener);
+      expect(screen.getByRole("dialog", { name: "Menu" }).contains(document.activeElement)).toBe(true);
+      await userEvent.keyboard("{Escape}");
+      expect(screen.queryByRole("dialog", { name: "Menu" })).not.toBeInTheDocument();
+      expect(document.activeElement).toBe(opener);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("closes the drawer when the window widens to the desktop layout, so nothing stays inert", async () => {
+    const listeners: ((event: { matches: boolean }) => void)[] = [];
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: (_: string, fn: (event: { matches: boolean }) => void) => listeners.push(fn),
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      layoutAt("/library");
+      const opener = screen.getByRole("button", { name: "Open menu" });
+      await userEvent.click(opener);
+      expect(opener.closest("[inert]")).not.toBeNull();
+      act(() => listeners.forEach((fn) => fn({ matches: true }))); // resized past the lg breakpoint
+      expect(screen.queryByRole("dialog", { name: "Menu" })).not.toBeInTheDocument();
+      expect(opener.closest("[inert]")).toBeNull();
+    } finally {
+      window.matchMedia = original;
+    }
   });
 
   it("gives each sidebar copy its own heading ids, so section labels resolve uniquely", async () => {
