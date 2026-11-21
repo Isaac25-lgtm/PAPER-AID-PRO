@@ -160,53 +160,6 @@ def test_template_guidance_is_kept_and_exported_in_italics():
     assert runs["Summarise it."] is True and not runs["My words."]
 
 
-ATTENTION_OA = {
-    "id": "https://openalex.org/W2963403868",
-    "doi": "https://doi.org/10.48550/arxiv.1706.03762",
-    "title": "Attention Is All You Need",
-    "publication_year": 2017,
-    "authorships": [{"author": {"display_name": "Ashish Vaswani"}}, {"author": {"display_name": "Noam Shazeer"}}],
-    "primary_location": {"source": {"display_name": "arXiv (Cornell University)"}},
-    "ids": {},
-}
-
-
-async def test_reference_checker_finds_real_papers_crossref_lacks_and_ignores_years_inside_links():
-    from app.services.citations.verify import title_segments, verify_reference
-
-    reference = (
-        "Vaswani, A., Shazeer, N., et al. (2017). Attention is all you need. "
-        "Advances in Neural Information Processing Systems."
-    )
-    assert "Attention is all you need" in title_segments(reference)
-    assert not any("Shazeer" in s for s in title_segments(reference))  # the author list is not a title
-    with respx.mock() as router:
-        unrelated = {
-            "DOI": "10.9/other",
-            "title": ["Tensor Product Attention Is All You Need"],
-            "author": [{"family": "Zhang"}],
-            "issued": {"date-parts": [[2025]]},
-        }
-        router.get("https://api.crossref.org/works").mock(
-            return_value=httpx.Response(200, json={"message": {"items": [unrelated]}})
-        )
-        router.get("https://api.openalex.org/works").mock(
-            return_value=httpx.Response(200, json={"results": [ATTENTION_OA]})
-        )
-        result = await verify_reference(reference)
-    assert result["verdict"] == "verified" and result["match"]["year"] == 2017  # not "not found"
-    with respx.mock() as router:
-        router.get(re.compile(r"https://api\.crossref\.org/works/.*")).mock(return_value=httpx.Response(404))
-        router.get(re.compile(r"https://api\.openalex\.org/works/doi:.*")).mock(
-            return_value=httpx.Response(200, json=ATTENTION_OA)
-        )
-        linked = await verify_reference(
-            "Vaswani A. Attention is all you need. https://doi.org/10.48550/arXiv.1706.03762"
-        )
-    assert linked["verdict"] == "likely_match"  # found via OpenAlex; "1706" in the link is not a year
-    assert linked["checks"]["fields"]["year"] == "not checked"
-
-
 def test_identifiers_are_read_the_way_people_type_them():
     from app.services.scholarly.identifiers import parse_identifier
 

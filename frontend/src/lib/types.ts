@@ -244,8 +244,12 @@ export interface FormattedEntry {
 
 export interface VerifyResult {
   reference: string;
-  verdict: "verified" | "likely_match" | "mismatch" | "not_found" | "error";
+  verdict: "verified" | "registered" | "likely_match" | "mismatch" | "not_found" | "error";
   explanation: string;
+  /** True when the record was found through the reference's own DOI. */
+  via_doi?: boolean;
+  /** Registries that could not be reached for this reference. */
+  unavailable?: string[];
   checks?: {
     title_similarity: number;
     year_matches: boolean | null;

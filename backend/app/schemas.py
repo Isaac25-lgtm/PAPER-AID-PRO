@@ -376,6 +376,22 @@ class FormatResponse(BaseModel):
 class VerifyRequest(BaseModel):
     references: list[str] = Field(min_length=1, max_length=50)
 
+    @field_validator("references")
+    @classmethod
+    def _bounded(cls, value: list[str]) -> list[str]:
+        """Bound the work before any registry call or rate-limit charge (Deep Research audit F10)."""
+        from app.services.citations.verify import MAX_REFERENCE_CHARS, MAX_TOTAL_CHARS
+
+        for index, reference in enumerate(value, start=1):
+            if len(reference.strip()) > MAX_REFERENCE_CHARS:
+                raise ValueError(
+                    f"Reference {index} is longer than {MAX_REFERENCE_CHARS:,} characters. Separate references with a "
+                    "blank line."
+                )
+        if sum(len(r) for r in value) > MAX_TOTAL_CHARS:
+            raise ValueError(f"The list is longer than {MAX_TOTAL_CHARS:,} characters. Check it in parts.")
+        return value
+
 
 # ---------------------------------------------------------------------------------------------- AI/research
 class AskRequest(BaseModel):

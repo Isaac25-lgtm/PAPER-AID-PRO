@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { Check, CheckCircle2, Copy, HelpCircle, ShieldAlert, XCircle } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
 import { SectionGuide } from "@/components/Guidance";
@@ -7,6 +7,7 @@ import { Container } from "@/components/Layout";
 import { StyleOptions, useStyles } from "@/components/papers";
 import { Alert, Badge, Button, Card, PageHeader, Select, Textarea } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
+import { VERDICT, referenceProblem, splitReferences, verdictLabel } from "@/lib/referenceChecks";
 import { useAuth } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/format";
 import type { FormattedEntry, VerifyResult } from "@/lib/types";
@@ -77,26 +78,22 @@ function Generator() {
   );
 }
 
-const VERDICT = {
-  verified: { label: "Verified", tone: "green", Icon: CheckCircle2 },
-  likely_match: { label: "Likely match — check details", tone: "amber", Icon: HelpCircle },
-  mismatch: { label: "DOI points to a different work", tone: "red", Icon: ShieldAlert },
-  not_found: { label: "Not found", tone: "red", Icon: XCircle },
-  error: { label: "Could not check", tone: "slate", Icon: HelpCircle },
-} as const;
 
 function Verifier() {
   const [input, setInput] = useState("");
+  const references = splitReferences(input);
+  const problem = referenceProblem(references);
   const verify = useMutation({
-    mutationFn: () => api.post<{ results: VerifyResult[] }>("/citations/verify", { references: input.split(/\n\s*\n|\n(?=\s*\[?\d+[.\]]\s)/).map((r) => r.trim()).filter((r) => r.length >= 12).slice(0, 50) }),
+    mutationFn: () => api.post<{ results: VerifyResult[] }>("/citations/verify", { references }),
   });
   return (
     <Card className="p-5">
       <h2 className="font-semibold text-slate-900">Reference checker</h2>
-      <p className="mb-3 text-sm text-slate-600">Paste a reference list (separate references with a blank line). Each one is checked against Crossref for title, first author and year — useful for catching fabricated or mistyped references.</p>
-      <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); verify.mutate(); }}>
+      <p className="mb-3 text-sm text-slate-600">Paste a reference list (separate references with a blank line). Each one is checked against Crossref and OpenAlex for title, first author and year — useful for catching fabricated or mistyped references.</p>
+      <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!problem) verify.mutate(); }}>
         <Textarea rows={8} value={input} onChange={(e) => setInput(e.target.value)} aria-label="References" placeholder={"LeCun Y, Bengio Y, Hinton G. Deep learning. Nature. 2015;521:436-444.\n\nVaswani A, et al. Attention is all you need. 2017."} />
-        <Button type="submit" loading={verify.isPending} disabled={!input.trim()}>Check references</Button>
+        {problem && <Alert kind="warning">{problem}</Alert>}
+        <Button type="submit" loading={verify.isPending} disabled={!references.length || Boolean(problem)}>Check references</Button>
       </form>
       {verify.error && <div className="mt-3"><Alert kind="error">{errorMessage(verify.error)}</Alert></div>}
       {verify.data && (
@@ -105,7 +102,7 @@ function Verifier() {
             const v = VERDICT[r.verdict];
             return (
               <li key={i} className="rounded-lg border border-slate-200 p-3 text-sm">
-                <Badge tone={v.tone}><v.Icon className="h-3 w-3" /> {v.label}</Badge>
+                <Badge tone={v.tone}><v.Icon className="h-3 w-3" /> {verdictLabel(r)}</Badge>
                 <p className="mt-2 text-slate-800">{r.reference}</p>
                 <p className="mt-1 text-slate-600">{r.explanation}</p>
                 {r.match && (
