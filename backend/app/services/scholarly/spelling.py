@@ -21,6 +21,7 @@ import asyncio
 import difflib
 import logging
 import re
+import time
 from collections import OrderedDict
 
 from app.config import get_settings
@@ -38,11 +39,33 @@ _CACHE_SIZE = 512
 _CORRECTED = re.compile(r"<CorrectedQuery>([^<]*)</CorrectedQuery>")
 _WORD = re.compile(r"^[^\W\d_]{3,}$")  # letters only, at least three
 
-_cache: OrderedDict[str, str | None] = OrderedDict()
+# Healthy answers only, keyed on the query EXACTLY as typed (case included): whether a word may be corrected depends
+# on its capitals (acronyms are never touched), so "MALRIA study" and "malria study" are different questions
+# (audit F08). Entries expire, a "nothing to correct" sooner than a correction (audit F13).
+_CORRECTION_TTL = 24 * 3600.0
+_NO_CHANGE_TTL = 3600.0
+_cache: OrderedDict[str, tuple[float, str | None]] = OrderedDict()
+
+
+class SpellingUnavailable(Exception):
+    """The spelling service did not give a usable answer (refused, failed, timed out). Never cached."""
+
+
+def _cached(key: str) -> tuple[bool, str | None]:
+    entry = _cache.get(key)
+    if entry is None:
+        return False, None
+    expires, value = entry
+    if expires < time.monotonic():
+        del _cache[key]
+        return False, None
+    _cache.move_to_end(key)
+    return True, value
 
 
 def _remember(key: str, value: str | None) -> str | None:
-    _cache[key] = value
+    ttl = _CORRECTION_TTL if value else _NO_CHANGE_TTL
+    _cache[key] = (time.monotonic() + ttl, value)
     _cache.move_to_end(key)
     while len(_cache) > _CACHE_SIZE:
         _cache.popitem(last=False)
@@ -63,8 +86,8 @@ async def _espell(query: str) -> str | None:
     if key:
         params["api_key"] = key
     response = await get_http_client().get(ESPELL_URL, params=params, timeout=TIMEOUT_SECONDS)
-    if response.status_code != 200:
-        return None
+    if response.status_code != 200:  # a refusal is not "no suggestion": it must not be remembered as one
+        raise SpellingUnavailable(f"ESpell returned HTTP {response.status_code}")
     match = _CORRECTED.search(response.text)
     return match.group(1).strip() if match and match.group(1).strip() else None
 
@@ -128,10 +151,10 @@ async def suggest_correction(query: str) -> str | None:
         return None
     if not any(_checkable(word) for word in query.split()):
         return None
-    key = query.lower()
-    if key in _cache:
-        _cache.move_to_end(key)
-        return _cache[key]
+    key = query  # case-preserving (F08)
+    hit, value = _cached(key)
+    if hit:
+        return value
     try:
         result = await asyncio.wait_for(_suggest(query), timeout=TIMEOUT_SECONDS * 2)
     except Exception as exc:  # spelling help must never break a search

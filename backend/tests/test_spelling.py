@@ -1,5 +1,5 @@
-"""Real users are messy: misspelled searches, identifiers typed every which way, references Crossref lacks,
-web codes in titles. Corrections are suggestions: the person can always search exactly what they typed."""
+"""Spelling correction for scholarly searches: corrected only when the literature confirms it, never a correct
+word, an acronym or another language; the person can always search exactly what they typed."""
 
 import re
 
@@ -7,7 +7,6 @@ import httpx
 import pytest
 import respx
 
-from app.services import open_access
 from app.services.scholarly import spelling
 from app.services.scholarly.spelling import changed_words, suggest_correction
 from tests.conftest import ALICE
@@ -85,68 +84,6 @@ async def test_discover_shows_the_corrected_search_and_can_search_exactly_as_typ
     assert exact["query"] == "malria preventon" and exact["corrected_from"] is None
 
 
-async def test_open_access_pdfs_use_europe_pmcs_current_pdf_service():
-    class Paper:
-        oa_pdf_url = None
-        arxiv_id = None
-        pmcid = "PMC12496081"
-        doi = None
-
-    urls = [url async for url, _ in open_access.pdf_candidates(Paper())]  # type: ignore[arg-type]
-    assert urls == ["https://europepmc.org/api/getPdf?pmcid=PMC12496081"]
-
-
-def test_template_guidance_is_kept_and_exported_in_italics():
-    import io
-
-    from docx import Document as Docx
-
-    from app.services.documents import normalise_document
-    from app.services.export import to_docx
-
-    content = normalise_document(
-        {
-            "type": "doc",
-            "content": [
-                {
-                    "type": "paragraph",
-                    "attrs": {"guidance": True},
-                    "content": [{"type": "text", "text": "Summarise it."}],
-                },
-                {"type": "paragraph", "attrs": {"guidance": "yes"}, "content": [{"type": "text", "text": "My words."}]},
-            ],
-        }
-    )
-    assert content["content"][0]["attrs"] == {"guidance": True}
-    assert "attrs" not in content["content"][1]  # only a real true is kept
-    runs = {p.text: p.runs[0].italic for p in Docx(io.BytesIO(to_docx("T", content, {}))).paragraphs if p.runs}
-    assert runs["Summarise it."] is True and not runs["My words."]
-
-
-def test_identifiers_are_read_the_way_people_type_them():
-    from app.services.scholarly.identifiers import parse_identifier
-
-    for typed, kind, value in [
-        ("PMID 27940873", "pmid", "27940873"),
-        ("pmid#27940873", "pmid", "27940873"),
-        ("PMC 12496081", "pmcid", "PMC12496081"),
-        ("https://pmc.ncbi.nlm.nih.gov/articles/PMC12496081/", "pmcid", "PMC12496081"),
-        ("https://europepmc.org/article/MED/27940873", "pmid", "27940873"),
-        ("arXiv 1706.03762", "arxiv", "1706.03762"),
-        (" doi: 10.1126/science.aah5309 ", "doi", "10.1126/science.aah5309"),
-    ]:
-        found = parse_identifier(typed)
-        assert found is not None and (found.kind, found.value) == (kind, value), typed
-    assert parse_identifier("hello this is not an id") is None
-
-
-def test_web_entities_in_titles_and_journals_are_decoded():
-    from app.services.scholarly.models import clean_text
-
-    assert clean_text("Information Technology &amp; People") == "Information Technology & People"
-    assert clean_text("<jats:p>p &lt; 0.05</jats:p>") == "p < 0.05"
-
-
 async def test_a_typo_that_shares_a_stem_with_common_words_is_still_corrected():
     # Stemmed search counted "feding" as 4 million papers ("fed..."); exact counts give 146 against 900,930.
     with respx.mock() as router:
@@ -154,16 +91,55 @@ async def test_a_typo_that_shares_a_stem_with_common_words_is_still_corrected():
         assert await suggest_correction("school feding") == "school feeding"
 
 
-async def test_the_openalex_key_is_sent_in_a_header_and_never_in_the_address(monkeypatch):
-    from app.config import get_settings
-    from app.services.scholarly.http import get_json
+async def test_capitals_are_respected_whichever_query_arrives_first():
+    """'MALRIA' (all capitals, treated like an acronym) is never corrected, even after 'malria' was (audit F08)."""
+    for order in (("malria study", "MALRIA study"), ("MALRIA study", "malria study")):
+        spelling._cache.clear()
+        with respx.mock(assert_all_called=False) as router:
+            mock_services(router, "malaria study")
+            first, second = [await suggest_correction(q) for q in order]
+        results = dict(zip(order, (first, second), strict=True))
+        assert results["malria study"] == "malaria study"
+        assert results["MALRIA study"] is None
 
-    monkeypatch.setattr(get_settings(), "openalex_api_key", "oa-test-key")
+
+async def test_a_rare_correct_term_is_left_alone():
+    with respx.mock(assert_all_called=False) as router:
+        mock_services(router, "praziquantel trials", counts={"prazikwantel": 0, "praziquantel": 9_000})
+        assert await suggest_correction("praziquantel trials") is None  # already spelled right: nothing to change
+
+
+async def test_a_refused_spelling_request_is_not_remembered_as_no_correction():
+    """A 503 from ESpell must not hide corrections after the service recovers (audit F13)."""
     with respx.mock() as router:
-        openalex = router.get("https://api.openalex.org/works").mock(return_value=httpx.Response(200, json={}))
-        crossref = router.get("https://api.crossref.org/works").mock(return_value=httpx.Response(200, json={}))
-        await get_json("https://api.openalex.org/works", params={"search": "x"})
-        await get_json("https://api.crossref.org/works", params={"query": "x"})
-    sent = openalex.calls.last.request
-    assert sent.headers["authorization"] == "Bearer oa-test-key" and "oa-test-key" not in str(sent.url)
-    assert "authorization" not in crossref.calls.last.request.headers  # never sent to anyone else
+        espell = router.get(re.compile(r"https://eutils\.ncbi\.nlm\.nih\.gov/.*/espell\.fcgi.*"))
+        espell.side_effect = [
+            httpx.Response(503),
+            httpx.Response(
+                200, text="<eSpellResult><CorrectedQuery>malaria prevention</CorrectedQuery></eSpellResult>"
+            ),
+        ]
+
+        def count(request):
+            word = request.url.params["filter"].removeprefix("title_and_abstract.search.exact:")
+            return httpx.Response(200, json={"meta": {"count": COUNTS.get(word, 0)}, "results": []})
+
+        router.get("https://api.openalex.org/works").mock(side_effect=count)
+        assert await suggest_correction("malria preventon") is None  # unavailable: searched as typed
+        assert await suggest_correction("malria preventon") == "malaria prevention"  # recovered
+        assert espell.call_count == 2
+
+
+async def test_healthy_answers_are_cached_and_expire(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(spelling.time, "monotonic", lambda: clock[0])
+    with respx.mock() as router:
+        espell = router.get(re.compile(r"https://eutils\.ncbi\.nlm\.nih\.gov/.*/espell\.fcgi.*")).mock(
+            return_value=httpx.Response(200, text="<eSpellResult><CorrectedQuery></CorrectedQuery></eSpellResult>")
+        )
+        assert await suggest_correction("malaria prevention") is None
+        assert await suggest_correction("malaria prevention") is None
+        assert espell.call_count == 1  # a healthy "nothing to correct" is remembered...
+        clock[0] += spelling._NO_CHANGE_TTL + 1
+        assert await suggest_correction("malaria prevention") is None
+        assert espell.call_count == 2  # ...for a bounded time
