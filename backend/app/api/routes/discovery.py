@@ -23,6 +23,9 @@ from app.services.scholarly.spelling import suggest_correction
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
+# How long a finished search waits for its spelling check before showing the typed results as they are.
+SPELLING_GRACE_SECONDS = 1.5
+
 
 def _identifier(work: ScholarlyWork) -> str | None:
     if work.doi:
@@ -83,10 +86,20 @@ async def search(
     if exact:
         works, statuses = await run(typed)
     else:
-        # The check runs beside the search, so a correctly spelled query is not slowed down.
-        (works, statuses), corrected = await asyncio.gather(run(typed), suggest_correction(typed))
+        # The spelling check runs beside the search. Once the typed search is back it may take at most
+        # SPELLING_GRACE_SECONDS more, so a slow spelling service never holds up a correct query (audit Q3).
+        spelling = asyncio.create_task(suggest_correction(typed))
+        works, statuses = await run(typed)
+        try:
+            corrected = await asyncio.wait_for(spelling, timeout=SPELLING_GRACE_SECONDS)
+        except TimeoutError:
+            corrected = None
         if corrected:
-            works, statuses = await run(corrected)
+            retry_works, retry_statuses = await run(corrected)
+            if retry_works:
+                works, statuses = retry_works, retry_statuses
+            else:  # the correction found nothing: keep what the typed words found
+                corrected = None
     dois = [w.doi for w in works if w.doi]
     pmids = [w.pmid for w in works if w.pmid]
     known: dict[str, Paper] = {}

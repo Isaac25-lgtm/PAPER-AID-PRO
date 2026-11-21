@@ -143,3 +143,39 @@ async def test_healthy_answers_are_cached_and_expire(monkeypatch):
         clock[0] += spelling._NO_CHANGE_TTL + 1
         assert await suggest_correction("malaria prevention") is None
         assert espell.call_count == 2  # ...for a bounded time
+
+
+async def test_a_slow_spelling_check_never_holds_up_the_results(client, registries, monkeypatch):
+    import asyncio
+    import time as clock
+
+    from app.api.routes import discovery
+
+    async def slow(query: str) -> str:
+        await asyncio.sleep(30)
+        return "never used"
+
+    monkeypatch.setattr(discovery, "suggest_correction", slow)
+    monkeypatch.setattr(discovery, "SPELLING_GRACE_SECONDS", 0.05)
+    started = clock.monotonic()
+    body = (await client.get("/api/v1/discovery/search", params={"q": "malaria"})).json()
+    assert clock.monotonic() - started < 10 and body["corrected_from"] is None and body["results"]
+
+
+async def test_a_correction_that_finds_nothing_keeps_the_typed_results(client, registries, monkeypatch):
+    from app.api.routes import discovery
+
+    async def useless(query: str) -> str:
+        return "zzqx wqvv"
+
+    async def fake_search(query, **_):
+        from app.services.scholarly.models import ProviderStatus, ScholarlyWork
+
+        works = [] if query == "zzqx wqvv" else [ScholarlyWork(title="Malaria in schools", doi="10.1/x")]
+        return works, [ProviderStatus(provider="openalex", ok=True, count=len(works))]
+
+    monkeypatch.setattr(discovery, "suggest_correction", useless)
+    monkeypatch.setattr(discovery, "federated_search", fake_search)
+    body = (await client.get("/api/v1/discovery/search", params={"q": "malaria"})).json()
+    assert body["query"] == "malaria" and body["corrected_from"] is None
+    assert [r["title"] for r in body["results"]] == ["Malaria in schools"]
