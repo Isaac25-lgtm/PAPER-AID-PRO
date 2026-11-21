@@ -3,6 +3,9 @@ import { Link } from "react-router";
 
 import { Container } from "@/components/Layout";
 
+/** Built with `vite build --mode staging` (frontend/.env.staging): the test environment has its own hosting facts. */
+const IS_STAGING = import.meta.env.VITE_DEPLOYMENT === "staging";
+
 /** Version shown on the policies; must match the API's POLICY_VERSION (backend/app/policy.py). */
 export const POLICY_VERSION = "2026-11-14.2";
 const CONTACT = import.meta.env.VITE_PRIVACY_CONTACT_EMAIL as string | undefined;
@@ -79,7 +82,13 @@ export function PrivacyPage() {
       <p>Only to provide the service you ask for: storing your work, finding and formatting sources, answering questions about papers you choose, and keeping the service secure.</p>
       <h2>Who processes it</h2>
       <ul>
-        <li><strong>Google Cloud and Firebase</strong> host the service, database, files and sign-in. Data is stored in the European Union (Netherlands).</li>
+        {IS_STAGING ? (
+          <li>
+            <strong>This is the staging (test) version of PaperAid Pro.</strong> Google Cloud and Firebase host the service, files and sign-in in the European Union (Netherlands, with background jobs in Belgium). Its database is hosted by <strong>Neon in the United States (Ohio)</strong>. The public version stores its database in the European Union.
+          </li>
+        ) : (
+          <li><strong>Google Cloud and Firebase</strong> host the service, database, files and sign-in. Data is stored in the European Union (Netherlands).</li>
+        )}
         <li><strong>Scholarly databases</strong> (OpenAlex, Crossref, Semantic Scholar, DOAJ, PubMed, Europe PMC, arXiv, CORE, Open Library) receive your search terms and identifiers only. They never receive your name, email or documents.</li>
         <li><strong>The AI provider</strong>, when AI features are switched on, receives your question and the excerpts of the papers you selected, solely to produce the answer. It is not allowed to use them for training.</li>
       </ul>
