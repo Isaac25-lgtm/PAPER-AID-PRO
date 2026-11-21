@@ -38,7 +38,8 @@ def test_doaj_and_europe_pmc_records_are_mapped():
     assert preprint.oa_pdf_url == "https://europepmc.org/x.pdf" and preprint.authors[0].family == "Namaganda"
 
 
-async def test_subject_filter_reaches_openalex_and_skips_health_sources(client, registries):
+async def test_subject_filter_reaches_openalex_and_skips_health_sources(client, registries, monkeypatch):
+    monkeypatch.setattr(get_settings(), "semantic_scholar_api_key", "s2-test-key")  # it joins the defaults with a key
     response = await client.get("/api/v1/discovery/search", params={"q": "oral history", "subject": "humanities"})
     assert response.status_code == 200
     providers = [p["provider"] for p in response.json()["providers"]]

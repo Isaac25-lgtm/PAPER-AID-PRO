@@ -12,6 +12,7 @@ import math
 import re
 from collections.abc import Sequence
 
+from app.config import get_settings
 from app.errors import AppError
 from app.services.scholarly.identifiers import Identifier, normalize_title
 from app.services.scholarly.models import ALL_PROVIDERS, ProviderName, ProviderStatus, ScholarlyWork
@@ -183,7 +184,15 @@ async def _run_provider(
 
 
 def default_providers(subject: str = "all") -> list[ProviderName]:
-    return [p for p in DEFAULT_PROVIDERS.get(subject, DEFAULT_PROVIDERS["all"]) if available(p)]  # type: ignore[misc]
+    """The sources searched when none are chosen. Semantic Scholar joins only with its key: without one it refuses
+    most requests (HTTP 429) and adds little beyond OpenAlex. It stays available when chosen explicitly and for
+    identifier lookups (Deep Research audit, provider decision)."""
+    keyed_s2 = bool(get_settings().semantic_scholar_api_key)
+    return [
+        p  # type: ignore[misc]
+        for p in DEFAULT_PROVIDERS.get(subject, DEFAULT_PROVIDERS["all"])
+        if available(p) and (p != "semantic_scholar" or keyed_s2)
+    ]
 
 
 async def federated_search(

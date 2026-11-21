@@ -5,6 +5,7 @@ import httpx
 import respx
 
 from app.services import open_access
+from tests.conftest import ALICE
 
 
 async def test_open_access_pdfs_use_europe_pmcs_current_pdf_service():
@@ -67,3 +68,20 @@ def test_a_closing_bracket_that_belongs_to_the_doi_is_kept():
         assert identifier is not None and identifier.value == "10.1234/example(2020)"
     assert normalize_doi("doi:10.1234/abc).") == "10.1234/abc"
     assert normalize_doi("[10.1000/xyz]") == "10.1000/xyz"
+
+
+async def test_semantic_scholar_is_searched_by_default_only_with_its_key(client, registries, monkeypatch):
+    from app.config import get_settings
+    from app.services.scholarly.aggregator import default_providers
+
+    assert "semantic_scholar" not in default_providers("all")
+    default = (await client.get("/api/v1/discovery/search", params={"q": "malaria"})).json()
+    assert "semantic_scholar" not in {p["provider"] for p in default["providers"]}  # no red 'unavailable' chip
+    chosen = (
+        await client.get("/api/v1/discovery/search", params={"q": "malaria", "providers": ["semantic_scholar"]})
+    ).json()
+    assert [p["provider"] for p in chosen["providers"]] == ["semantic_scholar"]  # still available when asked for
+    status = (await client.get("/api/v1/research/deep/status", headers=ALICE)).json()
+    assert "semantic_scholar" not in status["databases"]
+    monkeypatch.setattr(get_settings(), "semantic_scholar_api_key", "s2-test-key")
+    assert "semantic_scholar" in default_providers("all")

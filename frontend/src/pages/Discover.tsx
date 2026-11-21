@@ -144,7 +144,7 @@ export default function DiscoverPage() {
         <Button type="submit">Search</Button>
       </form>
 
-      {!q && <EmptyState title="Start with a topic" icon={<Sparkles className="h-8 w-8" />}>Choose a subject to focus the search. Results come from OpenAlex, Crossref, Semantic Scholar and the Directory of Open Access Journals, plus PubMed and Europe PMC for health and life sciences.</EmptyState>}
+      {!q && <EmptyState title="Start with a topic" icon={<Sparkles className="h-8 w-8" />}>Choose a subject to focus the search. Results come from OpenAlex, Crossref and the Directory of Open Access Journals, plus PubMed and Europe PMC for health and life sciences.</EmptyState>}
       {search.isLoading && <Spinner label="Searching scholarly databases" />}
       {search.error && <Alert kind="error">{errorMessage(search.error)}</Alert>}
       {search.data && (
