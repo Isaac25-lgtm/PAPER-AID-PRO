@@ -41,7 +41,7 @@ from app.security.rate_limit import enforce_rate_limit
 from app.services import manual, processing
 from app.services.ai import features as ai_features
 from app.services.citations.csl import STYLES, format_citations
-from app.services.fuzzy import correct_from_vocabulary, words_of
+from app.services.fuzzy import search_with_correction
 from app.services.maintenance import delete_now_or_later, schedule_deletion
 from app.services.manual import ManualSourceIn
 from app.services.papers import (
@@ -57,7 +57,6 @@ from app.services.papers import (
 from app.services.scholarly.aggregator import resolve_identifier
 from app.services.scholarly.identifiers import parse_identifier
 from app.services.scholarly.models import ScholarlyWork
-from app.services.scholarly.spelling import suggest_correction
 from app.services.search import search_evidence_corrected
 from app.services.storage import get_storage, sha256_hex
 
@@ -94,41 +93,36 @@ async def list_papers(
     sort: Annotated[str, Query(pattern="^(recent|year|citations|relevance)$")] = "recent",
     page: Annotated[int, Query(ge=1, le=1000)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    exact: bool = False,
 ) -> PaperPage:
-    """The catalog of papers imported into PaperAid (public records + your private uploads)."""
+    """The catalog of papers imported into PaperAid (public records + your private uploads). A search that matches
+    nothing is retried once with misspellings corrected from the catalogue's own titles (never an outside service:
+    Deep Research audit F05); `matched_query` says so, and `exact=true` searches only the words as typed."""
 
-    base = [visible_papers_clause(user)]
+    base = [visible_papers_clause(user)]  # every query below, the vocabulary included, sees only visible papers
     if status:
         base.append(Paper.status == PaperStatus(status))
 
-    def matching(query: str | None):  # type: ignore[no-untyped-def]
-        if not query or not query.strip():
-            return list(base), None
-        tsquery = func.websearch_to_tsquery("english", query.strip())
-        return [*base, Paper.search_vector.op("@@")(tsquery)], func.ts_rank_cd(Paper.search_vector, tsquery)
+    def text_filter(query: str):  # type: ignore[no-untyped-def]
+        return Paper.search_vector.op("@@")(func.websearch_to_tsquery("english", query))
 
-    filters, rank = matching(q)
-    total = (await db.execute(select(func.count()).select_from(Paper).where(*filters))).scalar_one()
-    matched_query: str | None = None
-    if q and q.strip() and total == 0:
-        # Nothing matched as typed: forgive misspellings. First the literature-confirmed correction, then the
-        # closest words the catalogue's own titles contain.
-        await db.commit()  # no database connection is held while the spelling services answer
-        corrected = await suggest_correction(q)
-        if not corrected:
-            titles = (
-                await db.execute(
-                    select(Paper.title).where(*base).order_by(Paper.created_at.desc()).limit(CATALOG_VOCABULARY_LIMIT)
-                )
-            ).scalars()
-            words = correct_from_vocabulary(words_of(q), titles)
-            corrected = " ".join(words) if words else None
-        if corrected:
-            filters, rank = matching(corrected)
-            total = (await db.execute(select(func.count()).select_from(Paper).where(*filters))).scalar_one()
-            matched_query = corrected if total else None
-            if not total:
-                filters, rank = matching(q)
+    async def count(query: str) -> int:
+        stmt = select(func.count()).select_from(Paper).where(*base, text_filter(query))
+        return int((await db.execute(stmt)).scalar_one())
+
+    async def titles() -> list[str]:
+        stmt = select(Paper.title).where(*base).order_by(Paper.created_at.desc()).limit(CATALOG_VOCABULARY_LIMIT)
+        return list((await db.execute(stmt)).scalars())
+
+    filters, rank, matched_query = list(base), None, None
+    if q and q.strip():
+        outcome = await search_with_correction(q, exact=exact, count=count, vocabulary=titles)
+        filters.append(text_filter(outcome.query))
+        rank = func.ts_rank_cd(Paper.search_vector, func.websearch_to_tsquery("english", outcome.query))
+        total = outcome.total
+        matched_query = outcome.query if outcome.corrected_from else None
+    else:
+        total = (await db.execute(select(func.count()).select_from(Paper).where(*filters))).scalar_one()
     if sort == "relevance" and rank is not None:
         order = [rank.desc(), Paper.created_at.desc(), Paper.id]
     else:

@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import clsx from "clsx";
 import { Check, Copy, ExternalLink, FileCheck2, Lock, Unlock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -139,14 +140,29 @@ export function AddToLibraryButton({ paper, onDone }: { paper: Paper; onDone?: (
 /** Search the whole library on the server (title match), newest first, one page at a time. */
 export function useLibrarySearch(filter: string, limit = 50) {
   const [debounced, setDebounced] = useState(filter);
+  // "Search exactly" applies to the words it was chosen for; typing something new may be corrected again.
+  const [exactFor, setExactFor] = useState<string | null>(null);
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(filter.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [filter]);
-  return useQuery({
-    queryKey: ["library", "search", debounced, limit],
-    queryFn: () => api.page<LibraryItem>("/library", { q: debounced || undefined, limit }),
+  const exact = Boolean(debounced) && exactFor === debounced;
+  const query = useQuery({
+    queryKey: ["library", "search", debounced, limit, exact],
+    queryFn: () => api.page<LibraryItem>("/library", { q: debounced || undefined, limit, exact: exact || undefined }),
   });
+  return Object.assign(query, { typed: debounced, searchExactly: () => setExactFor(debounced) });
+}
+
+/** Says when a library search was corrected ("fetal" is not "metal") and offers the exact words (audit F09). */
+export function LibraryMatchNote({ matched, typed, onExact, className }: { matched?: string; typed: string; onExact: () => void; className?: string }) {
+  if (!matched || !typed) return null;
+  return (
+    <p role="status" className={clsx("text-xs text-slate-600", className)}>
+      No title has “{typed}”. Showing <strong className="font-semibold text-slate-900">{matched}</strong>.{" "}
+      <button type="button" className="text-brand-700 underline underline-offset-2" onClick={onExact}>Search “{typed}” exactly</button>
+    </p>
+  );
 }
 
 

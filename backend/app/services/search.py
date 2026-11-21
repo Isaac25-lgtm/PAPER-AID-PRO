@@ -7,11 +7,8 @@ References/acknowledgement sections are excluded from evidence.
 
 from __future__ import annotations
 
-import difflib
 import logging
-import re
 import uuid
-from collections import Counter
 from dataclasses import dataclass
 
 from sqlalchemy import func, or_, select
@@ -19,13 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import PaperChunk
 from app.services.ai.providers import get_embedder
+from app.services.fuzzy import correct_from_vocabulary, words_of
 from app.services.pdf import NON_EVIDENCE_SECTIONS
 
 log = logging.getLogger(__name__)
 RRF_K = 60
 VOCABULARY_CHUNKS = 3000  # passages read to learn the papers' own words (bounds the work for large selections)
-CLOSE_MATCH = 0.8  # difflib ratio: "atention" ~ "attention" (0.94), "heds" ~ "heads" (0.89)
-_TOKEN = re.compile(r"[^\W\d_]+")
 
 
 @dataclass
@@ -92,32 +88,12 @@ async def _vector(db: AsyncSession, vector: list[float], paper_ids: list[uuid.UU
 
 async def correct_against_papers(db: AsyncSession, query: str, paper_ids: list[uuid.UUID]) -> str | None:
     """The query with each word the papers never use replaced by the closest word they do use ("atention heds"
-    -> "attention heads"). Learned from the papers' own text, so it works in any field or language and never
-    proposes a word that is not in the sources. None when nothing needs changing."""
-    words = query.split()
-    candidates = [w for w in words if len(w) >= 4 and _TOKEN.fullmatch(w)]
-    if not candidates:
-        return None
+    -> "attention heads"), learned from the papers' own text (services/fuzzy.py). None when nothing changes."""
     texts = (
         await db.execute(select(PaperChunk.text).where(PaperChunk.paper_id.in_(paper_ids)).limit(VOCABULARY_CHUNKS))
     ).scalars()
-    vocabulary = Counter(token.lower() for text in texts for token in _TOKEN.findall(text) if len(token) >= 3)
-    if not vocabulary:
-        return None
-    known = list(vocabulary)
-    changed = False
-    corrected = []
-    for word in words:
-        lower = word.lower()
-        if word in candidates and lower not in vocabulary:
-            matches = difflib.get_close_matches(lower, known, n=3, cutoff=CLOSE_MATCH)
-            if matches:
-                best = max(matches, key=lambda m: (difflib.SequenceMatcher(None, lower, m).ratio(), vocabulary[m]))
-                corrected.append(best)
-                changed = True
-                continue
-        corrected.append(word)
-    return " ".join(corrected) if changed else None
+    corrected = correct_from_vocabulary(words_of(query), texts)
+    return " ".join(corrected) if corrected else None
 
 
 async def search_evidence(

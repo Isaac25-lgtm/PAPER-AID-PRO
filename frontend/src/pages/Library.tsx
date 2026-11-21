@@ -6,7 +6,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { SectionGuide } from "@/components/Guidance";
 import { ManualSourceForm } from "@/components/ManualSource";
 import { Container } from "@/components/Layout";
-import { PaperCard } from "@/components/papers";
+import { LibraryMatchNote, PaperCard } from "@/components/papers";
 import { Alert, Button, EmptyState, Input, Label, Modal, PageHeader, Select, Spinner, Textarea } from "@/components/ui";
 import { api, downloadFile, errorMessage } from "@/lib/api";
 import type { Collection, ImportResult, LibraryItem, Paper } from "@/lib/types";
@@ -168,6 +168,9 @@ export default function LibraryPage() {
   const [params, setParams] = useSearchParams();
   const collectionId = params.get("collection");
   const tag = params.get("tag");
+  const q = params.get("q") ?? "";
+  const exact = params.get("exact") === "1";
+  const [titleDraft, setTitleDraft] = useState(q);
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<LibraryItem | null>(null);
@@ -175,10 +178,10 @@ export default function LibraryPage() {
 
   const collections = useQuery({ queryKey: ["collections"], queryFn: () => api.get<Collection[]>("/collections") });
   const items = useInfiniteQuery({
-    queryKey: ["library", collectionId, tag],
+    queryKey: ["library", collectionId, tag, q, exact],
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
-      api.page<LibraryItem>("/library", { collection_id: collectionId ?? undefined, tag: tag ?? undefined, limit: PAGE_SIZE, offset: pageParam }),
+      api.page<LibraryItem>("/library", { collection_id: collectionId ?? undefined, tag: tag ?? undefined, q: q || undefined, exact: exact || undefined, limit: PAGE_SIZE, offset: pageParam }),
     getNextPageParam: (last, pages) => {
       const loaded = pages.reduce((n, page) => n + page.items.length, 0);
       return loaded < last.total ? loaded : undefined;
@@ -266,9 +269,39 @@ export default function LibraryPage() {
           )}
         </aside>
         <section>
+          <form
+            className="mb-3 flex gap-2"
+            role="search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const next = new URLSearchParams(params);
+              next.delete("exact"); // a new search may be corrected again
+              if (titleDraft.trim()) next.set("q", titleDraft.trim());
+              else next.delete("q");
+              setParams(next);
+            }}
+          >
+            <Input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} placeholder="Search titles in this list" aria-label="Search titles" />
+            <Button type="submit" variant="secondary">Search</Button>
+          </form>
+          <LibraryMatchNote
+            className="mb-3"
+            matched={exact ? undefined : items.data?.pages[0]?.matchedQuery}
+            typed={q}
+            onExact={() => {
+              const next = new URLSearchParams(params);
+              next.set("exact", "1");
+              setParams(next);
+            }}
+          />
           {items.isLoading && <Spinner />}
           {items.error && <Alert kind="error">{errorMessage(items.error)}</Alert>}
-          {items.data && total === 0 && (collectionId || tag ? (
+          {items.data && total === 0 && q && (
+            <EmptyState icon={<LibraryBig className="h-8 w-8" />} title={`No titles match “${q}”`}>
+              Try fewer or different words{collectionId || tag ? ", or look in All papers" : ""}.
+            </EmptyState>
+          )}
+          {items.data && total === 0 && !q && (collectionId || tag ? (
             <EmptyState icon={<LibraryBig className="h-8 w-8" />} title="Nothing here yet">
               Add papers to this {collectionId ? "collection from the menu on each paper" : "tag by editing a paper’s tags"}.
             </EmptyState>

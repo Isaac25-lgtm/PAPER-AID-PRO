@@ -71,6 +71,8 @@ interface RequestOptions {
 export interface Page<T> {
   items: T[];
   total: number;
+  /** Set when a search matched nothing as typed and was corrected from the records' own words (X-Matched-Query). */
+  matchedQuery?: string;
 }
 
 async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
@@ -135,7 +137,8 @@ async function send<T>(
   else if (options.paged) {
     const items = (await response.json()) as unknown[];
     const total = Number(response.headers.get("X-Total-Count") ?? items.length);
-    result = { items, total: Number.isFinite(total) ? total : items.length } as T;
+    const matched = response.headers.get("X-Matched-Query");
+    result = { items, total: Number.isFinite(total) ? total : items.length, ...(matched ? { matchedQuery: decodeURIComponent(matched) } : {}) } as T;
   } else if (response.status === 204) result = undefined as T;
   else result = (await response.json()) as T;
   if (started !== session) throw sessionChanged(); // the body arrived after the identity changed

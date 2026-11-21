@@ -15,10 +15,11 @@ export default function CatalogPage() {
   const q = params.get("q") ?? "";
   const sort = params.get("sort") ?? (q ? "relevance" : "recent");
   const page = Number(params.get("page") ?? "1");
+  const exact = params.get("exact") === "1";
   const [draft, setDraft] = useState(q);
   const result = useQuery({
-    queryKey: ["catalog", q, sort, page],
-    queryFn: () => api.get<PaperPage>("/papers", { q: q || undefined, sort, page, page_size: 20 }),
+    queryKey: ["catalog", q, sort, page, exact],
+    queryFn: () => api.get<PaperPage>("/papers", { q: q || undefined, sort, page, page_size: 20, exact: exact || undefined }),
   });
   const update = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
@@ -34,7 +35,7 @@ export default function CatalogPage() {
     <Container>
       <PageHeader title="Catalog" subtitle="Every paper imported into PaperAid Pro, plus your private uploads." />
       <SectionGuide section="catalog" />
-      <form className="mb-6 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); update({ q: draft.trim() || null, page: null, sort: null }); }}>
+      <form className="mb-6 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); update({ q: draft.trim() || null, page: null, sort: null, exact: null }); }}>
         <Input className="min-w-64 flex-1" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Search titles, journals and abstracts" aria-label="Search catalog" />
         <Select className="w-44" value={sort} onChange={(e) => update({ sort: e.target.value, page: null })} aria-label="Sort">
           {q && <option value="relevance">Most relevant</option>}
@@ -48,7 +49,10 @@ export default function CatalogPage() {
       {result.error && <Alert kind="error">{errorMessage(result.error)}</Alert>}
       {result.data?.matched_query && (
         <p className="mb-4 text-sm text-slate-700" role="status">
-          Nothing matched “{q}”. Showing results for <strong className="font-semibold text-slate-950">{result.data.matched_query}</strong>.
+          Nothing matched “{q}”. Showing results for <strong className="font-semibold text-slate-950">{result.data.matched_query}</strong>.{" "}
+          <button type="button" className="text-brand-700 underline underline-offset-2" onClick={() => update({ exact: "1", page: null })}>
+            Search “{q}” exactly
+          </button>
         </p>
       )}
       {result.data && result.data.items.length === 0 && (

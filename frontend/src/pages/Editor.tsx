@@ -20,7 +20,7 @@ import { SelectionMenu, type Span } from "@/components/editor/SelectionMenu";
 import { useAutocomplete, type AutocompleteStatus } from "@/components/editor/useAutocomplete";
 import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
 import { HelpButton, SectionGuide } from "@/components/Guidance";
-import { StyleOptions, useLibrarySearch, useStyles } from "@/components/papers";
+import { LibraryMatchNote, StyleOptions, useLibrarySearch, useStyles } from "@/components/papers";
 import { Alert, Badge, Button, Input, Modal, Select, Spinner, useDialogFocus } from "@/components/ui";
 import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
 import { applyRenderIfCurrent } from "@/lib/citationLabels";
@@ -142,6 +142,7 @@ function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; 
   return (
     <div className="space-y-3">
       <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search your library by title" aria-label="Search sources" />
+      <LibraryMatchNote matched={library.data?.matchedQuery} typed={library.typed} onExact={library.searchExactly} />
       <Input value={locator} onChange={(e) => setLocator(e.target.value)} placeholder="Page (optional), e.g. 12 or 12-14" aria-label="Page locator" maxLength={50} />
       {insert.error && <Alert kind="error">{errorMessage(insert.error)}</Alert>}
       {library.isLoading && <Spinner />}

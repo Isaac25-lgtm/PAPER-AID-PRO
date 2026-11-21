@@ -92,7 +92,7 @@ def create_app() -> FastAPI:
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
             # Readable by the SPA (a different origin): paging totals, export counts, download names.
-            expose_headers=["X-Total-Count", "X-Item-Count", "Content-Disposition", "X-Request-ID"],
+            expose_headers=["X-Total-Count", "X-Item-Count", "X-Matched-Query", "Content-Disposition", "X-Request-ID"],
             max_age=600,
         )
 

@@ -6,7 +6,7 @@ import { Link, useSearchParams } from "react-router";
 import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
 import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
-import { useLibrarySearch } from "@/components/papers";
+import { LibraryMatchNote, useLibrarySearch } from "@/components/papers";
 import { ResearchModes } from "@/components/ResearchModes";
 import { Alert, Badge, Button, Card, EmptyState, Input, PageHeader, Spinner, Textarea } from "@/components/ui";
 import { AI_OFF_NOTE, useAIEnabled } from "@/lib/ai";
@@ -133,6 +133,7 @@ export default function ResearchPage() {
         <aside>
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Sources from your library</p>
           <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter" aria-label="Filter papers" className="mb-2" />
+          <LibraryMatchNote matched={library.data?.matchedQuery} typed={library.typed} onExact={library.searchExactly} className="mb-2" />
           {library.isLoading && <Spinner />}
           {library.error && <Alert kind="error">{errorMessage(library.error)}</Alert>}
           {library.data?.total === 0 && !filter && <p className="text-sm text-slate-500">Your library is empty. <Link to="/discover" className="text-brand-700">Discover papers</Link>.</p>}

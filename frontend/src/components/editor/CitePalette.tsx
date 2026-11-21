@@ -3,7 +3,7 @@ import type { Editor } from "@tiptap/react";
 import { Loader2, Search } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 
-import { useLibrarySearch } from "@/components/papers";
+import { LibraryMatchNote, useLibrarySearch } from "@/components/papers";
 import { Alert } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { ANCHOR_LOST, trackPosition, useEditGate, type TrackedPosition } from "@/lib/editGate";
@@ -270,6 +270,7 @@ export function CitePalette({
             </div>
           )}
           {everywhere.error && <p className="px-2.5 py-1.5 text-xs text-slate-500">Searching all sources failed: {errorMessage(everywhere.error)} Your library results are still shown.</p>}
+          <LibraryMatchNote matched={library.data?.matchedQuery} typed={library.typed} onExact={library.searchExactly} className="px-2.5 py-1.5" />
           <ul id="cite-options" role="listbox" aria-label="Sources">
             {options.map((option, i) => {
               const isLibrary = option.kind === "library";

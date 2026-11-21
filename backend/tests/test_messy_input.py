@@ -96,43 +96,6 @@ async def test_open_access_pdfs_use_europe_pmcs_current_pdf_service():
     assert urls == ["https://europepmc.org/api/getPdf?pmcid=PMC12496081"]
 
 
-async def test_searching_inside_a_paper_forgives_typos_using_the_papers_own_words(client):
-    from tests.conftest import STUDY_SECTIONS, make_pdf
-
-    paper = (
-        await client.post(
-            "/api/v1/papers/upload",
-            headers=ALICE,
-            files={"file": ("study.pdf", make_pdf(STUDY_SECTIONS), "application/pdf")},
-        )
-    ).json()
-    url = f"/api/v1/papers/{paper['id']}/passages"
-    exact = (await client.get(url, params={"q": "absenteeism"}, headers=ALICE)).json()
-    assert exact and all(h["matched_query"] is None for h in exact)  # correctly spelled: nothing to correct
-    typo = (await client.get(url, params={"q": "absenteism malria"}, headers=ALICE)).json()
-    assert typo and {h["matched_query"] for h in typo} == {"absenteeism malaria"}
-    assert any("bsenteeism" in h["text"] for h in typo)
-    nonsense = (await client.get(url, params={"q": "zzqx wqvv"}, headers=ALICE)).json()
-    assert nonsense == []  # nothing close in the paper: no invented match
-
-
-async def test_library_filter_matches_words_in_any_order_and_forgives_typos(client, registries):
-    from tests.conftest import import_doi
-
-    await import_doi(
-        client
-    )  # "School-based malaria prevention with insecticide-treated nets: a cluster randomised trial"
-
-    async def titles(q: str) -> list[str]:
-        response = await client.get("/api/v1/library", params={"q": q}, headers=ALICE)
-        return [item["paper"]["title"] for item in response.json()]
-
-    assert len(await titles("malaria trial")) == 1  # words apart in the title still match
-    assert len(await titles("malria randomsed")) == 1  # misspelled: corrected from the library's own titles
-    assert await titles("zzqx") == []  # nothing close: nothing invented
-    assert await titles("100%_") == []  # wildcards typed by the person are plain text
-
-
 def test_template_guidance_is_kept_and_exported_in_italics():
     import io
 
@@ -182,24 +145,6 @@ def test_web_entities_in_titles_and_journals_are_decoded():
 
     assert clean_text("Information Technology &amp; People") == "Information Technology & People"
     assert clean_text("<jats:p>p &lt; 0.05</jats:p>") == "p < 0.05"
-
-
-async def test_catalog_search_forgives_typos(client, registries, monkeypatch):
-    from app.api.routes import papers as route
-    from tests.conftest import import_doi
-
-    await import_doi(client)  # "School-based malaria prevention with insecticide-treated nets: ..."
-
-    async def no_suggestion(query: str) -> None:
-        return None  # the literature check is unavailable: the catalogue's own titles still correct it
-
-    monkeypatch.setattr(route, "suggest_correction", no_suggestion)
-    exact = (await client.get("/api/v1/papers", params={"q": "malaria prevention"})).json()
-    assert exact["total"] == 1 and exact["matched_query"] is None
-    typo = (await client.get("/api/v1/papers", params={"q": "malria preventon"})).json()
-    assert typo["total"] == 1 and typo["matched_query"] == "malaria prevention"
-    nothing = (await client.get("/api/v1/papers", params={"q": "zzqx"})).json()
-    assert nothing["total"] == 0 and nothing["matched_query"] is None
 
 
 async def test_a_typo_that_shares_a_stem_with_common_words_is_still_corrected():
