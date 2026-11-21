@@ -72,6 +72,12 @@ ALLOWED_SETTINGS = {
     "RATE_LIMIT_SEARCH_PER_MIN", "RATE_LIMIT_AI_PER_MIN", "RATE_LIMIT_UPLOAD_PER_HOUR",
 }  # fmt: skip
 ALLOWED_FLAGS = ("--update-env-vars", "--update-secrets")
+# Credentials must come from Secret Manager (--update-secrets=NAME=secret:version), never as a plain environment
+# value that would be visible in the service description and in this release's own command line (audit maintenance).
+CREDENTIAL_SETTINGS = {
+    "NCBI_API_KEY", "SEMANTIC_SCHOLAR_API_KEY", "CORE_API_KEY", "OPENALEX_API_KEY",
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "TAVILY_API_KEY",
+}  # fmt: skip
 SECRET_SETTINGS = {"DATABASE_URL"}
 
 
@@ -94,6 +100,11 @@ def flag_problems(flags: str) -> list[str]:
             key = pair.partition("=")[0]
             if key not in ALLOWED_SETTINGS:
                 problems.append(f"setting {key!r} cannot be changed by a release (it is not a tuning setting)")
+            elif key in CREDENTIAL_SETTINGS and name != "--update-secrets":
+                # The value is deliberately not echoed: it is a credential typed on a command line.
+                problems.append(
+                    f"credential {key!r} must come from Secret Manager (--update-secrets={key}=secret:latest)"
+                )
     return problems
 
 

@@ -594,18 +594,25 @@ def test_a_candidate_that_drifted_from_the_environment_never_receives_traffic(tm
         ("--service-account=paperaid-api@paperaid.iam.gserviceaccount.com", "'--service-account' is not allowed"),
         ("--set-env-vars=LOG_LEVEL=DEBUG", "'--set-env-vars' is not allowed"),  # would wipe every other setting
         ("--image=elsewhere/image", "'--image' is not allowed"),
+        ("--update-env-vars=OPENALEX_API_KEY=plain-text-key", "'OPENALEX_API_KEY' must come from Secret Manager"),
+        (
+            "--update-env-vars=LOG_LEVEL=INFO,ANTHROPIC_API_KEY=sk-x",
+            "'ANTHROPIC_API_KEY' must come from Secret Manager",
+        ),
     ],
 )
 def test_release_overrides_outside_the_allowlist_are_refused_before_any_cloud_call(tmp_path, flags, problem):
     result, calls = run_release(tmp_path, deploy_env="staging", extra_env={"EXTRA_DEPLOY_FLAGS": flags})
     assert result.returncode != 0 and problem in result.stderr
     assert calls == ""
+    assert "plain-text-key" not in result.stderr and "sk-x" not in result.stderr  # a refused credential is not echoed
 
 
 def test_allowlisted_tuning_rides_through_the_release(tmp_path):
     flags = (
         "--update-env-vars=DB_POOL_SIZE=3,DB_MAX_OVERFLOW=2 "
-        "--update-env-vars=^|^ALLOWED_EMAILS=a@x.org,b@x.org|LOG_LEVEL=INFO"
+        "--update-env-vars=^|^ALLOWED_EMAILS=a@x.org,b@x.org|LOG_LEVEL=INFO "
+        "--update-secrets=OPENALEX_API_KEY=openalex-api-key:latest"
     )
     result, calls = run_release(tmp_path, extra_env={"EXTRA_DEPLOY_FLAGS": flags})
     assert result.returncode == 0, result.stdout + result.stderr
