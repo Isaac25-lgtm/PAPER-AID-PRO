@@ -66,14 +66,20 @@ def _guidance_in_italics(node: dict[str, Any]) -> dict[str, Any]:
     return node
 
 
+def prepare_for_export(content: dict[str, Any], rendered: dict[str, Any]) -> tuple[dict[str, Any], dict[int, str]]:
+    """The exact tree both exporters render, with its citation labels. The labels are keyed by node identity, so
+    they must be computed on the tree that is rendered: the guidance transform comes first, here, once (Q8)."""
+    prepared = _guidance_in_italics(content)
+    return prepared, citation_labels(prepared, rendered)
+
+
 def _marks(node: dict[str, Any]) -> set[str]:
     return {m.get("type") for m in node.get("marks") or [] if isinstance(m, dict)}
 
 
 # ------------------------------------------------------------------------------------------------------ DOCX
 def to_docx(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> bytes:
-    content = _guidance_in_italics(content)
-    labels = citation_labels(content, rendered)
+    content, labels = prepare_for_export(content, rendered)
     doc = DocxDocument()
     style = doc.styles["Normal"]
     style.font.name = "Times New Roman"
@@ -226,8 +232,7 @@ def _all_text(content: dict[str, Any], labels: dict[int, str]) -> list[str]:
 
 
 def to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> bytes:
-    content = _guidance_in_italics(content)
-    labels = citation_labels(content, rendered)
+    content, labels = prepare_for_export(content, rendered)
     bibliography = [strip_html(entry) for entry in rendered.get("bibliography") or []]
     _check_coverage([title, *_all_text(content, labels), *bibliography])
     styles, fallbacks, _ = _font_plan()
