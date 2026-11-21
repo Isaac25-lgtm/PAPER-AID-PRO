@@ -39,8 +39,24 @@ def normalize_doi(raw: str | None) -> str | None:
     match = _DOI_RE.search(text)
     if not match:
         return None
-    doi = match.group(1).rstrip(".,;)]}>'\"")
-    return doi.lower()
+    return _trim_doi(match.group(1)).lower()
+
+
+_CLOSERS = {")": "(", "]": "[", "}": "{"}
+
+
+def _trim_doi(doi: str) -> str:
+    """Remove punctuation that belongs to the surrounding prose, keeping a balanced closing bracket that is part of
+    the DOI: "10.1234/example(2020)" stays whole, "(see 10.1234/abc)." loses ")." (audit F12)."""
+    while doi:
+        last = doi[-1]
+        if last in ".,;:'\">":
+            doi = doi[:-1]
+        elif last in _CLOSERS and doi.count(_CLOSERS[last]) < doi.count(last):
+            doi = doi[:-1]  # more closers than openers: the bracket wraps the DOI, it is not part of it
+        else:
+            return doi
+    return doi
 
 
 def normalize_pmcid(raw: str | None) -> str | None:
