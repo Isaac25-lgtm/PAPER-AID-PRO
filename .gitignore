@@ -9,3 +9,6 @@ frontend/dist-staging/
 firebase.staging.json
 deploy/staging-testers.local.txt
 __pycache__/
+
+# Local-only secrets (API keys, test passwords): never committed
+*.local.txt
