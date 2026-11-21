@@ -1,13 +1,13 @@
 # PaperAid Pro (Silver) — handoff
 
-**Status: 15 November 2026.** Live and in a private, invite-only test. Code on GitHub `main`. Original app preserved
+**Status: 21 November 2026.** Live and in a private, invite-only test. Code on GitHub `main`. Original app preserved
 at tag `legacy-v1`.
 
 | | |
 |---|---|
 | App | https://paperaid.web.app |
 | API | https://paperaid-api-307658066472.europe-west4.run.app/api/v1/health |
-| Running revision | `paperaid-api-00027-dar` (commit `90e4880`), database schema `f2a6c8e4b1d3` |
+| Running revision | `paperaid-api-00033-toj` (commit `29ebdba`, OpenAlex key attached), database schema `b3d7e1a9c4f2` |
 | Google Cloud / Firebase project | `paperaid` (main Google account) |
 | Start reading | this file → `docs/DEPLOYMENT.md` (operations) → `docs/ARCHITECTURE.md` → `AGENTS.md` (for coding agents) |
 
@@ -132,7 +132,7 @@ in production). Please sign in once, accept the consent screen, and try each sec
 | 2 | **Legal review** | The Terms, Privacy and AI notices are careful drafts, not legal advice. One data-protection lawyer can cover all your markets | Share the three pages with counsel. Bump `POLICY_VERSION` after changes. |
 | 3 | **Registrations** | Uganda: register with the Personal Data Protection Office. South Africa: register an Information Officer. Kenya: confirm whether education-related services need ODPC registration regardless of size. EU: an Article 27 representative once EU use is regular | With counsel, before inviting testers from each country |
 | 4 | **Uptime alert; staging contact email** | Scheduled maintenance is live (every 15 minutes). Staging is live at https://paperaid-staging.web.app (Neon free tier, own bucket/queue/service account). Staging has no `CONTACT_EMAIL`, so it skips Unpaywall when finding open-access PDFs | Approve an uptime alert; decide whether staging may send your contact email to Unpaywall/Crossref/OpenAlex |
-| 5 | **Free API keys (OpenAlex first)** | **OpenAlex now requires a key**: without one, every request shares a small daily budget per IP address (about 100 searches; Cloud Run's addresses are shared) and Discover, Deep research, open-access PDFs, spelling and reference checks fail with 429 once it is spent. Also Semantic Scholar (already 429), CORE (all-discipline open-access source), NCBI (faster PubMed) | Get a free OpenAlex key at openalex.org and add it as `OPENALEX_API_KEY` (a secret) in both environments before inviting more testers; then the others |
+| 5 | **Free API keys** | **OpenAlex: done 21 Nov** (secret `openalex-api-key`, both environments, about 1,000 searches a day; staging and production share it). Before that, without a key, without one, every request shares a small daily budget per IP address (about 100 searches; Cloud Run's addresses are shared) and Discover, Deep research, open-access PDFs, spelling and reference checks fail with 429 once it is spent. Also Semantic Scholar (already 429), CORE (all-discipline open-access source), NCBI (faster PubMed) | Next: Semantic Scholar (already 429), then CORE and NCBI; a second OpenAlex key for staging if usage grows |
 | 6 | **AI keys** | Turns on Q&A, summaries, overviews, writing help and the Deep research report | Start with a small tester group and a spending cap |
 | 6b | **Web search key (optional)** | Lets Deep research also read the general web (reports, guidelines, news), not only the scholarly databases | A Tavily account (free tier available); add the key as a secret, see DEPLOYMENT.md |
 | 7 | **Legacy data** | Nothing from the original Supabase app is migrated | Decide whether anything must carry over |

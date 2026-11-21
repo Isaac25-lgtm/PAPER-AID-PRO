@@ -198,11 +198,15 @@ model calls (plan, report, support check).
 
 | Key | Effect |
 |---|---|
+| `OPENALEX_API_KEY` | **Required in practice.** OpenAlex's own budget (about 1,000 searches a day free) instead of a tiny shared per-IP budget. Set in both environments |
 | `SEMANTIC_SCHOLAR_API_KEY` | Stops Semantic Scholar's frequent HTTP 429 without a key |
 | `CORE_API_KEY` | Enables CORE (open-access papers in every discipline) as a default source |
 | `NCBI_API_KEY` | Raises PubMed's limit from 3 to 10 requests/second |
 
-Add each as a secret and `--update-secrets NAME=secret:latest` (through `deploy/release.sh` via `EXTRA_DEPLOY_FLAGS`).
+Add each as a secret, grant `roles/secretmanager.secretAccessor` to the environment's service account, and release with
+`EXTRA_DEPLOY_FLAGS="--update-secrets=NAME=secret-name:latest"` (the `=` form is required by the flag check).
+`OPENALEX_API_KEY` is set this way in both environments (secret `openalex-api-key`); without it OpenAlex answers
+429 once a small per-IP daily budget is spent.
 
 ## Local development and identity
 

@@ -27,15 +27,15 @@ Report in the format of `docs/PAPERAID_V2_WORKSPACE_AUDIT.md`, as `docs/PAPERAID
 
 | | Production | Staging |
 |---|---|---|
-| API | `paperaid-api-00027-dar` = `90e4880`, schema `f2a6c8e4b1d3` | latest commit in scope, schema `b3d7e1a9c4f2` |
-| Frontend | `90e4880` | latest commit in scope |
-| Deep research | **not deployed** | live |
+| API | `paperaid-api-00033-toj` = `29ebdba`, schema `b3d7e1a9c4f2` | `paperaid-api-staging-00020-nay` = `29ebdba` |
+| Frontend | `9537ec5` (no frontend change since) | `94a467e` (no frontend change since) |
+| Deep research | live | live |
 | AI | not configured | not configured |
 | Web search (Tavily) | not configured | not configured |
-| OpenAlex key | **none** (see section 5) | none |
+| OpenAlex key | set (secret `openalex-api-key`, shared) | set (same key) |
 
-Production has had none of the changes in scope. The next production release runs migration `b3d7e1a9c4f2`
-(expand-only: one new table).
+Both environments run every change in scope (released 21 November after the maintainer's approval); migration
+`b3d7e1a9c4f2` (expand-only: one new table) has run in both.
 
 **Tests:** backend 345, frontend 156, all passing locally; CI green on each pushed commit.
 
@@ -182,7 +182,7 @@ Discover, Deep research, open-access PDF lookup, spelling confirmation and the r
 `scholarly/http.py` `_with_keys` now sends `OPENALEX_API_KEY` as `Authorization: Bearer` to `api.openalex.org` only,
 never in the URL. Test: `test_the_openalex_key_is_sent_in_a_header...`.
 
-**Neither environment has a key yet.** Please check every OpenAlex call path goes through `get_json`, and that a
+Both environments now have the key (secret `openalex-api-key`, granted to each service account). Please check every OpenAlex call path goes through `get_json`, and that a
 `429` degrades as it should:
 - Discover shows OpenAlex as unavailable.
 - Spelling makes no correction.
