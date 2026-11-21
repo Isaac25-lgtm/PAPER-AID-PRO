@@ -35,12 +35,17 @@ from app.errors import UpstreamError
 from app.services import export as export_service
 from app.services import processing
 from app.services.ai.grounding import check_claim, locate_quote
-from app.services.citations.verify import _assess
+from app.services.citations.verify import ParsedReference, assess
 from app.services.scholarly.aggregator import merge_and_dedupe
 from app.services.scholarly.models import ScholarlyWork, WorkAuthor
 from tests import conftest
 from tests import fixtures as fx
 from tests.conftest import ADMIN, ALICE, BOB, STUDY_SECTIONS, auth, import_doi, make_pdf
+
+
+def _assess(reference, work, via_doi):  # the checker's assessment, as these older regressions read it
+    return assess(ParsedReference.parse(reference), work, via_doi=via_doi).as_dict()
+
 
 BACKEND = Path(__file__).resolve().parent.parent
 

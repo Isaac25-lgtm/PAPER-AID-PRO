@@ -28,12 +28,17 @@ from app.db.session import get_sessionmaker
 from app.errors import UpstreamError
 from app.services import processing
 from app.services.ai.providers import set_embedder
-from app.services.citations.verify import _assess
+from app.services.citations.verify import ParsedReference, assess
 from app.services.scholarly.aggregator import merge_and_dedupe
 from app.services.scholarly.models import ScholarlyWork, WorkAuthor
 from app.services.storage import LocalStorage, get_storage, set_storage
 from tests import fixtures as fx
 from tests.conftest import ADMIN, ALICE, BOB, STUDY_SECTIONS, auth, import_doi, make_pdf
+
+
+def _assess(reference, work, via_doi):  # the checker's assessment, as these older regressions read it
+    return assess(ParsedReference.parse(reference), work, via_doi=via_doi).as_dict()
+
 
 BIBTEX_DISAGREEING = r"""
 @article{tampered,
