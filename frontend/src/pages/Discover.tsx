@@ -9,6 +9,7 @@ import { Container } from "@/components/Layout";
 import { PaperMeta } from "@/components/papers";
 import { Alert, Select, Badge, Button, Card, EmptyState, Input, PageHeader, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
+import { useAIEnabled } from "@/lib/ai";
 import { useAuth } from "@/lib/auth";
 import type { GroundedAnswer, Paper, SearchResponse, Work, Subject } from "@/lib/types";
 import { PROVIDER_LABELS, SUBJECTS } from "@/lib/types";
@@ -51,11 +52,12 @@ function WorkCard({ work }: { work: Work }) {
 
 function ResearchOverview({ query, works }: { query: string; works: Work[] }) {
   const { user } = useAuth();
+  const ai = useAIEnabled();
   const identifiers = works.filter((w) => w.abstract && w.identifier).slice(0, 8).map((w) => w.identifier!);
   const mutation = useMutation({
     mutationFn: () => api.post<GroundedAnswer>("/discovery/snapshot", { query, identifiers }),
   });
-  if (!user || identifiers.length < 2) return null;
+  if (!user || !ai.enabled || identifiers.length < 2) return null; // no AI: no button that can only fail
   return (
     <Card className="mb-6 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -77,17 +79,19 @@ export default function DiscoverPage() {
   const yearFrom = params.get("year_from") ?? "";
   const oaOnly = params.get("oa") === "1";
   const subject = (params.get("subject") ?? "all") as Subject;
+  const exact = params.get("exact") === "1";
   const [draft, setDraft] = useState(q);
   const [from, setFrom] = useState(yearFrom);
 
   const search = useQuery({
-    queryKey: ["search", q, yearFrom, oaOnly, subject],
+    queryKey: ["search", q, yearFrom, oaOnly, subject, exact],
     queryFn: () =>
       api.get<SearchResponse>("/discovery/search", {
         q,
         year_from: yearFrom || undefined,
         open_access_only: oaOnly || undefined,
         subject: subject === "all" ? undefined : subject,
+        exact: exact || undefined,
         limit: 25,
       }),
     enabled: q.length >= 2,
@@ -102,7 +106,7 @@ export default function DiscoverPage() {
         className="mb-6 flex flex-wrap gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          const next: Record<string, string> = { q: draft.trim() };
+          const next: Record<string, string> = { q: draft.trim() }; // a new search may be corrected again
           if (from) next.year_from = from;
           if (oaOnly) next.oa = "1";
           if (subject !== "all") next.subject = subject;
@@ -153,7 +157,23 @@ export default function DiscoverPage() {
               </span>
             ))}
           </div>
-          <ResearchOverview query={q} works={search.data.results} />
+          {search.data.corrected_from && (
+            <p className="mb-4 text-sm text-slate-700" role="status">
+              Showing results for <strong className="font-semibold text-slate-950">{search.data.query}</strong>.{" "}
+              <button
+                type="button"
+                className="text-brand-700 underline underline-offset-2"
+                onClick={() => {
+                  const next = new URLSearchParams(params);
+                  next.set("exact", "1");
+                  setParams(next);
+                }}
+              >
+                Search instead for “{search.data.corrected_from}”
+              </button>
+            </p>
+          )}
+          <ResearchOverview query={search.data.query} works={search.data.results} />
           {search.data.results.length === 0 ? (
             <EmptyState title="No results">Try broader keywords or remove the filters.</EmptyState>
           ) : (

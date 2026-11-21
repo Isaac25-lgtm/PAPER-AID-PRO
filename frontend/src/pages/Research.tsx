@@ -9,6 +9,7 @@ import { Container } from "@/components/Layout";
 import { useLibrarySearch } from "@/components/papers";
 import { ResearchModes } from "@/components/ResearchModes";
 import { Alert, Badge, Button, Card, EmptyState, Input, PageHeader, Spinner, Textarea } from "@/components/ui";
+import { AI_OFF_NOTE, useAIEnabled } from "@/lib/ai";
 import { api, errorMessage } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
 import type { Conversation, ConversationSummary, GroundedAnswer } from "@/lib/types";
@@ -23,6 +24,7 @@ export default function ResearchPage() {
   const [filter, setFilter] = useState("");
 
   const library = useLibrarySearch(filter, 100);
+  const ai = useAIEnabled();
   const conversations = useQuery({ queryKey: ["conversations"], queryFn: () => api.get<ConversationSummary[]>("/research/conversations") });
   const conversation = useQuery({
     queryKey: ["conversation", conversationId],
@@ -72,6 +74,11 @@ export default function ResearchPage() {
     <Container>
       <PageHeader title="Research assistant" subtitle="Ask a question across papers you choose. Every claim is linked to the passage or abstract it came from." />
       <ResearchModes />
+      {ai.known && !ai.enabled && (
+        <div className="mb-4">
+          <Alert kind="info" title="Answers need AI">{AI_OFF_NOTE} You can choose papers and review your past questions now.</Alert>
+        </div>
+      )}
       <SectionGuide section="research" />
       <div className="grid gap-6 lg:grid-cols-[260px_1fr_300px]">
         <aside>
@@ -116,7 +123,7 @@ export default function ResearchPage() {
               <Textarea rows={3} value={question} maxLength={2000} onChange={(e) => setQuestion(e.target.value)} placeholder="e.g. What do these studies find about the main question, and where do they disagree?" aria-label="Research question" />
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-500">{effectiveSelection.size} paper{effectiveSelection.size === 1 ? "" : "s"} selected</span>
-                <Button type="submit" loading={ask.isPending} disabled={!effectiveSelection.size || question.trim().length < 3}><MessageSquare className="h-4 w-4" /> Ask</Button>
+                <Button type="submit" loading={ask.isPending} disabled={!ai.enabled || !effectiveSelection.size || question.trim().length < 3}><MessageSquare className="h-4 w-4" /> Ask</Button>
               </div>
             </form>
             {ask.error && <div className="mt-3"><AIError error={ask.error} /></div>}

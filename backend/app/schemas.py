@@ -215,7 +215,8 @@ class ProviderStatusOut(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    query: str
+    query: str  # what was searched
+    corrected_from: str | None = None  # the query as typed, when a misspelling was corrected
     results: list[WorkOut]
     providers: list[ProviderStatusOut]
 

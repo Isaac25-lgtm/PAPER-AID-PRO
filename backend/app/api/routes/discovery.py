@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
@@ -18,6 +19,7 @@ from app.services.papers import upsert_public_paper
 from app.services.scholarly.aggregator import default_providers, federated_search, resolve_identifier
 from app.services.scholarly.identifiers import parse_identifier
 from app.services.scholarly.models import ALL_PROVIDERS, ProviderName, ScholarlyWork, Subject
+from app.services.scholarly.spelling import suggest_correction
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
@@ -45,7 +47,10 @@ async def search(
     year_to: Annotated[int | None, Query(ge=1500, le=2100)] = None,
     open_access_only: bool = False,
     subject: Subject = "all",
+    exact: bool = False,
 ) -> SearchResponse:
+    """`exact=true` searches the words exactly as typed; otherwise an obvious misspelling is corrected (and the
+    response says so, with the original, so the person can search for exactly what they typed)."""
     if year_from and year_to and year_from > year_to:
         raise ValidationFailed("year_from must not be after year_to.")
     await enforce_caller_limit(
@@ -61,15 +66,27 @@ async def search(
     # Each provider is queried at most once, whatever the client sends.
     selected = [p for p in ALL_PROVIDERS if p in set(providers)] if providers else default_providers(subject)
     await db.commit()  # do not hold a DB connection while the providers are queried
-    works, statuses = await federated_search(
-        q.strip(),
-        providers=selected,
-        subject=subject,
-        limit=limit,
-        year_from=year_from,
-        year_to=year_to,
-        open_access_only=open_access_only,
-    )
+    typed = " ".join(q.split())
+
+    async def run(query: str):  # type: ignore[no-untyped-def]
+        return await federated_search(
+            query,
+            providers=selected,
+            subject=subject,
+            limit=limit,
+            year_from=year_from,
+            year_to=year_to,
+            open_access_only=open_access_only,
+        )
+
+    corrected: str | None = None
+    if exact:
+        works, statuses = await run(typed)
+    else:
+        # The check runs beside the search, so a correctly spelled query is not slowed down.
+        (works, statuses), corrected = await asyncio.gather(run(typed), suggest_correction(typed))
+        if corrected:
+            works, statuses = await run(corrected)
     dois = [w.doi for w in works if w.doi]
     pmids = [w.pmid for w in works if w.pmid]
     known: dict[str, Paper] = {}
@@ -110,7 +127,12 @@ async def search(
                 library_paper_id=match.id if match else None,
             )
         )
-    return SearchResponse(query=q, results=results, providers=[ProviderStatusOut(**s.model_dump()) for s in statuses])
+    return SearchResponse(
+        query=corrected or typed,
+        corrected_from=typed if corrected else None,
+        results=results,
+        providers=[ProviderStatusOut(**s.model_dump()) for s in statuses],
+    )
 
 
 @router.post("/snapshot", response_model=GroundedAnswerOut)

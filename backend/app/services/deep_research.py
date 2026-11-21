@@ -31,6 +31,7 @@ from app.services.ai.providers import get_llm
 from app.services.papers import upsert_public_paper
 from app.services.scholarly.aggregator import default_providers, federated_search, merge_and_dedupe, rank
 from app.services.scholarly.models import ScholarlyWork
+from app.services.scholarly.spelling import suggest_correction
 from app.services.web_search import WebResult, search_web, web_search_enabled
 
 log = logging.getLogger(__name__)
@@ -229,6 +230,11 @@ async def run_deep_research(
         queries, planned_by_ai = await plan_queries(question)
     else:
         queries = fallback_queries(question)
+        # Without a planner, a typo in the question would be searched literally: correct it first.
+        corrected = await suggest_correction(queries[0]) if queries else None
+        if corrected:
+            options["corrected_from"] = queries[0]
+            queries = [corrected]
 
     web_wanted = include_web and web_search_enabled()
     database_task = _search_databases(queries, subject=subject, year_from=year_from, year_to=year_to)

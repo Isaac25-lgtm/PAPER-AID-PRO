@@ -107,7 +107,10 @@ export interface ProviderStatus {
 }
 
 export interface SearchResponse {
+  /** What was searched (the corrected query when a misspelling was corrected). */
   query: string;
+  /** The query as typed, when it was corrected. */
+  corrected_from?: string | null;
   results: Work[];
   providers: ProviderStatus[];
 }

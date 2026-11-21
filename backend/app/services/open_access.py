@@ -44,10 +44,8 @@ async def pdf_candidates(paper: Paper) -> AsyncIterator[tuple[str, str]]:
     known = [
         (paper.oa_pdf_url, "recorded"),
         (f"https://arxiv.org/pdf/{paper.arxiv_id}" if paper.arxiv_id else None, "arxiv"),
-        (
-            f"https://europepmc.org/backend/ptpmcrender.fcgi?accid={paper.pmcid}&blobtype=pdf" if paper.pmcid else None,
-            "europepmc",
-        ),
+        # Europe PMC's current PDF service (its older backend/ptpmcrender.fcgi address now answers 403/520).
+        (f"https://europepmc.org/api/getPdf?pmcid={paper.pmcid}" if paper.pmcid else None, "europepmc"),
     ]
     for url, origin in known:
         if fresh(url):

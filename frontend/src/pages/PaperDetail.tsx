@@ -9,6 +9,7 @@ import { Container } from "@/components/Layout";
 import { AddToLibraryButton, CiteModal, DoiLink, PaperMeta, StatusBadge } from "@/components/papers";
 import { Alert, Badge, Button, Card, Input, Spinner, Textarea } from "@/components/ui";
 import { api, ApiError, downloadFile, errorMessage } from "@/lib/api";
+import { AI_OFF_NOTE, useAIEnabled } from "@/lib/ai";
 import { useAuth } from "@/lib/auth";
 import type { GroundedAnswer, Job, Paper, PaperSummary, Passage, SummaryPoint } from "@/lib/types";
 
@@ -140,6 +141,7 @@ function SummaryPointView({ label, point }: { label?: string; point: SummaryPoin
 
 function AISummary({ paper }: { paper: Paper }) {
   const { user } = useAuth();
+  const ai = useAIEnabled();
   const queryClient = useQueryClient();
   const summary = useQuery({
     queryKey: ["summary", paper.id],
@@ -161,10 +163,14 @@ function AISummary({ paper }: { paper: Paper }) {
     <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 font-semibold text-slate-900"><Bot className="h-4 w-4 text-brand-700" /> AI summary</h2>
-        {user && <Button size="sm" variant="secondary" loading={generate.isPending} onClick={() => generate.mutate()}>{data ? "Regenerate" : "Generate summary"}</Button>}
+        {user && ai.enabled && <Button size="sm" variant="secondary" loading={generate.isPending} onClick={() => generate.mutate()}>{data ? "Regenerate" : "Generate summary"}</Button>}
       </div>
       {generate.error && <div className="mt-3"><AIError error={generate.error} /></div>}
-      {!data && !generate.error && <p className="mt-2 text-sm text-slate-500">No summary yet.{paper.status !== "ready" && " Summaries are more accurate once full text is available."}</p>}
+      {!data && !generate.error && (
+        <p className="mt-2 text-sm text-slate-500">
+          {ai.enabled || !ai.known ? <>No summary yet.{paper.status !== "ready" && " Summaries are more accurate once full text is available."}</> : `No summary yet. ${AI_OFF_NOTE}`}
+        </p>
+      )}
       {data && (
         <div className="mt-3 space-y-3">
           {data.content.overview.length > 0 && (
@@ -196,7 +202,16 @@ function AskPaper({ paper }: { paper: Paper }) {
   const { user } = useAuth();
   const [question, setQuestion] = useState("");
   const ask = useMutation({ mutationFn: (q: string) => api.post<GroundedAnswer>(`/papers/${paper.id}/ask`, { question: q }) });
+  const ai = useAIEnabled();
   if (!user) return null;
+  if (ai.known && !ai.enabled) {
+    return (
+      <Card className="p-5">
+        <h2 className="mb-1 font-semibold text-slate-900">Ask this paper</h2>
+        <p className="text-sm text-slate-500">{AI_OFF_NOTE} Until then, search inside the paper above to find passages and their pages.</p>
+      </Card>
+    );
+  }
   return (
     <Card className="p-5">
       <h2 className="mb-2 font-semibold text-slate-900">Ask this paper</h2>
