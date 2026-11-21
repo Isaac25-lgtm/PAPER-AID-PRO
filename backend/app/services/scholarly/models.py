@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 from datetime import date
 from typing import Literal
@@ -69,10 +70,11 @@ _SPACE = re.compile(r"\s+")
 
 
 def clean_text(value: str | None) -> str | None:
-    """Strip JATS/HTML markup and collapse whitespace."""
+    """Strip JATS/HTML markup, decode entities ("Technology &amp; People" -> "Technology & People") and collapse
+    whitespace. Tags are removed before decoding, so an encoded "&lt;" in a title stays a literal "<"."""
     if not value:
         return None
-    text = _SPACE.sub(" ", _TAG.sub(" ", value)).strip()
+    text = _SPACE.sub(" ", html.unescape(_TAG.sub(" ", value))).strip()
     for prefix in ("Abstract ", "ABSTRACT "):
         if text.startswith(prefix):
             text = text[len(prefix) :]

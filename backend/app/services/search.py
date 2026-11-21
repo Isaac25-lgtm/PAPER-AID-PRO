@@ -7,8 +7,11 @@ References/acknowledgement sections are excluded from evidence.
 
 from __future__ import annotations
 
+import difflib
 import logging
+import re
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 
 from sqlalchemy import func, or_, select
@@ -20,6 +23,9 @@ from app.services.pdf import NON_EVIDENCE_SECTIONS
 
 log = logging.getLogger(__name__)
 RRF_K = 60
+VOCABULARY_CHUNKS = 3000  # passages read to learn the papers' own words (bounds the work for large selections)
+CLOSE_MATCH = 0.8  # difflib ratio: "atention" ~ "attention" (0.94), "heds" ~ "heads" (0.89)
+_TOKEN = re.compile(r"[^\W\d_]+")
 
 
 @dataclass
@@ -84,16 +90,62 @@ async def _vector(db: AsyncSession, vector: list[float], paper_ids: list[uuid.UU
     return list((await db.execute(stmt)).scalars())
 
 
+async def correct_against_papers(db: AsyncSession, query: str, paper_ids: list[uuid.UUID]) -> str | None:
+    """The query with each word the papers never use replaced by the closest word they do use ("atention heds"
+    -> "attention heads"). Learned from the papers' own text, so it works in any field or language and never
+    proposes a word that is not in the sources. None when nothing needs changing."""
+    words = query.split()
+    candidates = [w for w in words if len(w) >= 4 and _TOKEN.fullmatch(w)]
+    if not candidates:
+        return None
+    texts = (
+        await db.execute(select(PaperChunk.text).where(PaperChunk.paper_id.in_(paper_ids)).limit(VOCABULARY_CHUNKS))
+    ).scalars()
+    vocabulary = Counter(token.lower() for text in texts for token in _TOKEN.findall(text) if len(token) >= 3)
+    if not vocabulary:
+        return None
+    known = list(vocabulary)
+    changed = False
+    corrected = []
+    for word in words:
+        lower = word.lower()
+        if word in candidates and lower not in vocabulary:
+            matches = difflib.get_close_matches(lower, known, n=3, cutoff=CLOSE_MATCH)
+            if matches:
+                best = max(matches, key=lambda m: (difflib.SequenceMatcher(None, lower, m).ratio(), vocabulary[m]))
+                corrected.append(best)
+                changed = True
+                continue
+        corrected.append(word)
+    return " ".join(corrected) if changed else None
+
+
 async def search_evidence(
     db: AsyncSession, query: str, paper_ids: list[uuid.UUID], *, limit: int = 8, per_paper_cap: int | None = None
 ) -> list[Evidence]:
+    hits, _ = await search_evidence_corrected(db, query, paper_ids, limit=limit, per_paper_cap=per_paper_cap)
+    return hits
+
+
+async def search_evidence_corrected(
+    db: AsyncSession, query: str, paper_ids: list[uuid.UUID], *, limit: int = 8, per_paper_cap: int | None = None
+) -> tuple[list[Evidence], str | None]:
+    """Like search_evidence, and when no passage matches the words as typed, retries once with misspellings
+    corrected against the papers' own vocabulary. Returns (passages, corrected query or None)."""
     if not paper_ids or not query.strip():
-        return []
+        return [], None
     candidates = max(limit * 4, 24)
     fused: dict[uuid.UUID, float] = {}
     chunks: dict[uuid.UUID, PaperChunk] = {}
     vector = await _embed_query(query)
     keyword = await _fts(db, query, paper_ids, candidates)
+    corrected: str | None = None
+    if not keyword:
+        corrected = await correct_against_papers(db, query, paper_ids)
+        if corrected:
+            keyword = await _fts(db, corrected, paper_ids, candidates)
+            if not keyword:
+                corrected = None
     semantic: list[PaperChunk] = []
     if vector is not None:
         try:
@@ -118,7 +170,7 @@ async def search_evidence(
         )
         if len(picked) >= limit:
             break
-    return picked
+    return picked, corrected
 
 
 async def leading_chunks(db: AsyncSession, paper_id: uuid.UUID, limit: int) -> list[Evidence]:

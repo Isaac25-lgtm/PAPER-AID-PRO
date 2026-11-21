@@ -187,8 +187,14 @@ class _Sanitizer:
         out: dict[str, Any] = {"type": kind}
         if kind == "heading":
             out["attrs"] = {"level": _int(attrs.get("level"), 2, 1, 4)}
-        elif kind == "paragraph" and isinstance(attrs.get("textAlign"), str) and attrs["textAlign"] in _ALIGN:
-            out["attrs"] = {"textAlign": attrs["textAlign"]}
+        elif kind == "paragraph":
+            kept: dict[str, Any] = {}
+            if isinstance(attrs.get("textAlign"), str) and attrs["textAlign"] in _ALIGN:
+                kept["textAlign"] = attrs["textAlign"]
+            if attrs.get("guidance") is True:  # template writing guidance (shown grey and italic)
+                kept["guidance"] = True
+            if kept:
+                out["attrs"] = kept
         elif kind == "orderedList" and "start" in attrs:
             out["attrs"] = {"start": _int(attrs.get("start"), 1, 1, 10_000)}
         elif kind in {"tableCell", "tableHeader"}:

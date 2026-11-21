@@ -35,7 +35,7 @@ const FAQ = [
   { q: "Can the AI make up references?", a: "Answers can only cite passages and abstracts from papers you selected. Each statement must quote its source, and statements the source doesn't support are removed. Always read the cited passage before relying on it." },
   { q: "Which citation styles are supported?", a: "18 official CSL styles, from APA 7, Harvard, MLA 9 and Chicago to OSCOLA and Bluebook for law, ASA and APSA for the social sciences, and Vancouver, AMA, IEEE, Nature, Science and ACS for the sciences. Books, chapters, reports, court cases and statutes can be entered manually." },
   { q: "Can I use my own PDFs and reference manager?", a: "Yes. Upload PDFs (kept private to you) and import BibTeX or RIS exports from Zotero, Mendeley or EndNote. You can export your library the same way." },
-  { q: "Who can see my work?", a: "Only you. Uploads, notes, documents and research conversations are private to your account, and PDFs are stored privately and sent only to you." },
+  { q: "Who can see my work?", a: "Only you. Uploads, notes, documents, research conversations and Deep research reports are private to your account, and PDFs are stored privately and sent only to you." },
 ];
 
 function FaqItem({ q, a }: { q: string; a: string }) {

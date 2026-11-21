@@ -159,6 +159,7 @@ class PaperPage(BaseModel):
     total: int
     page: int
     page_size: int
+    matched_query: str | None = None  # set when a misspelled search was corrected
 
 
 class ImportRequest(BaseModel):
@@ -173,6 +174,8 @@ class PassageOut(BaseModel):
     section: str | None
     page_start: int | None
     page_end: int | None
+    # Set when nothing matched the words as typed and a misspelling was corrected from the paper's own words.
+    matched_query: str | None = None
 
 
 class JobOut(Model):

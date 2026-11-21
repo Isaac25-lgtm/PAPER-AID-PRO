@@ -11,13 +11,19 @@ from urllib.parse import unquote
 IdentifierKind = Literal["doi", "pmid", "pmcid", "arxiv"]
 
 _DOI_RE = re.compile(r"(10\.\d{4,9}/[^\s\"<>]+)", re.IGNORECASE)
-_PMCID_RE = re.compile(r"^(?:pmcid:\s*)?(PMC\d{4,10})$", re.IGNORECASE)
-_PMID_RE = re.compile(r"^(?:pmid:\s*)?(\d{1,9})$", re.IGNORECASE)
-_ARXIV_NEW_RE = re.compile(r"^(?:arxiv:\s*)?(\d{4}\.\d{4,5})(v\d+)?$", re.IGNORECASE)
-_ARXIV_OLD_RE = re.compile(r"^(?:arxiv:\s*)?([a-z\-]+(?:\.[A-Z]{2})?/\d{7})(v\d+)?$", re.IGNORECASE)
+# Prefixes as people type them: "PMID: 1", "PMID 1", "pmid#1", "PMCID PMC1", "arXiv 1706.03762".
+_SEP = r"[\s:#=\-]*"
+_PMCID_RE = re.compile(rf"^(?:pmcid{_SEP})?(PMC)\s*(\d{{4,10}})$", re.IGNORECASE)
+_PMID_RE = re.compile(rf"^(?:pmid{_SEP})?(\d{{1,9}})$", re.IGNORECASE)
+_ARXIV_NEW_RE = re.compile(rf"^(?:arxiv{_SEP})?(\d{{4}}\.\d{{4,5}})(v\d+)?$", re.IGNORECASE)
+_ARXIV_OLD_RE = re.compile(rf"^(?:arxiv{_SEP})?([a-z\-]+(?:\.[A-Z]{{2}})?/\d{{7}})(v\d+)?$", re.IGNORECASE)
 _ARXIV_URL_RE = re.compile(r"arxiv\.org/(?:abs|pdf)/([^\s?#]+?)(?:v\d+)?(?:\.pdf)?(?:[?#].*)?$", re.IGNORECASE)
-_PUBMED_URL_RE = re.compile(r"pubmed\.ncbi\.nlm\.nih\.gov/(\d{1,9})", re.IGNORECASE)
-_PMC_URL_RE = re.compile(r"/pmc/articles/(PMC\d+)", re.IGNORECASE)
+_PUBMED_URL_RE = re.compile(
+    r"(?:pubmed\.ncbi\.nlm\.nih\.gov/|europepmc\.org/(?:abstract|article)/MED/)(\d{1,9})", re.IGNORECASE
+)
+_PMC_URL_RE = re.compile(
+    r"(?:/pmc/articles/|pmc\.ncbi\.nlm\.nih\.gov/articles/|europepmc\.org/articles?/(?:PMC/)?)(PMC\d+)", re.IGNORECASE
+)
 
 
 @dataclass(frozen=True)
@@ -41,7 +47,7 @@ def normalize_pmcid(raw: str | None) -> str | None:
     if not raw:
         return None
     match = _PMCID_RE.match(raw.strip())
-    return match.group(1).upper() if match else None
+    return f"PMC{match.group(2)}" if match else None
 
 
 def normalize_arxiv(raw: str | None) -> str | None:

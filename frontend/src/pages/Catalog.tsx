@@ -46,6 +46,11 @@ export default function CatalogPage() {
       </form>
       {result.isLoading && <Spinner />}
       {result.error && <Alert kind="error">{errorMessage(result.error)}</Alert>}
+      {result.data?.matched_query && (
+        <p className="mb-4 text-sm text-slate-700" role="status">
+          Nothing matched “{q}”. Showing results for <strong className="font-semibold text-slate-950">{result.data.matched_query}</strong>.
+        </p>
+      )}
       {result.data && result.data.items.length === 0 && (
         <EmptyState icon={<BookOpen className="h-8 w-8" />} title={q ? "No matching papers" : "The catalog is empty"} action={<Link to="/discover" className="font-medium text-brand-700">Discover papers →</Link>}>
           Papers appear here once someone imports them from Discover.

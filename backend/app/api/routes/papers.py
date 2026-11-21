@@ -41,6 +41,7 @@ from app.security.rate_limit import enforce_rate_limit
 from app.services import manual, processing
 from app.services.ai import features as ai_features
 from app.services.citations.csl import STYLES, format_citations
+from app.services.fuzzy import correct_from_vocabulary, words_of
 from app.services.maintenance import delete_now_or_later, schedule_deletion
 from app.services.manual import ManualSourceIn
 from app.services.papers import (
@@ -56,7 +57,8 @@ from app.services.papers import (
 from app.services.scholarly.aggregator import resolve_identifier
 from app.services.scholarly.identifiers import parse_identifier
 from app.services.scholarly.models import ScholarlyWork
-from app.services.search import search_evidence
+from app.services.scholarly.spelling import suggest_correction
+from app.services.search import search_evidence_corrected
 from app.services.storage import get_storage, sha256_hex
 
 router = APIRouter(prefix="/papers", tags=["papers"])
@@ -80,6 +82,9 @@ async def _ensure_library(db: DB, user_id: uuid.UUID, paper_id: uuid.UUID) -> No
         await db.commit()
 
 
+CATALOG_VOCABULARY_LIMIT = 5000  # recent catalogue titles used to correct misspelled searches
+
+
 @router.get("", response_model=PaperPage)
 async def list_papers(
     db: DB,
@@ -92,15 +97,38 @@ async def list_papers(
 ) -> PaperPage:
     """The catalog of papers imported into PaperAid (public records + your private uploads)."""
 
-    filters = [visible_papers_clause(user)]
+    base = [visible_papers_clause(user)]
     if status:
-        filters.append(Paper.status == PaperStatus(status))
-    rank = None
-    if q and q.strip():
-        tsquery = func.websearch_to_tsquery("english", q.strip())
-        filters.append(Paper.search_vector.op("@@")(tsquery))
-        rank = func.ts_rank_cd(Paper.search_vector, tsquery)
+        base.append(Paper.status == PaperStatus(status))
+
+    def matching(query: str | None):  # type: ignore[no-untyped-def]
+        if not query or not query.strip():
+            return list(base), None
+        tsquery = func.websearch_to_tsquery("english", query.strip())
+        return [*base, Paper.search_vector.op("@@")(tsquery)], func.ts_rank_cd(Paper.search_vector, tsquery)
+
+    filters, rank = matching(q)
     total = (await db.execute(select(func.count()).select_from(Paper).where(*filters))).scalar_one()
+    matched_query: str | None = None
+    if q and q.strip() and total == 0:
+        # Nothing matched as typed: forgive misspellings. First the literature-confirmed correction, then the
+        # closest words the catalogue's own titles contain.
+        await db.commit()  # no database connection is held while the spelling services answer
+        corrected = await suggest_correction(q)
+        if not corrected:
+            titles = (
+                await db.execute(
+                    select(Paper.title).where(*base).order_by(Paper.created_at.desc()).limit(CATALOG_VOCABULARY_LIMIT)
+                )
+            ).scalars()
+            words = correct_from_vocabulary(words_of(q), titles)
+            corrected = " ".join(words) if words else None
+        if corrected:
+            filters, rank = matching(corrected)
+            total = (await db.execute(select(func.count()).select_from(Paper).where(*filters))).scalar_one()
+            matched_query = corrected if total else None
+            if not total:
+                filters, rank = matching(q)
     if sort == "relevance" and rank is not None:
         order = [rank.desc(), Paper.created_at.desc(), Paper.id]
     else:
@@ -118,6 +146,7 @@ async def list_papers(
         total=total,
         page=page,
         page_size=page_size,
+        matched_query=matched_query,
     )
 
 
@@ -365,10 +394,15 @@ async def passages(
     if paper.status != PaperStatus.READY:
         return []
     if q and q.strip():
-        hits = await search_evidence(db, q, [paper.id], limit=limit)
+        hits, corrected = await search_evidence_corrected(db, q, [paper.id], limit=limit)
         return [
             PassageOut(
-                chunk_id=h.chunk_id, text=h.text, section=h.section, page_start=h.page_start, page_end=h.page_end
+                chunk_id=h.chunk_id,
+                text=h.text,
+                section=h.section,
+                page_start=h.page_start,
+                page_end=h.page_end,
+                matched_query=corrected,
             )
             for h in hits
         ]

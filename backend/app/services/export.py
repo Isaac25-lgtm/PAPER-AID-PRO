@@ -50,12 +50,29 @@ def citation_labels(content: dict[str, Any], rendered: dict[str, Any]) -> dict[i
     return labels
 
 
+def _guidance_in_italics(node: dict[str, Any]) -> dict[str, Any]:
+    """Writing guidance from a template is shown in italics, as in the editor (where it is a paragraph setting,
+    so the person's own text never inherits italics)."""
+    if node.get("type") == "paragraph" and (node.get("attrs") or {}).get("guidance"):
+        content = [
+            {**child, "marks": [*(child.get("marks") or []), {"type": "italic"}]}
+            if child.get("type") == "text"
+            else child
+            for child in node.get("content") or []
+        ]
+        return {**node, "content": content}
+    if isinstance(node.get("content"), list):
+        return {**node, "content": [_guidance_in_italics(child) for child in node["content"]]}
+    return node
+
+
 def _marks(node: dict[str, Any]) -> set[str]:
     return {m.get("type") for m in node.get("marks") or [] if isinstance(m, dict)}
 
 
 # ------------------------------------------------------------------------------------------------------ DOCX
 def to_docx(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> bytes:
+    content = _guidance_in_italics(content)
     labels = citation_labels(content, rendered)
     doc = DocxDocument()
     style = doc.styles["Normal"]
@@ -209,6 +226,7 @@ def _all_text(content: dict[str, Any], labels: dict[int, str]) -> list[str]:
 
 
 def to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> bytes:
+    content = _guidance_in_italics(content)
     labels = citation_labels(content, rendered)
     bibliography = [strip_html(entry) for entry in rendered.get("bibliography") or []]
     _check_coverage([title, *_all_text(content, labels), *bibliography])

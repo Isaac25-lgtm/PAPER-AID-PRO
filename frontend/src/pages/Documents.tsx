@@ -119,7 +119,7 @@ function NewDocumentModal({ open, onClose, initialType = "manuscript" }: { open:
         </form>
       ) : (
         <div className="space-y-4">
-          <p className="text-sm text-slate-600">Suggested for a {DOC_TYPE_LABELS[docType].toLowerCase()}{design ? ` (${design})` : ""}. Edit anything — each line becomes a section with writing guidance.</p>
+          <p className="text-sm text-slate-600">Suggested for {/^[aeiou]/i.test(DOC_TYPE_LABELS[docType]) ? "an" : "a"} {DOC_TYPE_LABELS[docType].toLowerCase()}{design ? ` (${design})` : ""}. Edit anything — each line becomes a section with writing guidance.</p>
           {docType !== "draft" && (
             <>
               <div>

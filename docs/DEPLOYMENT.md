@@ -189,6 +189,8 @@ printf '%s' "tvly-..." | gcloud secrets create tavily-api-key --data-file=- --pr
 EXTRA_DEPLOY_FLAGS="--update-secrets TAVILY_API_KEY=tavily-api-key:latest --update-env-vars WEB_SEARCH_PROVIDER=tavily"
 ```
 
+**Before switching it on:** add Tavily to the Privacy Notice's list of services that receive search terms (`frontend/src/pages/Static.tsx`) and bump `POLICY_VERSION`, so every account accepts the updated notice.
+
 Runs are limited per person (`RATE_LIMIT_DEEP_RESEARCH_PER_HOUR`, default 12). Each run with AI makes about three
 model calls (plan, report, support check).
 

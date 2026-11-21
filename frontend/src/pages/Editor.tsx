@@ -29,6 +29,7 @@ import { CiteTrigger } from "@/lib/citeTrigger";
 import { useConsentParking } from "@/lib/consentParking";
 import { ANCHOR_LOST, EditGate, EditGateContext, trackPosition, useEditGate, type TrackedPosition } from "@/lib/editGate";
 import { GhostText } from "@/lib/ghostText";
+import { GuidanceParagraph } from "@/lib/guidanceParagraph";
 import { usePreference } from "@/lib/preferences";
 import { applyRewrite, buildRewriteInput, inputText, proposalText, requestRewrite, REWRITE_PROBLEMS } from "@/lib/rewrite";
 import { relativeTime, sanitizeHtml } from "@/lib/format";
@@ -95,9 +96,11 @@ function Toolbar({
       <button type="button" onClick={onCite} disabled={frozen} title="Cite a source at the cursor (or type /cite)" className="flex items-center gap-1 rounded px-2 py-1 text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-40">
         <TextQuote className="h-4 w-4" /> Cite
       </button>
-      <button type="button" onClick={onAI} disabled={frozen} className="flex items-center gap-1 rounded px-2 py-1 text-sm text-brand-700 hover:bg-brand-50 disabled:opacity-40">
-        <Sparkles className="h-4 w-4" /> AI assist
-      </button>
+      {aiEnabled && (
+        <button type="button" onClick={onAI} disabled={frozen} className="flex items-center gap-1 rounded px-2 py-1 text-sm text-brand-700 hover:bg-brand-50 disabled:opacity-40">
+          <Sparkles className="h-4 w-4" /> AI assist
+        </button>
+      )}
       {aiEnabled && suggestionsAvailable && (
         <label className="ml-auto flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-50" title="Off until you turn it on. When on, the text before your cursor and the document title are sent to the AI provider when you pause at the end of a paragraph. Tab accepts, Esc dismisses.">
           <input type="checkbox" className="h-3.5 w-3.5 accent-slate-900" checked={autocomplete} onChange={onToggleAutocomplete} />
@@ -405,6 +408,7 @@ export default function EditorPage() {
       CitationNode,
       GhostText,
       CiteTrigger.configure({ onTrigger: (pos: number) => openCiteRef.current(pos) }),
+      GuidanceParagraph,
     ],
     content: "",
     onUpdate: ({ editor: ed, transaction }) => {

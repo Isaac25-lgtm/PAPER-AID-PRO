@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Query, Response, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Select, any_, func, select
+from sqlalchemy import Select, and_, any_, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
@@ -32,6 +32,7 @@ from app.schemas import (
 from app.security.auth import VerifiedUser
 from app.security.rate_limit import enforce_rate_limit
 from app.services.citations.interchange import parse_bibtex, parse_ris, to_bibtex, to_ris
+from app.services.fuzzy import correct_from_vocabulary, words_of
 from app.services.papers import (
     create_private_paper,
     get_paper_for_user,
@@ -49,6 +50,14 @@ MAX_IMPORT_ENTRIES = 500
 MAX_LIBRARY_PAGE = 500
 EXPORT_BATCH = 200
 RESOLVE_CONCURRENCY = 4
+
+
+TITLE_VOCABULARY_LIMIT = 5000  # titles read to learn the words of this person's library
+
+
+def _title_filter(words: list[str]):  # type: ignore[no-untyped-def]
+    """Every word somewhere in the title, in any order ("malaria schools" finds "Malaria prevention in schools")."""
+    return and_(*(Paper.title.ilike(f"%{word}%") for word in words))
 
 
 def _visible_items(user: User) -> Select[tuple[LibraryItem]]:
@@ -99,11 +108,20 @@ async def list_library(
         )
     if tag:
         stmt = stmt.where(tag == any_(LibraryItem.tags))
-    if q and q.strip():
-        stmt = stmt.where(Paper.title.ilike(f"%{q.strip()}%"))
     if has_pdf:  # filtered before paging, so an older PDF is never hidden behind newer metadata-only entries
         stmt = stmt.where(Paper.storage_path.is_not(None))
+    unfiltered = stmt
+    words = words_of(q or "")
+    if words:  # letters and digits only, so % and _ typed by the person are never wildcards
+        stmt = unfiltered.where(_title_filter(words))
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+    if words and total == 0:
+        # Nothing matched the words as typed: forgive misspellings using this library's own title words.
+        titles = (await db.execute(unfiltered.with_only_columns(Paper.title).limit(TITLE_VOCABULARY_LIMIT))).scalars()
+        corrected = correct_from_vocabulary(words, titles)
+        if corrected:
+            stmt = unfiltered.where(_title_filter(corrected))
+            total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     response.headers["X-Total-Count"] = str(total)
     page = (
         stmt.options(selectinload(LibraryItem.paper).selectinload(Paper.authors).joinedload(PaperAuthor.author))

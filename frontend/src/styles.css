@@ -55,3 +55,9 @@
 @media (prefers-reduced-motion: reduce) {
   .pa-caret, .pa-pop, .pa-fade, .pa-rise, .pa-ripple { animation: none; }
 }
+
+/* Template writing guidance: a paragraph setting, shown grey and italic (the text itself is not italic). */
+.ProseMirror p[data-guidance] {
+  font-style: italic;
+  color: rgb(var(--c-slate-500));
+}

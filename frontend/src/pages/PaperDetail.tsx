@@ -109,6 +109,11 @@ function PassageSearch({ paper }: { paper: Paper }) {
         <Button type="submit" variant="secondary">Search</Button>
       </form>
       {passages.isLoading && <Spinner />}
+      {passages.data?.[0]?.matched_query && (
+        <p className="mb-2 text-sm text-slate-700" role="status">
+          No passage uses those exact words. Showing passages for <strong className="font-semibold text-slate-950">{passages.data[0].matched_query}</strong>.
+        </p>
+      )}
       <div className="space-y-2">
         {passages.data?.map((p) => (
           <div key={p.chunk_id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
@@ -119,7 +124,7 @@ function PassageSearch({ paper }: { paper: Paper }) {
             <p className="text-slate-700">{p.text.slice(0, 700)}{p.text.length > 700 ? "…" : ""}</p>
           </div>
         ))}
-        {passages.data?.length === 0 && <p className="text-sm text-slate-500">No passages matched.</p>}
+        {passages.data?.length === 0 && <p className="text-sm text-slate-500">No passages matched. Try other words, or check the spelling.</p>}
       </div>
     </section>
   );

@@ -27,7 +27,7 @@ export function DownloadMyData() {
   return (
     <div>
       <h3 className="font-medium text-slate-900">Download my data</h3>
-      <p className="mt-0.5 text-slate-600">A ZIP with your documents (Word and structured, with version history), library and collections (BibTeX, CSL-JSON), research conversations, every PDF you uploaded and your consent history.</p>
+      <p className="mt-0.5 text-slate-600">A ZIP with your documents (Word and structured, with version history), library and collections (BibTeX, CSL-JSON), research conversations, Deep research reports, every PDF you uploaded and your consent history.</p>
       <Button className="mt-2" size="sm" variant="secondary" loading={exporting} onClick={() => void download()}>Download my data</Button>
       {error && <div className="mt-2"><Alert kind="error">{error}</Alert></div>}
     </div>
@@ -55,7 +55,7 @@ export function DeleteMyAccount({ email }: { email: string }) {
   return (
     <div className="rounded-lg border border-red-200 bg-red-50/50 p-4">
       <h3 className="font-medium text-red-900">Delete my account</h3>
-      <p className="mt-0.5 text-red-900/80">Permanently deletes your sign-in, documents, library, research conversations and uploaded PDFs. This cannot be undone. Download your data first if you want a copy.</p>
+      <p className="mt-0.5 text-red-900/80">Permanently deletes your sign-in, documents, library, research conversations, Deep research reports and uploaded PDFs. This cannot be undone. Download your data first if you want a copy.</p>
       <Button className="mt-3" size="sm" variant="danger" onClick={() => setOpen(true)}>Delete my account…</Button>
       <Modal open={open} onClose={() => setOpen(false)} title="Delete your account permanently?">
         {pending ? (

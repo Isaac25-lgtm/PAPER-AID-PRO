@@ -267,7 +267,7 @@ function HelpCenter({ open, initialSection, onClose }: { open: boolean; initialS
           <p><strong>Metadata comes from registries.</strong> Titles, authors and dates come from scholarly registries (Crossref, OpenAlex, PubMed and others), never from free text you paste; sources you type in yourself are marked “user-supplied”, so citations are built from authoritative records.</p>
           <p><strong>Citations use official styles.</strong> In-text citations and reference lists are produced by the same citation engine used by Zotero and Mendeley, with the official style files.</p>
           <p><strong>AI answers show their sources.</strong> Each statement in an AI answer must quote the passage it relies on. Statements the cited text does not support are removed, and the answer says so. Click a numbered marker to read the source yourself.</p>
-          <p><strong>Your work is private.</strong> Uploads, notes, documents and research conversations are visible only to you.</p>
+          <p><strong>Your work is private.</strong> Uploads, notes, documents, research conversations and Deep research reports are visible only to you.</p>
           <p className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-amber-900"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /> AI output can still be wrong. Read the cited passages before you rely on an answer in your own writing.</p>
         </div>
       )}

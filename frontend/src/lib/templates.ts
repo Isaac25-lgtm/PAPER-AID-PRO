@@ -299,7 +299,6 @@ export interface GuidedConfig {
 /** Builds the editor content: title, design/objectives block and a guided section scaffold. */
 export function guidedContent(config: GuidedConfig): JSONContent {
   const text = (value: string, bold = false): JSONContent => ({ type: "text", text: value, ...(bold ? { marks: [{ type: "bold" }] } : {}) });
-  const italic = (value: string): JSONContent => ({ type: "text", text: value, marks: [{ type: "italic" }] });
   const content: JSONContent[] = [];
   if (config.docType === "draft" && !config.headings.length) return { type: "doc", content: [{ type: "paragraph" }] };
   if (config.design) content.push({ type: "paragraph", content: [text("Study design: ", true), text(config.design)] });
@@ -314,7 +313,8 @@ export function guidedContent(config: GuidedConfig): JSONContent {
   }
   for (const heading of config.headings.map((h) => h.trim()).filter(Boolean)) {
     content.push({ type: "heading", attrs: { level: 2 }, content: [text(heading)] });
-    content.push({ type: "paragraph", content: [italic(sectionGuidance(heading, config.design))] });
+    // Guidance is a paragraph setting (grey italic by style), so text typed after it is never italic.
+    content.push({ type: "paragraph", attrs: { guidance: true }, content: [text(sectionGuidance(heading, config.design))] });
   }
   return { type: "doc", content: content.length ? content : [{ type: "paragraph" }] };
 }

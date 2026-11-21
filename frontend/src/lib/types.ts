@@ -78,6 +78,8 @@ export interface PaperPage {
   total: number;
   page: number;
   page_size: number;
+  /** Set when a misspelled search was corrected. */
+  matched_query?: string | null;
 }
 
 export interface Work {
@@ -121,6 +123,8 @@ export interface Passage {
   section: string | null;
   page_start: number | null;
   page_end: number | null;
+  /** Set when nothing matched the words as typed and a misspelling was corrected from the paper's own words. */
+  matched_query?: string | null;
 }
 
 export interface Job {

@@ -3,6 +3,11 @@
 Deterministic and explainable. For each reference string we resolve its DOI (if present) or run a Crossref
 bibliographic search, then compare title, first author and year. Nothing is guessed: the result states what
 matched and what did not.
+
+Crossref does not hold everything: arXiv preprints (DataCite DOIs), many conference papers and some books are
+missing. A real, famous paper must never be reported as "not found" (that reads as an accusation of a fabricated
+reference), so when Crossref has no close match the likely title is also looked up in OpenAlex, which indexes
+those sources, and the best candidate from both is assessed (browser test, 2026-11-21).
 """
 
 from __future__ import annotations
@@ -16,11 +21,45 @@ from app.errors import AppError
 from app.services.scholarly.http import get_json
 from app.services.scholarly.identifiers import normalize_doi, normalize_title
 from app.services.scholarly.models import ScholarlyWork
-from app.services.scholarly.providers import Crossref
+from app.services.scholarly.providers import Crossref, OpenAlex
 
 Verdict = Literal["verified", "likely_match", "mismatch", "not_found", "error"]
 MAX_REFERENCES = 50
 _YEAR = re.compile(r"\b(1[5-9]\d\d|20\d\d)\b")
+_SEGMENT = re.compile(r"(?<=[.?!])\s+")
+# Web addresses and DOIs carry digits that look like years ("arXiv.1706.03762" is not the year 1706).
+_LINKS = re.compile(r"https?://\S+|\bdoi:\s*\S+|\b10\.\d{4,9}/\S+|\barxiv:\s*\S+", re.IGNORECASE)
+_INITIALS = re.compile(r"[A-Z]\.(?:-?[A-Z]\.)*,?")
+_LEADING_YEAR = re.compile(r"^\(?\d{4}[a-z]?\)?\.?\s*")
+_LETTERS = re.compile(r"[^\W\d_]{4,}")
+
+
+def title_segments(reference: str) -> list[str]:
+    """Likely titles in a free-form reference: its sentence-like parts with 3-40 words, longest first, skipping
+    author lists (commas with initials) and parts that are only numbers."""
+    segments = []
+    for raw in _SEGMENT.split(reference):
+        part = _LEADING_YEAR.sub("", raw.strip(" .,;:()[]\"'“”"))
+        words = part.split()
+        if not 3 <= len(words) <= 40 or not _LETTERS.search(part):
+            continue
+        if part.count(",") >= 2 and any(_INITIALS.fullmatch(w) for w in words):
+            continue  # "Vaswani, A., Shazeer, N., ..."
+        segments.append(part)
+    return sorted(segments, key=len, reverse=True)[:2]
+
+
+async def _openalex_candidates(reference: str) -> list[ScholarlyWork]:
+    found: list[ScholarlyWork] = []
+    for segment in title_segments(reference):
+        data = await get_json(
+            f"{OpenAlex.base}/works",
+            params=OpenAlex._params(
+                {"filter": f"title.search:{segment.replace(',', ' ')}", "per-page": 5, "sort": "cited_by_count:desc"}
+            ),
+        )
+        found += [w for item in (data or {}).get("results", []) if (w := OpenAlex.to_work(item))]
+    return found
 
 
 def _similarity(a: str, b: str) -> float:
@@ -75,6 +114,7 @@ def _field(value: bool | None) -> str:
 
 
 def _assess(reference: str, work: ScholarlyWork, via_doi: bool) -> dict[str, Any]:
+    reference = _LINKS.sub(" ", reference)
     title_score = _title_in_reference(reference, work.title)
     before_title, outside_title = _reference_parts(reference, work.title)
     years = {int(y) for y in _YEAR.findall(" ".join(outside_title))}
@@ -132,12 +172,13 @@ async def verify_reference(reference: str) -> dict[str, Any]:
     try:
         doi = normalize_doi(text)
         if doi:
-            work = await Crossref.lookup("doi", doi)
+            # arXiv and other DataCite DOIs are not in Crossref; OpenAlex resolves them.
+            work = await Crossref.lookup("doi", doi) or await OpenAlex.lookup("doi", doi)
             if work is None:
                 return {
                     **result,
                     "verdict": "not_found",
-                    "explanation": f"DOI {doi} is not registered with Crossref.",
+                    "explanation": f"DOI {doi} is not registered with Crossref or OpenAlex.",
                     "match": None,
                 }
             assessment = _assess(text, work, via_doi=True)
@@ -147,11 +188,16 @@ async def verify_reference(reference: str) -> dict[str, Any]:
                 params=Crossref._params({"query.bibliographic": text[:500], "rows": 5, "select": Crossref._select}),
             )
             candidates = [w for item in (data.get("message") or {}).get("items", []) if (w := Crossref.to_work(item))]
+            best = max(candidates, key=lambda w: _candidate_score(text, w)) if candidates else None
+            if best is None or _assess(text, best, via_doi=False)["verdict"] != "verified":
+                # Not confirmed by Crossref: a better record (an arXiv preprint, a conference version, the
+                # original rather than a reprint) may be in OpenAlex; the best candidate from both is assessed.
+                candidates += await _openalex_candidates(text)
             if not candidates:
                 return {
                     **result,
                     "verdict": "not_found",
-                    "explanation": "No matching publication found in Crossref.",
+                    "explanation": "No matching publication found in Crossref or OpenAlex.",
                     "match": None,
                 }
             work = max(candidates, key=lambda w: _candidate_score(text, w))
