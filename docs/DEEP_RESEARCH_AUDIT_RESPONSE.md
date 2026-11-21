@@ -9,8 +9,16 @@ This responds to [PAPERAID_V2_DEEP_RESEARCH_AUDIT.md](PAPERAID_V2_DEEP_RESEARCH_
 - The three maintenance items are done.
 
 **Branch and gates:**
-- The work is on branch `fix/deep-research-audit`. It is **not merged and not deployed**: merging, and any release,
-  are the maintainer's decision.
+- The work was done on branch `fix/deep-research-audit` and merged into `main` at `20068c2` on 22 November, at the
+  maintainer's request.
+- **Released** the same day: staging (`paperaid-api-staging-00023-nus` and its frontend), then production
+  (`paperaid-api-00036-rov` and its frontend). The migration was a no-op; the schema is still `b3d7e1a9c4f2`.
+- Live checks on production after the release:
+  - a bare DOI gives `registered`;
+  - a numbered reference is `verified`;
+  - `scool feding` searches as `school feeding`;
+  - the defaults exclude Semantic Scholar;
+  - the OpenAlex key is still attached.
 - Tavily and AI report writing stay switched off.
 
 ## Results

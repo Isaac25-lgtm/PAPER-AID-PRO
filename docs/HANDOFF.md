@@ -1,13 +1,13 @@
 # PaperAid Pro (Silver) — handoff
 
-**Status: 21 November 2026.** Live and in a private, invite-only test. Code on GitHub `main`. Original app preserved
+**Status: 22 November 2026.** Live and in a private, invite-only test. Code on GitHub `main`. Original app preserved
 at tag `legacy-v1`.
 
 | | |
 |---|---|
 | App | https://paperaid.web.app |
 | API | https://paperaid-api-307658066472.europe-west4.run.app/api/v1/health |
-| Running revision | `paperaid-api-00033-toj` (commit `29ebdba`, OpenAlex key attached), database schema `b3d7e1a9c4f2` |
+| Running revision | `paperaid-api-00036-rov` (commit `20068c2`, OpenAlex key attached), database schema `b3d7e1a9c4f2` |
 | Google Cloud / Firebase project | `paperaid` (main Google account) |
 | Start reading | this file → `docs/DEPLOYMENT.md` (operations) → `docs/ARCHITECTURE.md` → `AGENTS.md` (for coding agents) |
 
