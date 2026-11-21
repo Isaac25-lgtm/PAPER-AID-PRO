@@ -10,6 +10,10 @@ that adds this brief.
 3. Look hard at the **messy-input** work (spelling correction, fuzzy matching, identifier parsing, reference checker):
    it must help real users without ever changing a correct query, inventing a match or accusing a real reference.
 4. Look for new defects, especially security, privacy and cost.
+5. **Code integrity and maintainability:** run every test suite and the build yourself; then flag spaghetti code,
+   meaning duplicated logic, business logic in route handlers, long functions doing several jobs, hidden coupling
+   and dead code. Start with the hotspots we already know of (section 7); do not limit yourself to them. For each,
+   say whether it is a real risk and what the simplest clean structure would be.
 
 Report in the format of `docs/PAPERAID_V2_WORKSPACE_AUDIT.md`, as `docs/PAPERAID_V2_DEEP_RESEARCH_AUDIT.md`.
 
@@ -21,7 +25,22 @@ Report in the format of `docs/PAPERAID_V2_WORKSPACE_AUDIT.md`, as `docs/PAPERAID
 | `f212c15` | Deep research reinstated (backend, migration `b3d7e1a9c4f2`, frontend, tests) |
 | `4440e81` | Browser-test fixes, round 1: misspelled searches, Europe PMC PDFs, AI buttons while AI is off |
 | `94a467e` | Browser-test fixes, round 2: typo-tolerant search everywhere, identifiers, reference checker, entities, guidance italics |
-| latest | OpenAlex exact word counts for spelling; OpenAlex API key support; this brief and the browser-test record |
+| `9537ec5` | OpenAlex exact word counts for spelling; OpenAlex API key support; this brief and the browser-test record |
+| `29ebdba` | `.gitignore`: `*.local.txt` (local-only secret files) |
+| `c876f1b` | Docs: production release `paperaid-api-00033-toj` and the OpenAlex key recorded |
+| latest | This brief extended: code-quality review, everything tested on 21 November |
+
+**Releases on 21 November** (all through `deploy/release.sh`, with environment check, candidate check and readiness
+gate):
+
+| Environment | Revisions, in order |
+|---|---|
+| Staging | `00014-nam` (`94a467e`), `00017-kug` (`9537ec5`), `00020-nay` (`29ebdba` + OpenAlex key) |
+| Production | `00030-xey` (`9537ec5`, migration `b3d7e1a9c4f2` run by `paperaid-migrate`), `00033-toj` (`29ebdba` + OpenAlex key) |
+
+The production frontend was deployed from `9537ec5`. The OpenAlex key is in Secret Manager as `openalex-api-key`,
+with `roles/secretmanager.secretAccessor` for `paperaid-api@` and `paperaid-staging-api@`, attached with
+`EXTRA_DEPLOY_FLAGS="--update-secrets=OPENALEX_API_KEY=openalex-api-key:latest"`.
 
 ## Deployed state (at the time of writing)
 
@@ -37,7 +56,7 @@ Report in the format of `docs/PAPERAID_V2_WORKSPACE_AUDIT.md`, as `docs/PAPERAID
 Both environments run every change in scope (released 21 November after the maintainer's approval); migration
 `b3d7e1a9c4f2` (expand-only: one new table) has run in both.
 
-**Tests:** backend 345, frontend 156, all passing locally; CI green on each pushed commit.
+**Tests:** backend 345, frontend 156, all passing locally; CI green on each pushed commit. Details in section 8.
 
 ---
 
@@ -199,6 +218,95 @@ Semantic Scholar already answers `429` without its key in both environments.
   (`DEPLOYMENT.md`).
 - The suggested RCT outline uses clinical section names ("Adverse Events") even for education trials. They are
   editable suggestions and were left as they are.
+
+## 7. Code integrity: hotspots we already know of (please confirm, rank and propose fixes)
+
+These grew quickly while fixing live problems. None has a known functional bug, but several are maintenance
+risks. Please judge each one.
+
+| # | Where | Concern |
+|---|---|---|
+| Q1 | Typo correction exists in **three** places: `services/scholarly/spelling.py` (ESpell + OpenAlex, external), `services/fuzzy.py` `correct_from_vocabulary` (library, catalogue) and `services/search.py` `correct_against_papers` (passages, its own difflib + Counter copy) | Duplicated logic. `search.py` should probably call `fuzzy.py`. Are the three thresholds (`CONFIRM_RATIO` 50, difflib 0.8 twice) consistent and justified? |
+| Q2 | `api/routes/papers.py` `list_papers` (nested `matching` closure plus correction flow) and `api/routes/library.py` `list_library` (correction flow) | Search and correction business logic lives in route handlers, with a `db.commit()` mid-route before external calls. Should it move into a service, such as one shared "search with correction" helper? |
+| Q3 | `api/routes/discovery.py` `search` | Nested `run` closure; the correction runs beside the search and the search repeats on correction. Is the concurrency right (the correction cannot leak into `exact=true`; there is no double counting against rate limits)? |
+| Q4 | `services/deep_research.py` `run_deep_research` (about 120 lines) | Orchestration, evidence building, catalogue upserts, error-to-status mapping and persistence in one function. `sources[offset + j]` index bookkeeping couples the source list to the evidence list. |
+| Q5 | `services/ai/grounding.py` `EvidenceItem.paper: Paper \| WebPage` | A union with `isinstance` branches in `short_ref` and `citation_payload`. Fine, or should web evidence be its own type? |
+| Q6 | `services/citations/verify.py` | `_assess` is called several times per candidate (`_candidate_score`, the fallback decision, the final assessment); the OpenAlex fallback adds up to two requests per unverified reference. Performance and readability? |
+| Q7 | `services/scholarly/spelling.py` | Module-level mutable LRU `_cache` (per process, not shared across Cloud Run instances); `asyncio.wait_for` around `_suggest`. Thread or task safety, and cache poisoning (a wrong correction cached for 512 queries)? |
+| Q8 | `services/export.py` `_guidance_in_italics` | Rebuilds the content tree on each export before `citation_labels`, which keys on `id(node)`. The order of these two calls matters; is that robust? |
+| Q9 | `frontend/src/pages/DeepResearch.tsx` (307 lines), `pages/Editor.tsx` (703 lines) | Large components with several sub-components inline. |
+| Q10 | `# type: ignore[no-untyped-def]` on new nested helpers; CI runs `ruff` but **not `mypy`** | Type safety of the new code is unchecked. Should mypy run in CI? |
+| Q11 | `backend/tests/test_messy_input.py` | One file covers spelling, identifiers, the reference checker, the library, the catalogue, passages, export and HTTP keys. Split by area? |
+| Q12 | `services/scholarly/identifiers.py` | A bare number (for example `2019`) is read as a PMID (behaviour older than these changes); the prefixes are now permissive. Any false positives that matter? |
+
+## 8. Everything tested on 21 November
+
+**Automated, run locally on the final code** (Windows, embedded Postgres via `pgserver`):
+
+| Suite | Command | Result |
+|---|---|---|
+| Backend lint and format | `ruff check app tests alembic scripts ../deploy && ruff format --check app tests alembic scripts` | clean |
+| Backend tests | `python -m pytest -q` (in `backend/`) | **345 passed**, 7 deselected (live tests) |
+| Frontend types | `npx tsc -b --noEmit` | clean |
+| Frontend tests | `npx vitest run` | **156 passed** (17 files) |
+| Frontend build | `npx vite build` | built; `DeepResearch` chunk 12.8 kB |
+
+**CI** (GitHub Actions on Linux: ruff, pytest, `npm audit --audit-level=high`, tsc, vitest, vite build) was green on
+`f212c15`, `4440e81`, `94a467e` and `9537ec5`, and on every commit released.
+
+**New tests added today** (all fail on the code before the fix unless noted):
+- `backend/tests/test_messy_input.py` (15):
+  - spelling accept and reject: typos, real words, French, acronyms, identifiers, service failure, stem collision;
+  - Discover `corrected_from` and `exact`;
+  - Europe PMC address;
+  - passages typo;
+  - library words and typos, wildcards;
+  - catalogue typo;
+  - reference checker OpenAlex fallback and link years;
+  - identifier variants;
+  - entities;
+  - guidance kept and exported italic;
+  - OpenAlex key only in a header and only to OpenAlex.
+- `backend/tests/test_deep_research.py` (13).
+- `frontend/src/test/deepResearch.test.tsx` (5).
+- `frontend/src/test/messyInput.test.tsx` (3).
+- `frontend/src/test/guidance.test.ts` (2).
+- `frontend/src/test/workspace.test.tsx` (Deep research sidebar item).
+
+**Live checks against real services** (not in CI, done by hand):
+- Spelling suggestions against NCBI ESpell and OpenAlex: 14 queries, with typo, correct, acronym, DOI and French cases.
+  Measured counts are in `spelling.py`.
+- Reference checker: six real, wrong-year, made-up and DOI-only references against Crossref and OpenAlex (results
+  in section 3).
+- Europe PMC PDF service: `getPdf` returned a 604 KB PDF; `ptpmcrender` returned 403/520.
+- OpenAlex key: `200` with `X-RateLimit-Limit: 10000` on the key. Production's search consumed the key's budget, so
+  production uses it.
+- Production and staging latency: public catalogue request 0.5-0.7 s against 1.1-2.1 s.
+
+**Signed-in browser test** on staging in real Chrome: every section, before and after the fixes, recorded in
+`docs/BROWSER_TEST_RUN.md`.
+
+**Not tested:**
+- Anything needing AI keys: the Deep research written report, AI summaries and Q&A run on a scripted fake model in
+  tests only.
+- Tavily web search: mocked only.
+- Production while signed in: only staging test accounts are used.
+- Phone-width layouts in a real browser.
+
+## 9. How to run everything
+
+```bash
+# backend (Postgres 16 + pgvector; tests create their own database; or set TEST_PG_URL)
+cd backend && python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/ruff check app tests alembic scripts && .venv/bin/ruff format --check app tests alembic scripts
+.venv/bin/python -m pytest -q
+# frontend
+cd ../frontend && npm ci && npx tsc -b --noEmit && npx vitest run && npx vite build
+```
+
+Staging for hands-on checks: `https://paperaid-staging.web.app` (API
+`https://paperaid-api-staging-307658066472.europe-west4.run.app`). Ask the maintainer for a staging test account;
+the passwords are kept only in a git-ignored local file.
 
 ## Out of scope / constraints (unchanged)
 
