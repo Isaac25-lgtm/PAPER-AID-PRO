@@ -63,5 +63,5 @@ npm ci && npx tsc -b --noEmit && npx vitest run && npx vite build
   `docs/REAUDIT_RESPONSE.md`; `docs/PAPERAID_V2_RELEASE_AUDIT.md` → `docs/RELEASE_AUDIT_RESPONSE.md`; `docs/PAPERAID_V2_SYSTEM_REAUDIT.md` →
   `docs/SYSTEM_REAUDIT_RESPONSE.md`; `docs/PAPERAID_V2_HARDENING_AUDIT.md` → `docs/HARDENING_AUDIT_RESPONSE.md`;
   `docs/PAPERAID_V2_STAGING_AUDIT.md` → `docs/STAGING_AUDIT_RESPONSE.md`;
-  `docs/PAPERAID_V2_WORKSPACE_AUDIT.md` → `docs/WORKSPACE_AUDIT_RESPONSE.md`. Next: `docs/AUDIT_BRIEF.md` (Deep research and the
-  signed-in browser test, `docs/BROWSER_TEST_RUN.md`) → `docs/PAPERAID_V2_DEEP_RESEARCH_AUDIT.md`.
+  `docs/PAPERAID_V2_WORKSPACE_AUDIT.md` → `docs/WORKSPACE_AUDIT_RESPONSE.md`; `docs/PAPERAID_V2_DEEP_RESEARCH_AUDIT.md` →
+  `docs/DEEP_RESEARCH_AUDIT_RESPONSE.md` (branch `fix/deep-research-audit`).
