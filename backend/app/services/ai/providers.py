@@ -83,16 +83,18 @@ class AnthropicLLM:
         output_config: dict[str, Any] = {"effort": self.effort}
         if fmt is not None:
             output_config["format"] = fmt
+        # Built as plain data and passed by keyword: the SDK's TypedDict overloads cannot narrow these dicts.
+        request: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": prompt}],
+            "output_config": output_config,
+            "betas": ["server-side-fallback-2026-07-01"],
+            "fallbacks": "default",
+        }
         try:
-            response = await self._client.beta.messages.create(
-                model=self.model,
-                max_tokens=max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": prompt}],
-                output_config=output_config,
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
-            )
+            response = await self._client.beta.messages.create(**request)
         except anthropic.RateLimitError as exc:
             raise RateLimited(
                 "The AI provider is rate limiting requests. Please retry shortly.", retry_after=20
@@ -169,7 +171,7 @@ class OpenAILLM:
             raise AIOutputInvalid("The AI response was cut off before it finished; it was discarded.")
         if refusal:
             raise AIRefused("The AI model declined to answer this request.")
-        return data  # type: ignore[no-any-return]
+        return data
 
     async def generate_text(self, *, system: str, prompt: str, max_tokens: int) -> LLMResult:
         data = await self._post(

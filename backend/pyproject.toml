@@ -63,6 +63,22 @@ python_version = "3.12"
 plugins = ["pydantic.mypy"]
 ignore_missing_imports = true
 warn_unused_ignores = true
+# Typed baseline checked in CI (Deep Research audit Q10). Grow this list as modules are brought in; imported
+# modules outside it are followed silently, so their errors do not block until they join.
+follow_imports = "silent"
+files = [
+    "app/services/fuzzy.py",
+    "app/services/scholarly/spelling.py",
+    "app/services/scholarly/identifiers.py",
+    "app/services/deep_research.py",
+    "app/services/citations/verify.py",
+    "app/services/web_search.py",
+    "app/services/ai/grounding.py",
+    "app/services/ai/providers.py",
+    "app/services/ai/features.py",
+    "app/api/routes/deep_research.py",
+    "app/api/routes/discovery.py",
+]
 
 [tool.ruff.lint.isort]
 known-third-party = ["alembic"]

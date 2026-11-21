@@ -279,6 +279,7 @@ def _unavailable(text: str, found: _Lookup, what: str) -> dict[str, Any]:
 async def verify_reference(reference: str) -> dict[str, Any]:
     ref = ParsedReference.parse(reference)
     found = _Lookup()
+    best: Assessment | None
     if ref.doi:
         work = await _resolve_doi(ref.doi, found)
         if work is None:
@@ -314,6 +315,7 @@ async def verify_reference(reference: str) -> dict[str, Any]:
                     "match": None,
                     "unavailable": [],
                 }
+    assert best is not None  # every branch above returned when there was nothing to assess
     work = best.work
     return {
         "reference": ref.text,

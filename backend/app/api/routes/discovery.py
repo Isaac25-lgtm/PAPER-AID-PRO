@@ -18,7 +18,7 @@ from app.services.ai.features import discovery_snapshot
 from app.services.papers import upsert_public_paper
 from app.services.scholarly.aggregator import default_providers, federated_search, resolve_identifier
 from app.services.scholarly.identifiers import parse_identifier
-from app.services.scholarly.models import ALL_PROVIDERS, ProviderName, ScholarlyWork, Subject
+from app.services.scholarly.models import ALL_PROVIDERS, ProviderName, ProviderStatus, ScholarlyWork, Subject
 from app.services.scholarly.spelling import suggest_correction
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
@@ -68,7 +68,7 @@ async def search(
     await db.commit()  # do not hold a DB connection while the providers are queried
     typed = " ".join(q.split())
 
-    async def run(query: str):  # type: ignore[no-untyped-def]
+    async def run(query: str) -> tuple[list[ScholarlyWork], list[ProviderStatus]]:
         return await federated_search(
             query,
             providers=selected,

@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import func, select, text, update
+from sqlalchemy import ColumnElement, func, select, text, update
 from starlette.background import BackgroundTask
 
 from app.api.deps import DB, AppSettings
@@ -103,7 +103,7 @@ async def list_papers(
     if status:
         base.append(Paper.status == PaperStatus(status))
 
-    def text_filter(query: str):  # type: ignore[no-untyped-def]
+    def text_filter(query: str) -> ColumnElement[bool]:
         return Paper.search_vector.op("@@")(func.websearch_to_tsquery("english", query))
 
     async def count(query: str) -> int:

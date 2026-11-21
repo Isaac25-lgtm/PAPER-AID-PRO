@@ -94,7 +94,7 @@ async def gather_evidence(
         )
         for i, e in enumerate(passages)
     ]
-    covered = {e.paper.id for e in items}
+    covered = {e.paper.id for e in items if isinstance(e.paper, Paper)}  # passages: papers only
     # One budget for everything sent to the model, however many sources are selected.
     budget = limit + EVIDENCE_COVERAGE_EXTRA
     # Keyword search can miss a paper entirely (e.g. vague questions); fall back to its opening passages.
@@ -205,7 +205,7 @@ async def check_passage(db: AsyncSession, papers: list[Paper], passage: str) -> 
     items = await gather_evidence(db, passage, papers, limit=12)
     result = await grounded_answer(db, passage, items, feature="Checking against your sources", task=CHECK_TASK)
     # Which selected sources actually contributed evidence the model saw (scope reporting).
-    result["evidence_paper_ids"] = sorted({str(item.paper.id) for item in items})
+    result["evidence_paper_ids"] = sorted({str(item.paper.id) for item in items if isinstance(item.paper, Paper)})
     return result
 
 
@@ -299,7 +299,7 @@ async def summarize_paper(db: AsyncSession, paper: Paper, *, force: bool = False
     removed_total = 0
     kept_by_section: dict[str, list[dict[str, Any]]] = {name: [] for name, _ in sections}
     by_key = {i.key: i for i in items}
-    survivors = []
+    survivors: list[tuple[str, Any]] = []
     for (name, _), claim_input in zip(flat, raw, strict=True):
         kept, removed = check_claims([claim_input], items)
         removed_total += removed
@@ -329,8 +329,8 @@ async def summarize_paper(db: AsyncSession, paper: Paper, *, force: bool = False
 
     content = {
         "overview": kept_by_section["overview"],
-        "research_question": (kept_by_section["research_question"] or [None])[0],
-        "methods": (kept_by_section["methods"] or [None])[0],
+        "research_question": next(iter(kept_by_section["research_question"]), None),
+        "methods": next(iter(kept_by_section["methods"]), None),
         "key_findings": kept_by_section["key_findings"],
         "limitations": kept_by_section["limitations"],
         "based_on": "full_text" if paper.status == PaperStatus.READY else "abstract",
