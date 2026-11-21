@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     ncbi_api_key: str = ""
     semantic_scholar_api_key: str = ""
     core_api_key: str = ""  # free key from core.ac.uk; enables CORE (open-access papers in every discipline)
+    # Free key from openalex.org. Without it every request shares a small daily budget per IP address (Cloud Run's
+    # addresses are shared), and OpenAlex answers 429 once it is spent: Discover, Deep research, open-access PDFs,
+    # spelling checks and reference checks all depend on it.
+    openalex_api_key: str = ""
     http_timeout_seconds: float = 15.0
 
     # --- AI (configured later; every AI endpoint returns 503 AI_NOT_CONFIGURED until then) -----------

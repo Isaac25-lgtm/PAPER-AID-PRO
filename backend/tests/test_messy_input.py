@@ -12,11 +12,11 @@ from app.services.scholarly import spelling
 from app.services.scholarly.spelling import changed_words, suggest_correction
 from tests.conftest import ALICE
 
-# How common each word is in the literature (OpenAlex counts measured on 2026-11-21, rounded).
+# Exact-word counts in OpenAlex titles and abstracts (measured on 2026-11-21).
 COUNTS = {
-    "malria": 6_400, "malaria": 720_000, "preventon": 490, "prevention": 8_100_000, "scools": 6_700,
-    "schools": 14_000_000, "postcolonial": 336_000, "opostcolonial": 5, "litrature": 9_000, "literature": 9_000_000,
-    "filles": 7_900_000, "files": 8_500_000,
+    "malria": 36, "malaria": 224_332, "preventon": 47, "prevention": 2_246_751, "scools": 105,
+    "schools": 1_528_459, "postcolonial": 99_204, "opostcolonial": 0, "litrature": 900, "literature": 4_000_000,
+    "filles": 22_040, "files": 510_326, "feding": 146, "feeding": 900_930,
 }  # fmt: skip
 
 
@@ -34,7 +34,7 @@ def mock_services(router: respx.MockRouter, corrected: str | None, counts=COUNTS
     )
 
     def count(request: httpx.Request) -> httpx.Response:
-        word = request.url.params["search"]
+        word = request.url.params["filter"].removeprefix("title_and_abstract.search.exact:")
         return httpx.Response(200, json={"meta": {"count": counts.get(word, 0)}, "results": []})
 
     router.get("https://api.openalex.org/works").mock(side_effect=count)
@@ -247,3 +247,25 @@ async def test_catalog_search_forgives_typos(client, registries, monkeypatch):
     assert typo["total"] == 1 and typo["matched_query"] == "malaria prevention"
     nothing = (await client.get("/api/v1/papers", params={"q": "zzqx"})).json()
     assert nothing["total"] == 0 and nothing["matched_query"] is None
+
+
+async def test_a_typo_that_shares_a_stem_with_common_words_is_still_corrected():
+    # Stemmed search counted "feding" as 4 million papers ("fed..."); exact counts give 146 against 900,930.
+    with respx.mock() as router:
+        mock_services(router, "school feeding")
+        assert await suggest_correction("school feding") == "school feeding"
+
+
+async def test_the_openalex_key_is_sent_in_a_header_and_never_in_the_address(monkeypatch):
+    from app.config import get_settings
+    from app.services.scholarly.http import get_json
+
+    monkeypatch.setattr(get_settings(), "openalex_api_key", "oa-test-key")
+    with respx.mock() as router:
+        openalex = router.get("https://api.openalex.org/works").mock(return_value=httpx.Response(200, json={}))
+        crossref = router.get("https://api.crossref.org/works").mock(return_value=httpx.Response(200, json={}))
+        await get_json("https://api.openalex.org/works", params={"search": "x"})
+        await get_json("https://api.crossref.org/works", params={"query": "x"})
+    sent = openalex.calls.last.request
+    assert sent.headers["authorization"] == "Bearer oa-test-key" and "oa-test-key" not in str(sent.url)
+    assert "authorization" not in crossref.calls.last.request.headers  # never sent to anyone else

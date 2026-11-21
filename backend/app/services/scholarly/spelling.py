@@ -6,9 +6,10 @@ the topic. Correction is in two steps, and both must agree:
 1. Suggest. NCBI's ESpell proposes a corrected query (it covers far more than medicine: it fixed medieval,
    architecture, climate, machine learning and crop yield in our checks).
 2. Confirm against the literature. Each changed word is accepted only if, in OpenAlex (every discipline), the word
-   as typed is at least CONFIRM_RATIO times rarer than the suggested word. Real typos are rare ("malria" 6k papers,
-   "malaria" 720k); real words are not ("postcolonial" 336k is never turned into "opostcolonial"; French "filles"
-   is never turned into "files"; "omics" is never turned into "comics").
+   as typed is at least CONFIRM_RATIO times rarer than the suggested word, counting exact (unstemmed) words in
+   titles and abstracts. Real typos are rare ("malria" 36 papers, "malaria" 224k; "feding" 146, "feeding" 901k);
+   real words are not ("postcolonial" 99k is never turned into "opostcolonial" (0); French "filles" (22k) is never
+   turned into "files" (510k); "omics" is never turned into "comics").
 
 Anything that fails, times out or looks like an identifier, acronym, gene name or number is left as typed. The
 caller always offers the search exactly as typed, so a correction is a suggestion, never a trap.
@@ -69,7 +70,13 @@ async def _espell(query: str) -> str | None:
 
 
 async def _count(word: str) -> int | None:
-    data = await get_json(OPENALEX_WORKS, params={"search": word, "per-page": 1, "select": "id"}, retries=0)
+    # Exact (unstemmed) word counts: OpenAlex's normal search stems words, so a typo such as "feding" would
+    # count every "fed..." paper (4 million) instead of its true 146 (browser test, 2026-11-21).
+    data = await get_json(
+        OPENALEX_WORKS,
+        params={"filter": f"title_and_abstract.search.exact:{word}", "per-page": 1, "select": "id"},
+        retries=0,
+    )
     count = (data or {}).get("meta", {}).get("count") if isinstance(data, dict) else None
     return count if isinstance(count, int) else None
 

@@ -40,6 +40,19 @@ async def close_http_client() -> None:
     _client = None
 
 
+OPENALEX_HOST = "api.openalex.org"
+
+
+def _with_keys(url: str, headers: dict[str, str] | None) -> dict[str, str] | None:
+    """OpenAlex requires an API key (free) for its own budget; without one, every request shares a small daily
+    allowance per IP address, and Cloud Run's egress addresses are shared. The key goes in a header, never the URL,
+    so it cannot appear in logged URLs or error messages."""
+    key = get_settings().openalex_api_key
+    if key and httpx.URL(url).host == OPENALEX_HOST:
+        return {**(headers or {}), "Authorization": f"Bearer {key}"}
+    return headers
+
+
 async def get_json(
     url: str,
     *,
@@ -49,6 +62,7 @@ async def get_json(
     not_found_ok: bool = False,
 ) -> Any:
     client = get_http_client()
+    headers = _with_keys(url, headers)
     for attempt in range(retries + 1):
         try:
             response = await client.get(url, params=params, headers=headers)
