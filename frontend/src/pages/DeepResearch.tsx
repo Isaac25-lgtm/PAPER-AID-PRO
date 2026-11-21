@@ -29,9 +29,13 @@ export default function DeepResearchPage() {
   const [subject, setSubject] = useState<Subject>("all");
   const [yearFrom, setYearFrom] = useState("");
   const [yearTo, setYearTo] = useState("");
-  const [includeWeb, setIncludeWeb] = useState(true);
+  const [includeWeb, setIncludeWeb] = useState(false); // the person turns the web on; never by default
 
   const status = useQuery({ queryKey: ["deep-research-status"], queryFn: () => api.get<DeepResearchStatus>("/research/deep/status") });
+  const webConnected = status.isSuccess && Boolean(status.data?.web_search);
+  /** What the checkbox shows is exactly what is sent: off while the status is loading or failed (audit F01). */
+  const webChosen = webConnected && includeWeb;
+  const yearsSet = Boolean(yearFrom || yearTo);
   const history = useQuery({ queryKey: ["deep-research"], queryFn: () => api.get<DeepResearchSummary[]>("/research/deep") });
   const run = useQuery({
     queryKey: ["deep-research", runId],
@@ -50,7 +54,7 @@ export default function DeepResearchPage() {
         subject,
         year_from: yearFrom ? Number(yearFrom) : null,
         year_to: yearTo ? Number(yearTo) : null,
-        include_web: includeWeb,
+        include_web: webChosen,
       });
       return { result, origin };
     },
@@ -70,7 +74,6 @@ export default function DeepResearchPage() {
     },
   });
 
-  const webConnected = Boolean(status.data?.web_search);
   const canRun = question.trim().length >= 10 && !start.isPending;
 
   return (
@@ -129,10 +132,11 @@ export default function DeepResearchPage() {
                   <Input aria-label="To year" type="number" min={1500} max={2100} placeholder="To year" value={yearTo} onChange={(e) => setYearTo(e.target.value)} />
                 </div>
                 <label className="flex items-start gap-2 text-sm text-slate-700">
-                  <input type="checkbox" className="mt-1" checked={includeWeb && webConnected} disabled={!webConnected} onChange={(e) => setIncludeWeb(e.target.checked)} />
+                  <input type="checkbox" className="mt-1" checked={webChosen} disabled={!webConnected} onChange={(e) => setIncludeWeb(e.target.checked)} />
                   <span>
                     Also search the general web (reports, guidelines, news)
                     {!webConnected && <span className="block text-xs text-slate-500">Web search is not connected yet, so only the scholarly databases are searched.</span>}
+                    {webChosen && yearsSet && <span className="block text-xs text-slate-500">With years set, web pages outside them, or without a date, are left out.</span>}
                   </span>
                 </label>
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -224,6 +228,7 @@ function RunView({ run }: { run: DeepResearchRun }) {
             <li key={s.name} className="flex items-center gap-1">
               {s.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <XCircle className="h-3.5 w-3.5 text-red-600" />}
               {serviceLabel(s)}: {s.ok ? `${s.count} results` : "not reached"}
+              {s.ok && s.excluded_by_date ? ` (${s.excluded_by_date} left out by the years you set)` : ""}
             </li>
           ))}
         </ul>

@@ -18,13 +18,14 @@ import asyncio
 import logging
 import re
 import uuid
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DeepResearchRun, User
-from app.errors import AIOutputInvalid, AIRefused, AppError, UpstreamError
+from app.errors import AIOutputInvalid, AppError, UpstreamError
 from app.services.ai.features import grounded_answer
 from app.services.ai.grounding import EvidenceItem, WebPage
 from app.services.ai.providers import get_llm
@@ -48,6 +49,7 @@ SEARCH_CONCURRENCY = 2  # planned searches at once (each already queries every d
 _SPACE = re.compile(r"\s+")
 _TAG = re.compile(r"<[^>]{0,40}>")
 _UNSAFE = re.compile(r"[\"“”<>]")
+_WORDS = re.compile(r"[^\W\d_]{2,}")  # a searchable word: two or more letters
 
 
 class SearchPlan(BaseModel):
@@ -80,36 +82,68 @@ def _clean_query(raw: str) -> str:
 
 def fallback_queries(question: str) -> list[str]:
     cleaned = _clean_query(question)
-    return [cleaned] if len(cleaned) >= 2 else []
+    return [cleaned] if len(_WORDS.findall(cleaned)) >= 1 else []
 
 
-def clean_plan(raw: list[str], question: str) -> list[str]:
-    """The model's searches, cleaned, de-duplicated and bounded; the question itself when nothing usable came back."""
+def usable_question(question: str) -> str | None:
+    """The question with whitespace normalised, or None when nothing searchable is left (audit F14)."""
+    normalised = " ".join((question or "").split())
+    return normalised if fallback_queries(normalised) else None
+
+
+def _model_queries(raw: list[str]) -> list[str]:
     seen: set[str] = set()
     queries: list[str] = []
     for item in raw:
         query = _clean_query(item)
-        if len(query) < 3 or query.lower() in seen:
+        if len(query) < 3 or not _WORDS.search(query) or query.lower() in seen:
             continue
         seen.add(query.lower())
         queries.append(query)
         if len(queries) == MAX_QUERIES:
             break
-    return queries or fallback_queries(question)
+    return queries
+
+
+def clean_plan(raw: list[str], question: str) -> list[str]:
+    """The model's searches, cleaned, de-duplicated and bounded; the question itself when nothing usable came back."""
+    return _model_queries(raw) or fallback_queries(question)
+
+
+# ------------------------------------------------------------------------------------------------- 1. plan
+@dataclass
+class Plan:
+    queries: list[str]
+    planned_by_ai: bool  # true only when the searches really came from the model
+    corrected_from: str | None = None
 
 
 async def plan_queries(question: str) -> tuple[list[str], bool]:
-    """(searches, planned_by_ai). A plan the model cannot produce falls back to searching the question."""
-    llm = get_llm("Deep research")
+    """(searches, planned_by_ai). Any model failure (malformed, refused, rate limited, unreachable) falls back to
+    searching the question, so an AI outage never costs the person their search (audit F06)."""
     try:
+        llm = get_llm("Deep research")
         plan, _ = await llm.generate_json(
             system=PLAN_SYSTEM, prompt=f"<question>{question}</question>", schema=SearchPlan, max_tokens=800
         )
-    except (AIOutputInvalid, AIRefused):
+    except AppError as exc:
+        log.info("deep_research.plan_fallback", extra={"code": exc.code})
         return fallback_queries(question), False
-    return clean_plan(plan.queries, question), True
+    queries = _model_queries(plan.queries)
+    return (queries, True) if queries else (fallback_queries(question), False)
 
 
+async def make_plan(question: str, *, use_ai: bool) -> Plan:
+    if use_ai:
+        queries, planned = await plan_queries(question)
+        return Plan(queries, planned)
+    queries = fallback_queries(question)
+    # Without a planner, a typo in the question would be searched literally: correct it first.
+    corrected = await suggest_correction(queries[0]) if queries else None
+    return Plan([corrected], False, corrected_from=queries[0]) if corrected else Plan(queries, False)
+
+
+# ---------------------------------------------------------------------------------------------- 2. collect
 def _identifier(work: ScholarlyWork) -> str | None:
     if work.doi:
         return work.doi
@@ -154,10 +188,21 @@ async def _search_databases(
     return ranked, list(services.values())
 
 
-async def _search_web(queries: list[str]) -> tuple[list[WebResult], dict[str, Any]]:
+def in_year_range(year: int | None, year_from: int | None, year_to: int | None) -> bool:
+    """Inclusive. When a range is set, an undated web page is left out: it cannot be shown to meet it (F07)."""
+    if year_from is None and year_to is None:
+        return True
+    if year is None:
+        return False
+    return (year_from is None or year >= year_from) and (year_to is None or year <= year_to)
+
+
+async def _search_web(
+    queries: list[str], *, year_from: int | None, year_to: int | None
+) -> tuple[list[WebResult], dict[str, Any]]:
     results: list[WebResult] = []
     seen: set[str] = set()
-    errors = 0
+    errors = excluded = 0
     for query in queries[:WEB_QUERIES]:
         try:
             found = await search_web(query, limit=WEB_RESULTS_PER_QUERY)
@@ -166,18 +211,38 @@ async def _search_web(queries: list[str]) -> tuple[list[WebResult], dict[str, An
             log.info("deep_research.web_failed", extra={"error": str(exc)})
             continue
         for result in found:
-            if result.url not in seen:
-                seen.add(result.url)
+            if result.url in seen:
+                continue
+            seen.add(result.url)
+            if in_year_range(result.year, year_from, year_to):
                 results.append(result)
+            else:
+                excluded += 1
     ok = errors < min(len(queries), WEB_QUERIES)
     status = {
         "name": "web",
         "kind": "web",
         "ok": ok,
         "count": len(results),
+        "excluded_by_date": excluded,
         "error": None if ok else "The web search service could not be reached.",
     }
     return results, status
+
+
+@dataclass
+class Listed:
+    """One source as shown to the person, paired with what it was built from (no index bookkeeping: Q4)."""
+
+    source: dict[str, Any]
+    work: ScholarlyWork | None = None
+    web: WebResult | None = None
+
+
+@dataclass
+class Collected:
+    listed: list[Listed] = field(default_factory=list)
+    services: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _source(work: ScholarlyWork) -> dict[str, Any]:
@@ -210,6 +275,80 @@ def _web_source(result: WebResult) -> dict[str, Any]:
     }
 
 
+async def collect(
+    plan: Plan, *, subject: str, year_from: int | None, year_to: int | None, include_web: bool
+) -> Collected:
+    """Search the databases (and the web only when the person asked AND it is connected)."""
+    databases = _search_databases(plan.queries, subject=subject, year_from=year_from, year_to=year_to)
+    if include_web and web_search_enabled():
+        (works, services), (web, web_status) = await asyncio.gather(
+            databases, _search_web(plan.queries, year_from=year_from, year_to=year_to)
+        )
+        services.append(web_status)
+    else:
+        works, services = await databases
+        web = []
+        error = "not_connected" if include_web else "not_requested"
+        services.append({"name": "web", "kind": "web", "ok": False, "count": 0, "error": error})
+    listed = [Listed(_source(w), work=w) for w in works[:MAX_SOURCES_LISTED]]
+    listed += [Listed(_web_source(r), web=r) for r in web]
+    return Collected(listed, services)
+
+
+# ------------------------------------------------------------------------------------------- 3. read, write
+async def read_evidence(db: AsyncSession, user: User, listed: list[Listed]) -> list[EvidenceItem]:
+    """The best abstracts (catalogued as public records) and web excerpts, numbered; each source is marked read."""
+    items: list[EvidenceItem] = []
+    scholarly = [x for x in listed if x.work and x.work.abstract and _identifier(x.work)][:MAX_SCHOLARLY_EVIDENCE]
+    for entry in scholarly:
+        assert entry.work is not None
+        paper = await upsert_public_paper(db, entry.work, created_by=user)
+        entry.source.update(paper_id=str(paper.id), read=True)
+        text = paper.abstract or entry.work.abstract or ""
+        items.append(EvidenceItem(key=f"E{len(items) + 1}", paper=paper, text=text, kind="abstract"))
+    await db.commit()
+    for entry in [x for x in listed if x.web][:MAX_WEB_EVIDENCE]:
+        assert entry.web is not None
+        entry.source["read"] = True
+        page = WebPage(url=entry.web.url, title=entry.web.title, site=entry.web.site, year=entry.web.year)
+        items.append(EvidenceItem(key=f"E{len(items) + 1}", paper=page, text=entry.web.content, kind="web"))
+    return items
+
+
+NO_REPORT: dict[str, Any] = {
+    "report": None,
+    "citations": [],
+    "insufficient_evidence": False,
+    "gaps": "",
+    "model": None,
+    "report_status": "ai_not_connected",
+}
+
+
+async def write_report(db: AsyncSession, question: str, items: list[EvidenceItem]) -> dict[str, Any]:
+    """The checked report, or why there is none. A failure never loses the search (F06); cancellation (the run's
+    time limit) is not caught here and still stops the run."""
+    try:
+        result = await grounded_answer(db, question, items, feature="Deep research", task=REPORT_TASK)
+    except AIOutputInvalid:
+        return {**NO_REPORT, "report_status": "withheld"}
+    except AppError as exc:  # the AI service failed or refused
+        log.warning("deep_research.report_failed", extra={"code": exc.code})
+        return {**NO_REPORT, "report_status": "ai_failed"}
+    except Exception:  # an unexpected provider failure: the search results are still saved
+        log.exception("deep_research.report_crashed")
+        return {**NO_REPORT, "report_status": "ai_failed"}
+    return {
+        "report": result["answer"],
+        "citations": result["citations"],
+        "insufficient_evidence": result["insufficient_evidence"],
+        "gaps": result["gaps"],
+        "model": result["model"],
+        "report_status": "complete",
+    }
+
+
+# ------------------------------------------------------------------------------------------------- 4. save
 async def run_deep_research(
     db: AsyncSession,
     user: User,
@@ -218,95 +357,33 @@ async def run_deep_research(
     subject: str = "all",
     year_from: int | None = None,
     year_to: int | None = None,
-    include_web: bool = True,
+    include_web: bool = False,
     use_ai: bool,
 ) -> DeepResearchRun:
-    options = {"subject": subject, "year_from": year_from, "year_to": year_to, "include_web": include_web}
     user_id = user.id
     await db.commit()  # never hold a database connection while the model and the search services are working
-
-    planned_by_ai = False
+    plan = await make_plan(question, use_ai=use_ai)
+    found = await collect(plan, subject=subject, year_from=year_from, year_to=year_to, include_web=include_web)
+    report = dict(NO_REPORT)
     if use_ai:
-        queries, planned_by_ai = await plan_queries(question)
-    else:
-        queries = fallback_queries(question)
-        # Without a planner, a typo in the question would be searched literally: correct it first.
-        corrected = await suggest_correction(queries[0]) if queries else None
-        if corrected:
-            options["corrected_from"] = queries[0]
-            queries = [corrected]
-
-    web_wanted = include_web and web_search_enabled()
-    database_task = _search_databases(queries, subject=subject, year_from=year_from, year_to=year_to)
-    if web_wanted:
-        (works, services), (web_results, web_status) = await asyncio.gather(database_task, _search_web(queries))
-        services.append(web_status)
-    else:
-        works, services = await database_task
-        web_results = []
-        services.append(
-            {
-                "name": "web",
-                "kind": "web",
-                "ok": False,
-                "count": 0,
-                "error": "not_connected" if include_web else "not_requested",
-            }
-        )
-
-    listed = works[:MAX_SOURCES_LISTED]
-    sources = [_source(w) for w in listed] + [_web_source(r) for r in web_results]
-
-    report: dict[str, Any] = {
-        "report": None,
-        "citations": [],
-        "insufficient_evidence": False,
-        "gaps": "",
-        "model": None,
-        "report_status": "ai_not_connected",
+        report = await write_report(db, question, await read_evidence(db, user, found.listed))
+    options: dict[str, Any] = {
+        "subject": subject,
+        "year_from": year_from,
+        "year_to": year_to,
+        "include_web": include_web,
+        "planned_by_ai": plan.planned_by_ai,
     }
-    if use_ai:
-        items: list[EvidenceItem] = []
-        readable = [(i, w) for i, w in enumerate(listed) if w.abstract and _identifier(w)][:MAX_SCHOLARLY_EVIDENCE]
-        for index, work in readable:
-            paper = await upsert_public_paper(db, work, created_by=user)
-            sources[index]["paper_id"] = str(paper.id)
-            sources[index]["read"] = True
-            items.append(
-                EvidenceItem(
-                    key=f"E{len(items) + 1}", paper=paper, text=paper.abstract or work.abstract or "", kind="abstract"
-                )
-            )
-        await db.commit()
-        offset = len(listed)
-        for j, result in enumerate(web_results[:MAX_WEB_EVIDENCE]):
-            sources[offset + j]["read"] = True
-            page = WebPage(url=result.url, title=result.title, site=result.site, year=result.year)
-            items.append(EvidenceItem(key=f"E{len(items) + 1}", paper=page, text=result.content, kind="web"))
-        try:
-            result = await grounded_answer(db, question, items, feature="Deep research", task=REPORT_TASK)
-            report = {
-                "report": result["answer"],
-                "citations": result["citations"],
-                "insufficient_evidence": result["insufficient_evidence"],
-                "gaps": result["gaps"],
-                "model": result["model"],
-                "report_status": "complete",
-            }
-        except AIOutputInvalid:
-            report["report_status"] = "withheld"
-        except AppError as exc:  # the AI service failed or refused; the search itself still counts
-            log.warning("deep_research.report_failed", extra={"code": exc.code})
-            report["report_status"] = "ai_failed"
-
+    if plan.corrected_from:
+        options["corrected_from"] = plan.corrected_from
     run = DeepResearchRun(
         id=uuid.uuid4(),
         user_id=user_id,
         question=question,
-        options={**options, "planned_by_ai": planned_by_ai},
-        queries=queries,
-        sources=sources,
-        services=services,
+        options=options,
+        queries=plan.queries,
+        sources=[entry.source for entry in found.listed],
+        services=found.services,
         **report,
     )
     db.add(run)

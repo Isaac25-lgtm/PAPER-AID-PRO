@@ -123,6 +123,30 @@ class AnthropicLLM:
         return _parse(schema, text), model
 
 
+async def _post_json(url: str, body: dict[str, Any], headers: dict[str, str]) -> Any:
+    """POST to a model provider over plain HTTP. Every failure leaves as an application error (Deep Research audit
+    F06): transport problems as UpstreamError, refusals of service as RateLimited/UpstreamError, and a body that is
+    not JSON as AIOutputInvalid. Nothing provider-specific escapes to callers."""
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            response = await client.post(url, json=body, headers=headers)
+    except httpx.HTTPError as exc:
+        raise UpstreamError("Could not reach the AI provider.") from exc
+    if response.status_code == 429:
+        raise RateLimited("The AI provider is rate limiting requests. Please retry shortly.", retry_after=20)
+    if response.status_code >= 400:
+        raise UpstreamError(f"The AI provider returned an error (HTTP {response.status_code}).")
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise AIOutputInvalid("The AI provider sent an unreadable response; it was discarded.") from exc
+
+
+def _malformed(exc: Exception) -> AIOutputInvalid:
+    log.warning("ai.malformed_response", extra={"error": type(exc).__name__})
+    return AIOutputInvalid("The AI provider sent a response in an unexpected shape; it was discarded.")
+
+
 # --------------------------------------------------------------------------------------------------- OpenAI
 class OpenAILLM:
     url = "https://api.openai.com/v1/chat/completions"
@@ -134,19 +158,18 @@ class OpenAILLM:
         self._headers = {"Authorization": f"Bearer {api_key}"}
 
     async def _post(self, body: dict[str, Any]) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=120) as client:
-            response = await client.post(self.url, json=body, headers=self._headers)
-        if response.status_code == 429:
-            raise RateLimited("The AI provider is rate limiting requests. Please retry shortly.", retry_after=20)
-        if response.status_code >= 400:
-            raise UpstreamError(f"The AI provider returned an error (HTTP {response.status_code}).")
-        data: dict[str, Any] = response.json()
-        choice = data["choices"][0]
-        if choice.get("finish_reason") == "length":
+        data = await _post_json(self.url, body, self._headers)
+        try:
+            choice = data["choices"][0]
+            refusal = choice["message"].get("refusal")
+            finish = choice.get("finish_reason")
+        except (KeyError, IndexError, TypeError, AttributeError) as exc:
+            raise _malformed(exc) from exc
+        if finish == "length":
             raise AIOutputInvalid("The AI response was cut off before it finished; it was discarded.")
-        if choice["message"].get("refusal"):
+        if refusal:
             raise AIRefused("The AI model declined to answer this request.")
-        return data
+        return data  # type: ignore[no-any-return]
 
     async def generate_text(self, *, system: str, prompt: str, max_tokens: int) -> LLMResult:
         data = await self._post(
@@ -156,9 +179,11 @@ class OpenAILLM:
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
             }
         )
-        return LLMResult(
-            text=(data["choices"][0]["message"]["content"] or "").strip(), model=data.get("model", self.model)
-        )
+        try:
+            text = (data["choices"][0]["message"]["content"] or "").strip()
+        except (KeyError, IndexError, TypeError) as exc:
+            raise _malformed(exc) from exc
+        return LLMResult(text=text, model=data.get("model", self.model))
 
     async def generate_json(self, *, system: str, prompt: str, schema: type[T], max_tokens: int) -> tuple[T, str]:
         data = await self._post(
@@ -172,7 +197,11 @@ class OpenAILLM:
                 },
             }
         )
-        return _parse(schema, data["choices"][0]["message"]["content"] or ""), data.get("model", self.model)
+        try:
+            content = data["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError, TypeError) as exc:
+            raise _malformed(exc) from exc
+        return _parse(schema, content), data.get("model", self.model)
 
 
 # --------------------------------------------------------------------------------------------------- Gemini
@@ -193,22 +222,21 @@ class GeminiLLM:
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": config,
         }
-        async with httpx.AsyncClient(timeout=120) as client:
-            response = await client.post(url, json=body, headers={"x-goog-api-key": self._key})
-        if response.status_code == 429:
-            raise RateLimited("The AI provider is rate limiting requests. Please retry shortly.", retry_after=20)
-        if response.status_code >= 400:
-            raise UpstreamError(f"The AI provider returned an error (HTTP {response.status_code}).")
-        data = response.json()
-        candidates = data.get("candidates") or []
-        if not candidates:
-            raise AIRefused("The AI model declined to answer this request.")
-        candidate = candidates[0]
-        if candidate.get("finishReason") == "MAX_TOKENS":
+        data = await _post_json(url, body, {"x-goog-api-key": self._key})
+        try:
+            candidates = data.get("candidates") or []
+            if not candidates:
+                raise AIRefused("The AI model declined to answer this request.")
+            candidate = candidates[0]
+            finish = candidate.get("finishReason")
+            text = "".join(p.get("text", "") for p in (candidate.get("content") or {}).get("parts", []))
+        except (KeyError, IndexError, TypeError, AttributeError) as exc:
+            raise _malformed(exc) from exc
+        if finish == "MAX_TOKENS":
             raise AIOutputInvalid("The AI response was cut off before it finished; it was discarded.")
-        if candidate.get("finishReason") in {"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST"}:
+        if finish in {"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST"}:
             raise AIRefused("The AI model declined to answer this request.")
-        return "".join(p.get("text", "") for p in (candidate.get("content") or {}).get("parts", []))
+        return text
 
     async def generate_text(self, *, system: str, prompt: str, max_tokens: int) -> LLMResult:
         return LLMResult(text=(await self._generate(system, prompt, max_tokens, None)).strip(), model=self.model)

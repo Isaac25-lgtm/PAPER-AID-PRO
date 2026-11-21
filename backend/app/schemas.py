@@ -424,7 +424,20 @@ class DeepResearchRequest(BaseModel):
     subject: Subject = "all"
     year_from: int | None = Field(default=None, ge=1500, le=2100)
     year_to: int | None = Field(default=None, ge=1500, le=2100)
-    include_web: bool = True
+    # Off unless the person chose it: a question is never sent to a web search service by default (audit F01).
+    include_web: bool = False
+
+    @field_validator("question")
+    @classmethod
+    def _searchable(cls, value: str) -> str:
+        """Whitespace is normalised and the question must still contain words to search for, checked before any
+        quota is charged or provider asked (audit F14)."""
+        from app.services.deep_research import usable_question
+
+        usable = usable_question(value)
+        if usable is None or len(usable) < 10:
+            raise ValueError("Write a research question of at least 10 characters, with words to search for.")
+        return usable
 
 
 class DeepResearchStatusOut(BaseModel):

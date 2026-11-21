@@ -68,7 +68,7 @@ async def test_writes_a_verified_report_from_planned_searches_and_keeps_it(clien
         ["school bed nets malaria", "School bed nets  malaria", '"insecticide-treated nets" <b>schools</b>']
     )
     set_llm(llm)
-    response = await run(client)
+    response = await run(client, include_web=True)
     assert response.status_code == 200, response.text
     body = response.json()
     # The model's plan is cleaned: duplicates dropped, quotes and markup removed.
@@ -137,7 +137,7 @@ async def test_web_pages_are_cited_as_web_pages_and_cannot_break_out_of_their_ev
         text="A ministry web page reports fewer fever visits.",
     )
     set_llm(llm)
-    body = (await run(client)).json()
+    body = (await run(client, include_web=True)).json()
     assert calls and calls[0].headers["authorization"] == "Bearer tvly-test-key"
     assert "tvly-test-key" not in json.dumps(body)
     web = [s for s in body["sources"] if s["kind"] == "web"]
@@ -157,6 +157,7 @@ async def test_web_pages_are_cited_as_web_pages_and_cannot_break_out_of_their_ev
         "kind": "web",
         "ok": True,
         "count": 1,
+        "excluded_by_date": 0,
         "error": None,
     }
 
@@ -166,7 +167,7 @@ async def test_a_web_outage_is_reported_and_the_databases_still_answer(client, r
     monkeypatch.setattr(get_settings(), "tavily_api_key", "tvly-test-key")
     registries.post("https://api.tavily.com/search").mock(return_value=httpx.Response(503, text="tvly-test-key down"))
     set_llm(ResearchLLM(["school bed nets malaria"]))
-    body = (await run(client)).json()
+    body = (await run(client, include_web=True)).json()
     assert body["report_status"] == "complete"
     web = {s["name"]: s for s in body["services"]}["web"]
     assert web["ok"] is False and "could not be reached" in web["error"]

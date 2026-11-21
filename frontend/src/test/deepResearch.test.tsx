@@ -1,7 +1,7 @@
 // Deep research: a clearly separate mode next to Research on your own papers; shows what is connected; runs a
 // question and shows the searches, the verified report (web pages labelled as such) and every source found.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -14,7 +14,11 @@ vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof import("@/lib/api")>()),
   api: {
     get: (path: string) => {
-      if (path === "/research/deep/status") return Promise.resolve(calls.status);
+      if (path === "/research/deep/status") {
+        if (calls.status === "pending") return new Promise(() => undefined); // never answers
+        if (calls.status === "fail") return Promise.reject(new Error("status unavailable"));
+        return Promise.resolve(calls.status);
+      }
       if (path === "/research/deep") return Promise.resolve([]);
       const id = path.split("/").pop()!;
       return Promise.resolve(calls.runs[id]);
@@ -107,7 +111,7 @@ describe("deep research", () => {
     await userEvent.type(screen.getByLabelText("Your research question"), RUN.question);
     await userEvent.type(screen.getByLabelText("From year"), "2010");
     await userEvent.click(run);
-    expect(calls.posts[0]).toEqual({ path: "/research/deep", body: { question: RUN.question, subject: "all", year_from: 2010, year_to: null, include_web: true } });
+    expect(calls.posts[0]).toEqual({ path: "/research/deep", body: { question: RUN.question, subject: "all", year_from: 2010, year_to: null, include_web: false } });
 
     expect(await screen.findByRole("heading", { name: RUN.question })).toBeInTheDocument();
     expect(screen.getByText("school bed nets malaria")).toBeInTheDocument();
@@ -141,5 +145,44 @@ describe("deep research", () => {
     wrap(<DeepResearchPage />, "/research/deep?r=r1");
     const others = await screen.findByRole("region", { name: /Sources found|Also found/ });
     expect(within(others).queryByRole("link", { name: /Publisher/ })).toBeNull();
+  });
+
+  describe("the web option sends exactly what it shows (audit F01)", () => {
+    async function submit() {
+      await userEvent.type(screen.getByLabelText("Your research question"), RUN.question);
+      await userEvent.click(screen.getByRole("button", { name: /Run deep research/ }));
+      return calls.posts.find((p) => p.path === "/research/deep")?.body as { include_web: boolean };
+    }
+
+    for (const [state, status] of [
+      ["still loading", "pending"],
+      ["failed to load", "fail"],
+      ["not connected", { databases: ["openalex"], ai: false, web_search: false }],
+    ] as const) {
+      it(`is off and sent as off when the status is ${state}`, async () => {
+        calls.status = status;
+        wrap(<DeepResearchPage />);
+        const box = screen.getByRole("checkbox", { name: /general web/ });
+        expect(box).not.toBeChecked();
+        expect(box).toBeDisabled();
+        expect((await submit()).include_web).toBe(false);
+      });
+    }
+
+    it("is sent as on only after the person turns it on, and as off when they turn it off again", async () => {
+      wrap(<DeepResearchPage />);
+      const box = await screen.findByRole("checkbox", { name: /general web/ });
+      await waitFor(() => expect(box).toBeEnabled());
+      expect(box).not.toBeChecked(); // never on by default
+      await userEvent.click(box);
+      expect(box).toBeChecked();
+      expect((await submit()).include_web).toBe(true);
+      calls.posts = [];
+      await userEvent.click(await screen.findByRole("button", { name: /New deep research/ })); // back to the form
+      const again = await screen.findByRole("checkbox", { name: /general web/ });
+      await userEvent.click(again);
+      expect(again).not.toBeChecked();
+      expect((await submit()).include_web).toBe(false);
+    });
   });
 });

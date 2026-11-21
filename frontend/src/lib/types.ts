@@ -327,6 +327,8 @@ export interface DeepResearchService {
   kind: "scholarly" | "web";
   ok: boolean;
   count: number;
+  /** Web pages dropped because they were outside the years set, or undated. */
+  excluded_by_date?: number;
   error: string | null;
 }
 

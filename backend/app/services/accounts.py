@@ -47,6 +47,7 @@ from app.db.models import (
 )
 from app.db.session import get_sessionmaker
 from app.policy import POLICY_VERSION
+from app.schemas import DeepResearchOut
 from app.services import identity
 from app.services.citations.interchange import to_bibtex
 from app.services.maintenance import process_deletions, schedule_deletion
@@ -500,19 +501,12 @@ async def _build_export(db: AsyncSession, user: User) -> tempfile.SpooledTempora
             ).scalars()
         )
         for run in runs:
+            # The same fields the report page shows (DeepResearchOut), so nothing a reader saw is lost after the
+            # account closes (audit F15); "searches" and "at" stay as stable aliases from the first export format.
+            report = DeepResearchOut.model_validate(run).model_dump(mode="json")
             write_json(
                 f"research/deep/{run.id}.json",
-                {
-                    "id": run.id,
-                    "question": run.question,
-                    "options": run.options,
-                    "searches": run.queries,
-                    "report": run.report,
-                    "report_status": run.report_status,
-                    "citations": run.citations,
-                    "sources": run.sources,
-                    "at": run.created_at,
-                },
+                {**report, "searches": report["queries"], "at": report["created_at"]},
             )
         write("README.txt", README)
         archive.writestr(
