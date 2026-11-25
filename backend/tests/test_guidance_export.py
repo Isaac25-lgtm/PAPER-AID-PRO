@@ -75,3 +75,35 @@ def test_both_exports_label_citations_on_the_tree_they_render():
 
     pdf_text = "".join(page.extract_text() for page in PdfReader(io.BytesIO(to_pdf("T", content, rendered))).pages)
     assert "(Smith, 2020)" in pdf_text and "Describe it." in pdf_text
+
+
+def test_reference_addresses_are_links_in_word_and_pdf():
+    """Silver, 25 November 2026: a DOI in the reference list opens the article from the exported file too. The
+    sentence's full stop is not part of the link."""
+    import io
+
+    from docx import Document as Docx
+    from pypdf import PdfReader
+
+    from app.services.export import split_links, to_docx, to_pdf
+
+    entry = "Suri, T., &amp; Jack, W. (2016). <i>Science</i>, 354, 1288. https://doi.org/10.1126/science.aah5309."
+    url = "https://doi.org/10.1126/science.aah5309"
+    rendered = {"clusters": [], "bibliography": [entry]}
+    content = {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Body."}]}]}
+    assert split_links("See https://x.org/a(1)). Next") == [
+        ("See ", False),
+        ("https://x.org/a(1)", True),
+        ("). Next", False),
+    ]
+
+    word = Docx(io.BytesIO(to_docx("T", content, rendered)))
+    reference = word.paragraphs[-1]
+    assert reference.text.endswith(url + ".")
+    assert [rel.target_ref for rel in word.part.rels.values() if rel.is_external] == [url]
+    assert reference._p.xpath("./w:hyperlink")  # the address is a link element, not plain text
+
+    pdf = PdfReader(io.BytesIO(to_pdf("T", content, rendered)))
+    uris = [a.get_object()["/A"]["/URI"] for page in pdf.pages for a in page.get("/Annots") or []]
+    assert uris == [url]
+    assert url in "".join(page.extract_text() for page in pdf.pages)

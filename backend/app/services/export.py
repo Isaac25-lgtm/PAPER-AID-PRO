@@ -21,6 +21,9 @@ from typing import Any
 
 from docx import Document as DocxDocument
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.opc.constants import RELATIONSHIP_TYPE
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Pt
 from fontTools.ttLib import TTFont
 from fpdf import FPDF
@@ -35,6 +38,59 @@ MISSING = "[missing source]"
 
 def strip_html(value: str) -> str:
     return html.unescape(_TAG.sub("", value)).strip()
+
+
+_URL = re.compile(r"https?://[^\s<>\"]+")
+
+
+def _trim_url(url: str) -> str:
+    """Trailing punctuation belongs to the sentence, except a closing bracket that is part of the address."""
+    while url:
+        if url[-1] in ".,;:'":
+            url = url[:-1]
+        elif url[-1] == ")" and url.count("(") < url.count(")"):
+            url = url[:-1]
+        else:
+            break
+    return url
+
+
+def split_links(text: str) -> list[tuple[str, bool]]:
+    """A reference split into (text, is_address) parts, so DOI and web addresses become links in the exports
+    (Silver, 25 November 2026: references must open their article)."""
+    parts: list[tuple[str, bool]] = []
+    at = 0
+    for match in _URL.finditer(text):
+        url = _trim_url(match.group(0))
+        if match.start() > at:
+            parts.append((text[at : match.start()], False))
+        parts.append((url, True))
+        at = match.start() + len(url)
+    if at < len(text):
+        parts.append((text[at:], False))
+    return parts
+
+
+def _add_hyperlink(paragraph: Any, url: str) -> None:
+    """python-docx has no hyperlink API: an external relationship plus a w:hyperlink holding a blue underlined run."""
+    rel_id = paragraph.part.relate_to(url, RELATIONSHIP_TYPE.HYPERLINK, is_external=True)
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), rel_id)
+    run = OxmlElement("w:r")
+    props = OxmlElement("w:rPr")
+    colour = OxmlElement("w:color")
+    colour.set(qn("w:val"), "0563C1")
+    underline = OxmlElement("w:u")
+    underline.set(qn("w:val"), "single")
+    props.append(colour)
+    props.append(underline)
+    run.append(props)
+    text = OxmlElement("w:t")
+    text.text = url
+    text.set(qn("xml:space"), "preserve")
+    run.append(text)
+    link.append(run)
+    paragraph._p.append(link)
 
 
 def citation_labels(content: dict[str, Any], rendered: dict[str, Any]) -> dict[int, str]:
@@ -152,7 +208,12 @@ def to_docx(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> by
     if bibliography:
         doc.add_heading("References", level=1)
         for entry in bibliography:
-            paragraph = doc.add_paragraph(strip_html(entry))
+            paragraph = doc.add_paragraph()
+            for part, is_link in split_links(strip_html(entry)):
+                if is_link:
+                    _add_hyperlink(paragraph, part)
+                else:
+                    paragraph.add_run(part)
             paragraph.paragraph_format.left_indent = Pt(24)
             paragraph.paragraph_format.first_line_indent = Pt(-24)
     buffer = io.BytesIO()
@@ -261,6 +322,15 @@ def to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> byt
     def escape(text: str) -> str:
         return text.replace("\\", "\\\\").replace("**", "\\*\\*").replace("__", "\\_\\_")
 
+    def with_links(text: str) -> str:
+        """A reference with its addresses as markdown links; one the link syntax cannot hold (brackets, or
+        markdown markers) stays plain text."""
+        out = []
+        for part, is_link in split_links(text):
+            linkable = is_link and not any(c in part for c in "[]()") and "**" not in part and "__" not in part
+            out.append(f"[{part}]({part})" if linkable else escape(part))
+        return "".join(out)
+
     def inline_markdown(nodes: list[dict[str, Any]]) -> str:
         out = []
         for node in nodes:
@@ -327,5 +397,5 @@ def to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> byt
         pdf.ln(4)
         paragraph("References", size=14, style="B")
         for entry in bibliography:
-            paragraph(escape(entry), size=10, indent=4)
+            paragraph(with_links(entry), size=10, indent=4)
     return bytes(pdf.output())
