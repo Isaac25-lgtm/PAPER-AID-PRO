@@ -224,6 +224,7 @@ describe("home", () => {
     expect(screen.getByRole("link", { name: /Proposal draft/ })).toHaveAttribute("href", "/documents/d2");
     expect(screen.getByRole("link", { name: /Research proposal/ })).toHaveAttribute("href", "/documents?new=1&type=proposal");
     expect(screen.getByRole("link", { name: /Thesis chapter/ })).toHaveAttribute("href", "/documents?new=1&type=thesis");
+    expect(screen.getByRole("link", { name: /Blank document/ })).toHaveAttribute("href", "/documents?new=1&type=draft");
     expect(await screen.findByText("34")).toBeInTheDocument(); // library at a glance
     expect(screen.getByText("with full text")).toBeInTheDocument();
   });

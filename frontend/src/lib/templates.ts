@@ -2,13 +2,14 @@
 // Ported from the original PaperAid editor (guided-templates.ts) and adapted to the v2 document types.
 import type { DocumentType, JSONContent } from "./types";
 
+// Blank document comes first: not everyone wants an outline (Silver, 25 November 2026).
 export const DOC_TYPE_LABELS: Record<DocumentType, string> = {
+  draft: "Blank document",
   manuscript: "Original research manuscript",
   proposal: "Research / grant proposal",
   literature_review: "Literature review",
   thesis: "Thesis / dissertation",
   report: "Report",
-  draft: "Blank draft",
 };
 
 /** Designs grouped by research approach, so every discipline finds its own (not only health and STEM). */
@@ -294,6 +295,8 @@ export interface GuidedConfig {
   generalObjective: string;
   specificObjectives: string[];
   headings: string[];
+  /** Writing guidance under each heading; off gives the headings alone (Silver, 25 November 2026). Default on. */
+  guidance?: boolean;
 }
 
 /** Builds the editor content: title, design/objectives block and a guided section scaffold. */
@@ -314,7 +317,8 @@ export function guidedContent(config: GuidedConfig): JSONContent {
   for (const heading of config.headings.map((h) => h.trim()).filter(Boolean)) {
     content.push({ type: "heading", attrs: { level: 2 }, content: [text(heading)] });
     // Guidance is a paragraph setting (grey italic by style), so text typed after it is never italic.
-    content.push({ type: "paragraph", attrs: { guidance: true }, content: [text(sectionGuidance(heading, config.design))] });
+    if (config.guidance === false) content.push({ type: "paragraph" });
+    else content.push({ type: "paragraph", attrs: { guidance: true }, content: [text(sectionGuidance(heading, config.design))] });
   }
   return { type: "doc", content: content.length ? content : [{ type: "paragraph" }] };
 }

@@ -45,15 +45,18 @@ function NewDocumentModal({ open, onClose, initialType = "manuscript" }: { open:
   const [general, setGeneral] = useState("");
   const [specific, setSpecific] = useState("");
   const [headings, setHeadings] = useState("");
+  const [guidance, setGuidance] = useState(true);
+  const blank = docType === "draft";
 
   const prepareOutline = () => {
     const objectives = defaultObjectives(topic, docType, design);
-    setGeneral(docType === "draft" ? "" : objectives.general);
-    setSpecific(docType === "draft" ? "" : objectives.specific.join(NL));
+    setGeneral(objectives.general);
+    setSpecific(objectives.specific.join(NL));
     setHeadings(defaultHeadings(docType, design).join(NL));
     setStep(2);
   };
   const create = useMutation({
+    // A blank document is created straight from the first step: no objectives, no outline, no guidance.
     mutationFn: () =>
       api.post<ResearchDocument>("/documents", {
         title: topic.trim() || "Untitled document",
@@ -63,9 +66,10 @@ function NewDocumentModal({ open, onClose, initialType = "manuscript" }: { open:
           topic,
           docType,
           design,
-          generalObjective: general,
-          specificObjectives: specific.split(NL),
-          headings: headings.split(NL),
+          generalObjective: blank ? "" : general,
+          specificObjectives: blank ? [] : specific.split(NL),
+          headings: blank ? [] : headings.split(NL),
+          guidance,
         }),
       }),
     onSuccess: (doc) => {
@@ -83,7 +87,7 @@ function NewDocumentModal({ open, onClose, initialType = "manuscript" }: { open:
   return (
     <Modal open={open} onClose={close} title={step === 1 ? "New document" : "Objectives & outline"} wide>
       {step === 1 ? (
-        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); prepareOutline(); }}>
+        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (blank) create.mutate(); else prepareOutline(); }}>
           <div>
             <Label htmlFor="topic">Title / research topic</Label>
             <Input id="topic" value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={300} placeholder={TOPIC_EXAMPLE} />
@@ -113,30 +117,39 @@ function NewDocumentModal({ open, onClose, initialType = "manuscript" }: { open:
               <StyleOptions styles={styles.data} />
             </Select>
           </div>
+          {blank && <p className="text-sm text-slate-600">An empty page with no outline or writing guidance. You can still cite from your library.</p>}
+          {create.error && blank && <Alert kind="error">{errorMessage(create.error)}</Alert>}
           <div className="flex justify-end">
-            <Button type="submit">Next: objectives & outline</Button>
+            {blank ? (
+              <Button type="submit" loading={create.isPending}>Create blank document</Button>
+            ) : (
+              <Button type="submit">Next: objectives & outline</Button>
+            )}
           </div>
         </form>
       ) : (
         <div className="space-y-4">
-          <p className="text-sm text-slate-600">Suggested for {/^[aeiou]/i.test(DOC_TYPE_LABELS[docType]) ? "an" : "a"} {DOC_TYPE_LABELS[docType].toLowerCase()}{design ? ` (${design})` : ""}. Edit anything — each line becomes a section with writing guidance.</p>
-          {docType !== "draft" && (
-            <>
-              <div>
-                <Label htmlFor="general">General objective</Label>
-                <Textarea id="general" rows={2} value={general} onChange={(e) => setGeneral(e.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="specific">Specific objectives (one per line)</Label>
-                <Textarea id="specific" rows={4} value={specific} onChange={(e) => setSpecific(e.target.value)} />
-              </div>
-            </>
-          )}
+          <p className="text-sm text-slate-600">Suggested for {/^[aeiou]/i.test(DOC_TYPE_LABELS[docType]) ? "an" : "a"} {DOC_TYPE_LABELS[docType].toLowerCase()}{design ? ` (${design})` : ""}. Edit anything — each line becomes a section{guidance ? " with writing guidance" : ""}.</p>
           <div>
-            <Label htmlFor="headings">Sections (one per line{docType === "draft" ? "; leave empty for a blank page" : ""})</Label>
+            <Label htmlFor="general">General objective</Label>
+            <Textarea id="general" rows={2} value={general} onChange={(e) => setGeneral(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="specific">Specific objectives (one per line)</Label>
+            <Textarea id="specific" rows={4} value={specific} onChange={(e) => setSpecific(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="headings">Sections (one per line)</Label>
             <Textarea id="headings" rows={8} value={headings} onChange={(e) => setHeadings(e.target.value)} />
             <p className="mt-1 text-xs text-slate-500">The reference list is generated automatically from your citations — no References section needed.</p>
           </div>
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" className="mt-0.5" checked={guidance} onChange={(e) => setGuidance(e.target.checked)} />
+            <span>
+              Include writing guidance under each heading
+              <span className="block text-xs text-slate-500">Short notes on what each section should cover. Turn off for the headings alone.</span>
+            </span>
+          </label>
           {create.error && <Alert kind="error">{errorMessage(create.error)}</Alert>}
           <div className="flex justify-between">
             <Button variant="secondary" onClick={() => setStep(1)}>Back</Button>

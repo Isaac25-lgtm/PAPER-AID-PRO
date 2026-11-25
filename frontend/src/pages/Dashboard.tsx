@@ -77,10 +77,12 @@ function Checklist() {
 }
 
 const START = [
+  { type: "draft", label: "Blank document", body: "An empty page: no outline, no guidance. Write and cite as you go." },
   { type: "manuscript", label: "Manuscript", body: "An original research article, from abstract to discussion." },
   { type: "proposal", label: "Research proposal", body: "Background, objectives and methods for a study you plan." },
   { type: "literature_review", label: "Literature review", body: "What is known, how it fits together and where the gaps are." },
   { type: "thesis", label: "Thesis chapter", body: "A chapter of a thesis or dissertation, with its own outline." },
+  { type: "report", label: "Report", body: "Findings and recommendations for a project, organisation or funder." },
 ] as const;
 
 function greeting(now = new Date()): string {
@@ -169,7 +171,7 @@ export default function DashboardPage() {
             )}
           </Card>
 
-          {/* Start something new: each opens the guided outline with that kind of document chosen. */}
+          {/* Start something new: each opens New document with that kind chosen (a blank document needs no outline). */}
           <section aria-labelledby="start-new">
             <h2 id="start-new" className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Start something new</h2>
             <div className="grid gap-3 sm:grid-cols-2">
