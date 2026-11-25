@@ -38,15 +38,19 @@ export function sanitizeHtml(html: string): string {
   return doc.body.firstElementChild?.innerHTML ?? "";
 }
 
-const URL_IN_TEXT = /https?:\/\/[^\s<>"]+/g;
+// "<" and ">" may be inside an address (SICI DOIs); "<https://...>" loses its unbalanced ">" in trimUrl. Text nodes
+// are searched after the HTML is parsed, so these are literal characters. Keep in step with services/export.py.
+const URL_IN_TEXT = /https?:\/\/[^\s"]+/g;
+const CLOSERS: Record<string, string> = { ")": "(", ">": "<", "]": "[" };
+const count = (text: string, ch: string) => text.split(ch).length - 1;
 
 /** Trailing punctuation belongs to the sentence, except a closing bracket that is part of the address. */
-function trimUrl(url: string): string {
+export function trimUrl(url: string): string {
   let out = url;
   for (;;) {
     const last = out.at(-1);
     if (last && ".,;:'".includes(last)) out = out.slice(0, -1);
-    else if (last === ")" && (out.match(/\(/g)?.length ?? 0) < (out.match(/\)/g)?.length ?? 0)) out = out.slice(0, -1);
+    else if (last && CLOSERS[last] && count(out, CLOSERS[last]) < count(out, last)) out = out.slice(0, -1);
     else return out;
   }
 }

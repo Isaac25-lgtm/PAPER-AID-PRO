@@ -15,6 +15,7 @@ import html
 import io
 import logging
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -40,15 +41,19 @@ def strip_html(value: str) -> str:
     return html.unescape(_TAG.sub("", value)).strip()
 
 
-_URL = re.compile(r"https?://[^\s<>\"]+")
+# "<" and ">" may be inside an address (SICI DOIs: 10.1002/(SICI)...17:15<1661::AID-SIM968>3.0.CO;2-2); an address
+# written as "<https://...>" loses its unbalanced closing ">" in _trim_url. Keep in step with lib/format.ts.
+_URL = re.compile(r"https?://[^\s\"]+")
+_CLOSERS = {")": "(", ">": "<", "]": "["}
 
 
 def _trim_url(url: str) -> str:
     """Trailing punctuation belongs to the sentence, except a closing bracket that is part of the address."""
     while url:
-        if url[-1] in ".,;:'":
+        last = url[-1]
+        if last in ".,;:'":
             url = url[:-1]
-        elif url[-1] == ")" and url.count("(") < url.count(")"):
+        elif last in _CLOSERS and url.count(_CLOSERS[last]) < url.count(last):
             url = url[:-1]
         else:
             break
@@ -292,6 +297,15 @@ def _all_text(content: dict[str, Any], labels: dict[int, str]) -> list[str]:
     return out
 
 
+@dataclass(frozen=True)
+class Segment:
+    """A run of literal PDF text: its emphasis ("", "B", "I", "BI") and, for a verified address, its link."""
+
+    text: str
+    style: str = ""
+    link: str | None = None
+
+
 def to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> bytes:
     content, labels = prepare_for_export(content, rendered)
     bibliography = [strip_html(entry) for entry in rendered.get("bibliography") or []]
@@ -319,48 +333,55 @@ def to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> byt
     pdf.multi_cell(0, 9, title, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
-    def escape(text: str) -> str:
-        return text.replace("\\", "\\\\").replace("**", "\\*\\*").replace("__", "\\_\\_")
-
-    def with_links(text: str) -> str:
-        """A reference with its addresses as markdown links; one the link syntax cannot hold (brackets, or
-        markdown markers) stays plain text."""
-        out = []
-        for part, is_link in split_links(text):
-            linkable = is_link and not any(c in part for c in "[]()") and "**" not in part and "__" not in part
-            out.append(f"[{part}]({part})" if linkable else escape(part))
-        return "".join(out)
-
-    def inline_markdown(nodes: list[dict[str, Any]]) -> str:
-        out = []
+    # Text is written as literal segments, never through fpdf2's markdown: the writer's own "[1](2)", "--", "~~"
+    # or "**" stays exactly as typed, and only a verified http(s) address becomes a link (audit SF03).
+    def segments(nodes: list[dict[str, Any]]) -> list[Segment]:
+        out: list[Segment] = []
         for node in nodes:
             kind = node.get("type")
             if kind == "text":
-                text = escape(node.get("text", ""))
                 marks = _marks(node)
-                if "bold" in marks:
-                    text = f"**{text}**"
-                if "italic" in marks:
-                    text = f"__{text}__"
-                out.append(text)
+                style = ("B" if "bold" in marks else "") + ("I" if "italic" in marks else "")
+                out.append(Segment(node.get("text", ""), style))
             elif kind == "citation":
-                out.append(escape(labels.get(id(node), MISSING)))
+                out.append(Segment(labels.get(id(node), MISSING)))
             elif kind == "hardBreak":
-                out.append("\n")
-        return "".join(out)
+                out.append(Segment(chr(10)))  # a line break inside the paragraph
+        return out
 
-    def flatten(node: dict[str, Any]) -> str:
+    def flatten(node: dict[str, Any]) -> list[Segment]:
         """All inline content of a block subtree (used for table cells), citations included."""
         if node.get("type") in {"paragraph", "heading", "codeBlock"}:
-            return inline_markdown(node.get("content") or [])
-        parts = [flatten(child) for child in node.get("content") or []]
+            return segments(node.get("content") or [])
         separator = "; " if node.get("type") in {"bulletList", "orderedList", "tableRow"} else " "
-        return separator.join(p for p in parts if p)
+        out: list[Segment] = []
+        for child in node.get("content") or []:
+            part = flatten(child)
+            if part:
+                if out:
+                    out.append(Segment(separator))
+                out.extend(part)
+        return out
 
-    def paragraph(text: str, size: int = 11, style: str = "", indent: float = 0, prefix: str = "") -> None:
-        pdf.set_font("Body", style, size)
-        pdf.set_x(pdf.l_margin + indent)
-        pdf.multi_cell(0, size * 0.55, prefix + text, markdown=True, new_x="LMARGIN", new_y="NEXT")
+    def paragraph(parts: list[Segment], size: int = 11, style: str = "", indent: float = 0, prefix: str = "") -> None:
+        height = size * 0.55
+        margin = pdf.l_margin
+        pdf.set_left_margin(margin + indent)  # wrapped lines keep the indent
+        pdf.set_x(margin + indent)
+        for part in [Segment(prefix), *parts] if prefix else parts:
+            if not part.text:
+                continue
+            emphasis = "".join(ch for ch in "BI" if ch in style + part.style)
+            if part.link:
+                pdf.set_font("Body", emphasis + "U", size)
+                pdf.set_text_color(5, 99, 193)
+                pdf.write(height, part.text, link=part.link)
+                pdf.set_text_color(0, 0, 0)
+            else:
+                pdf.set_font("Body", emphasis, size)
+                pdf.write(height, part.text)
+        pdf.set_left_margin(margin)
+        pdf.ln(height)
         pdf.ln(size * 0.25)
 
     def block(node: dict[str, Any], indent: float = 0, bullet: str = "") -> None:
@@ -369,9 +390,9 @@ def to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> byt
         if kind == "heading":
             level = (node.get("attrs") or {}).get("level", 2)
             pdf.ln(2)
-            paragraph(inline_markdown(children), size={1: 16, 2: 14, 3: 12}.get(level, 12), style="B", indent=indent)
+            paragraph(segments(children), size={1: 16, 2: 14, 3: 12}.get(level, 12), style="B", indent=indent)
         elif kind == "paragraph":
-            paragraph(inline_markdown(children), indent=indent, prefix=bullet)
+            paragraph(segments(children), indent=indent, prefix=bullet)
         elif kind in {"bulletList", "orderedList"}:
             for number, item in enumerate(children, start=1):
                 marker = "• " if kind == "bulletList" else f"{number}. "
@@ -381,11 +402,15 @@ def to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> byt
             for sub in children:
                 block(sub, indent + 8)
         elif kind == "codeBlock":
-            paragraph(inline_markdown(children), size=9, indent=indent)
+            paragraph(segments(children), size=9, indent=indent)
         elif kind == "table":
             for row in children:
-                cells = [flatten(cell) for cell in row.get("content") or []]
-                paragraph(" | ".join(cells), size=10, indent=indent)
+                line: list[Segment] = []
+                for cell in row.get("content") or []:
+                    if line:
+                        line.append(Segment(" | "))
+                    line.extend(flatten(cell))
+                paragraph(line, size=10, indent=indent)
         elif kind == "horizontalRule":
             pdf.ln(2)
             pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
@@ -395,7 +420,11 @@ def to_pdf(title: str, content: dict[str, Any], rendered: dict[str, Any]) -> byt
         block(node)
     if bibliography:
         pdf.ln(4)
-        paragraph("References", size=14, style="B")
+        paragraph([Segment("References")], size=14, style="B")
         for entry in bibliography:
-            paragraph(with_links(entry), size=10, indent=4)
+            paragraph(
+                [Segment(part, link=part if is_link else None) for part, is_link in split_links(entry)],
+                size=10,
+                indent=4,
+            )
     return bytes(pdf.output())

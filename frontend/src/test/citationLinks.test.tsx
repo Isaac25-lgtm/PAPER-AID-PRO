@@ -47,6 +47,22 @@ describe("reference lists", () => {
     box.innerHTML = linkifyReferences("See https://doi.org/10.1234/example(2020) and javascript:alert(1)");
     expect([...box.querySelectorAll("a")].map((a) => a.getAttribute("href"))).toEqual(["https://doi.org/10.1234/example(2020)"]);
   });
+
+  it("agree with the Word/PDF exporter on the shared cases (backend test_sf03_shared_link_fixtures)", () => {
+    const cases: Record<string, string> = {
+      "See <https://example.org/a>.": "https://example.org/a",
+      "(https://doi.org/10.1/x)": "https://doi.org/10.1/x",
+      "https://doi.org/10.1002/(SICI)1097-0258(19980815)17:15<1661::AID-SIM968>3.0.CO;2-2.": "https://doi.org/10.1002/(SICI)1097-0258(19980815)17:15<1661::AID-SIM968>3.0.CO;2-2",
+      "https://example.org/a?x=1&y=2,": "https://example.org/a?x=1&y=2",
+      "[https://example.org/b]": "https://example.org/b",
+    };
+    for (const [text, url] of Object.entries(cases)) {
+      const box = document.createElement("div");
+      box.innerHTML = linkifyReferences(text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")); // as CSL escapes it
+      expect([...box.querySelectorAll("a")].map((a) => a.getAttribute("href"))).toEqual([url]);
+      expect(box.textContent).toBe(text); // nothing added or lost around the link
+    }
+  });
 });
 
 describe("in-text citations", () => {
