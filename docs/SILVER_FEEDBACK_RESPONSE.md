@@ -90,14 +90,39 @@ production off.
 
 **Tests:** `blankDocument.test.tsx` (4), `workspace.test.tsx`.
 
+## Staging check (25 November 2026)
+
+Released to staging: API `paperaid-api-staging-00026-xax` (`c018f5a`), frontend `de59dec`. Checked in the browser:
+
+- **Search:** each database's chip changed from "searching…" to its result count as it answered. Europe PMC was
+  down for part of the check (its own API returned 503 or took over 26 s). The page marked it "unavailable", kept the
+  other four databases' results and offered "Retry unavailable".
+  - Fixed after the check: the retry used to clear the results and set every database back to "searching". Now
+    the results stay and only the failed database searches again (`de59dec`, test in `discoverStream.test.tsx`).
+- **Typos on the live API:** "malria vacine", "educaton policy", "climte change adaptation", "teacher motivaton" and
+  "povrty reduction" were all corrected.
+  - "mobile mony" was not corrected. PubMed's speller, our suggestion source, has no suggestion for "mony",
+    probably because "Mony" is a real name. A typo that is itself a real word or name needs a second suggestion
+    source (a general English word list); not done yet.
+- **Identifiers:** a DOI and "PMID: …" each returned exactly one record, and no database was searched.
+- **Citations:** clicking "(Vaswani et al., 2017, p. 1)" showed the paper with Open paper and Open DOI (new tab). The
+  reference list's DOI is a new-tab link.
+  - Fixed after the check: in a short window the box ran off the bottom; it now opens above the citation when there
+    is no room. The page reads "p. 1" instead of a bare "1" (`24b76d3`).
+- **Documents and navigation:** Blank document is first in New document and on Home, and creates directly. The outline
+  step shows the guidance switch (on by default). The sidebar reads Research › Ask my papers, Deep research ·
+  Find papers. The Find papers tabs are "All databases" and "Already in PaperAid".
+
 ## Verification
 
 - Backend: 385 passed. ruff and mypy clean.
-- Frontend: 179 passed. `tsc` and `vite build` clean.
+- Frontend: 180 passed. `tsc` and `vite build` clean.
 - CI green on the branch.
 
 ## Still open
 
 - Items 3 and 5 (autocomplete) need an AI key.
+- A typo that is itself a real word or name ("mony") is not corrected (see the staging check).
+- Production: not yet released. It runs `20068c2` until approved.
 - Seen once, not yet reproduced: the same paper listed twice with different DOIs (probably preprint and published
   versions), and the staging editor stuck on "Loading…".
