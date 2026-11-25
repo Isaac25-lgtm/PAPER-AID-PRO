@@ -206,3 +206,53 @@ async def test_words_espell_merges_or_splits_are_checked_one_at_a_time():
         assert await suggest_correction("malria vacine in children") == "malaria vaccine in children"
     assert spelling.unaligned_words("malria vacine in children", "malaria vac n in children") == [0, 1]
     assert spelling.unaligned_words("malaria vaccine", "malaria vaccine") == []  # nothing extra for a clean query
+
+
+async def test_a_passing_single_word_refusal_is_never_cached():
+    """Audit SF15: a temporary ESpell refusal on a single-word recheck used to be cached as a healthy answer (no
+    correction for an hour, or a partial one for a day). Now the answer is used for that search only, and the next
+    identical search, after recovery, is corrected fully."""
+    whole = {"malria vacine in children": "malaria vac n in children"}
+    counts = {**COUNTS, "vacine": 120, "vaccine": 1_500_000}
+    refuse: set[str] = set()
+
+    def espell(request: httpx.Request) -> httpx.Response:
+        term = request.url.params["term"]
+        if term in refuse:
+            return httpx.Response(503)
+        corrected = whole.get(term) or {"malria": "malaria", "vacine": "vaccine"}.get(term, "")
+        return httpx.Response(200, text=f"<eSpellResult><CorrectedQuery>{corrected}</CorrectedQuery></eSpellResult>")
+
+    def count(request: httpx.Request) -> httpx.Response:
+        word = request.url.params["filter"].removeprefix("title_and_abstract.search.exact:")
+        return httpx.Response(200, json={"meta": {"count": counts.get(word, 0)}, "results": []})
+
+    query = "malria vacine in children"
+    with respx.mock() as router:
+        router.get(re.compile(r"https://eutils\.ncbi\.nlm\.nih\.gov/.*/espell\.fcgi.*")).mock(side_effect=espell)
+        router.get("https://api.openalex.org/works").mock(side_effect=count)
+
+        refuse = {"malria", "vacine"}  # both rechecks refused: nothing to correct this time
+        assert await suggest_correction(query) is None
+        refuse = {"vacine"}  # one refused: a partial correction is still useful now
+        assert await suggest_correction(query) == "malaria vacine in children"
+        refuse = set()  # recovered: the very next identical search asks again and corrects fully
+        assert await suggest_correction(query) == "malaria vaccine in children"
+        espell_calls = sum(1 for call in router.calls if "espell" in call.request.url.path)
+        assert await suggest_correction(query) == "malaria vaccine in children"  # a healthy answer is cached
+        assert sum(1 for call in router.calls if "espell" in call.request.url.path) == espell_calls
+
+
+async def test_a_failed_word_count_is_never_cached_as_unconfirmed():
+    def count(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503)
+
+    with respx.mock() as router:
+        router.get(re.compile(r"https://eutils\.ncbi\.nlm\.nih\.gov/.*/espell\.fcgi.*")).mock(
+            return_value=httpx.Response(
+                200, text="<eSpellResult><CorrectedQuery>malaria</CorrectedQuery></eSpellResult>"
+            )
+        )
+        router.get("https://api.openalex.org/works").mock(side_effect=count)
+        assert await suggest_correction("malria") is None
+    assert spelling._cache == {}  # nothing remembered from a failed confirmation

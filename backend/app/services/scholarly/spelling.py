@@ -134,46 +134,54 @@ def unaligned_words(original: str, suggested: str) -> list[int]:
     return positions
 
 
-async def _single_word(word: str) -> str | None:
-    """ESpell's suggestion for one word on its own, when it is a single plain word."""
+async def _single_word(word: str) -> tuple[str | None, bool]:
+    """(ESpell's suggestion for one word on its own when it is a single plain word, whether ESpell answered)."""
     try:
         suggested = await _espell(word)
     except SpellingUnavailable:
-        return None
+        return None, False  # a refusal is not "no suggestion" (audit SF15)
     if suggested and _WORD.match(suggested) and suggested.lower() != word.lower():
-        return suggested.lower()
-    return None
+        return suggested.lower(), True
+    return None, True
 
 
-async def _confirmed(typed: str, proposed: str) -> bool:
+async def _confirmed(typed: str, proposed: str) -> tuple[bool, bool]:
+    """(the literature confirms the correction, both counts were available)."""
     typed_count, proposed_count = await asyncio.gather(_count(typed), _count(proposed))
-    if typed_count is None or not proposed_count:
-        return False
-    return typed_count * CONFIRM_RATIO <= proposed_count
+    if typed_count is None or proposed_count is None:
+        return False, False
+    if not proposed_count:
+        return False, True
+    return typed_count * CONFIRM_RATIO <= proposed_count, True
 
 
-async def _suggest(query: str) -> str | None:
+async def _suggest(query: str) -> tuple[str | None, bool]:
+    """(the corrected query or None, whether every upstream answer needed for it was healthy). An incomplete
+    answer is still used for this search but never cached, so a passing outage cannot stick (audit SF15)."""
     suggested = await _espell(query)
     if not suggested or suggested.lower() == query.lower():
-        return None
+        return None, True
     pairs = changed_words(query, suggested)
     words = query.split()
+    complete = True
     # Words ESpell merged or split in the whole query are asked about alone (production run, 25 November 2026:
     # "malria vacine in children" came back as "malaria vac n in children" and nothing was corrected).
     recheck = unaligned_words(query, suggested)[:MAX_WORD_RECHECKS]
     if recheck:
         singles = await asyncio.gather(*(_single_word(words[i]) for i in recheck))
-        pairs += [(i, proposed) for i, proposed in zip(recheck, singles, strict=True) if proposed]
+        complete = all(ok for _, ok in singles)
+        pairs += [(i, proposed) for i, (proposed, _) in zip(recheck, singles, strict=True) if proposed]
     if not pairs:
-        return None
+        return None, complete
     verdicts = await asyncio.gather(*(_confirmed(words[i], proposed) for i, proposed in pairs))
-    accepted = [(i, proposed) for (i, proposed), ok in zip(pairs, verdicts, strict=True) if ok]
+    complete = complete and all(ok for _, ok in verdicts)
+    accepted = [(i, proposed) for (i, proposed), (yes, _) in zip(pairs, verdicts, strict=True) if yes]
     if not accepted:
-        return None
+        return None, complete
     for i, proposed in accepted:
         words[i] = proposed.capitalize() if words[i][0].isupper() else proposed
     corrected = " ".join(words)
-    return corrected if corrected != " ".join(query.split()) else None
+    return (corrected if corrected != " ".join(query.split()) else None), complete
 
 
 async def suggest_correction(query: str) -> str | None:
@@ -188,8 +196,11 @@ async def suggest_correction(query: str) -> str | None:
     if hit:
         return value
     try:
-        result = await asyncio.wait_for(_suggest(query), timeout=TIMEOUT_SECONDS * 2)
+        result, complete = await asyncio.wait_for(_suggest(query), timeout=TIMEOUT_SECONDS * 2)
     except Exception as exc:  # spelling help must never break a search
         log.info("spelling.unavailable", extra={"error": repr(exc)})
         return None  # not cached: try again next time
+    if not complete:  # part of the answer came from a failure: use it now, ask again next time (SF15)
+        log.info("spelling.incomplete", extra={"query_length": len(query)})
+        return result
     return _remember(key, result)
