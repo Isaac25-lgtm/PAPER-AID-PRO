@@ -1,6 +1,45 @@
 # PaperAid Pro handoff for Claude
 
-## Current handoff · 21 November 2026
+## Current handoff · 25 November 2026
+
+**Read the [Silver feedback and production-readiness audit](docs/PAPERAID_V2_SILVER_FEEDBACK_AUDIT.md) first.** The baseline is `6acf3e3`, the reported product release is `ea5e7db`, and the independently verified audit head is `ae4aee5`. Keep the invite-only beta operating with AI, embeddings and Tavily off. Fifteen findings have file-and-line evidence and a proposed regression in the report. Treat SF01 as a prerequisite for optional embeddings. The current-user fixes matter even if every AI integration stays disabled.
+
+### Correction prompt to paste into Claude
+
+> Read AGENTS.md, docs/AUDIT_BRIEF.md, and docs/PAPERAID_V2_SILVER_FEEDBACK_AUDIT.md. Start from current main and compare it with the audited ae4aee5 snapshot. Work on fix/silver-feedback-audit. Address SF01–SF15, one finding per commit, with a regression test at the real entry point. Reproduce each issue first. If a later commit has already fixed it, identify that commit and run its regression instead of changing working code.
+>
+> Start with SF01, the private PDF and passage-query embedding paths outside the pilot gate. Then handle the URL privacy and PDF export failures, streamed-search parity and retry behavior, provider budgets, and the frontend release preflight. Preserve exact identifier imports, public/private paper ownership checks, citation fidelity and safe external links. Keep frontend and backend separate. Use local PostgreSQL, fake providers, disposable build artifacts and fake-cloud tests. Keep AI, embeddings and Tavily off in hosted environments. Do not read secrets, run commands against production or staging, or deploy.
+>
+> Complete docs/SILVER_FEEDBACK_AUDIT_RESPONSE.md with the cause, fix commit, regression, and verification result for every ID. Run section 6 of the brief, the dependency checks, and CI including the container job. Report remaining blockers, especially owner-controlled alerting, restore evidence and provider spend limits. End with a staging acceptance checklist for the owner, and leave release approval with the owner.
+
+### Acceptance checklist for the fix branch
+
+| ID | What the reviewer should see |
+| --- | --- |
+| SF01 | A non-pilot private PDF upload, passage search and private backfill make zero external embedding calls. An eligible, disclosed path still works with a recording fake. |
+| SF02 | Both handover directions preserve the question and authorized selections without putting the text or paper IDs in the URL. Account change drops transient private state. |
+| SF03 | Ordinary bracketed reference text round-trips to Word/PDF. Correct DOI destinations survive punctuation, Unicode and query parameters. Check the actual file contents and annotations. |
+| SF04 | Streaming and one-shot open-access queries return the same eligible fixture when it lies beyond the unrestricted first page. Exercise cold and warm caches. |
+| SF05 | A recovered provider's new papers appear even when a former success fails on retry. Old papers remain visible with an accurate state; stale events do not alter a new search. |
+| SF06 | Mock counters and a fake clock demonstrate a strict per-search bound plus provider-wide pacing for concurrent callers. Optional spelling yields to the main search on exhaustion. |
+| SF07 | All-outage, partial-outage and confirmed-miss identifier searches produce three appropriate outcomes. An outage gets an explicit retry. |
+| SF08 | After one save succeeds and another fails, the library and screen agree on the completed set. Retry resumes only unfinished work. Leaving the run prevents a late navigation. |
+| SF09 | A synthetic wrong target fails a local frontend release check before publishing. Artifact commit, Firebase configuration, API origin and CSP agree for both targets. |
+| SF10 | Empty or truncated NDJSON reaches a recoverable terminal state. An intentional abort has no visible failure and preserves newer search state. |
+| SF11 | Open a citation, insert another and open it immediately. The new source appears. A failed paper fetch offers a different outcome from a deleted or inaccessible paper. |
+| SF12 | Full identifiers still resolve exactly while a sentence containing a DOI remains a keyword search. Short bare years stay literal. |
+| SF13 | A keyboard user can open the selected citation, reach the paper link, close the source panel and resume editing. Multi-source panels remain usable on a short viewport. |
+| SF14 | An unconfigured explicitly selected provider reaches a skipped or unavailable state; no chip is searching after done. |
+| SF15 | A transient single-word spelling refusal recovers on the next eligible request. A partial correction does not suppress the recovered result for a day. |
+
+### Owner decisions after the branch passes
+
+1. Review the exact fix-branch CI jobs, a current citation-engine advisory check and the frontend build target. The independent baseline is 386 backend tests, seven live scholarly tests, 181 frontend tests and successful container CI.
+2. Authorize a staging-only acceptance run when ready. Exercise a private draft handover, a swapped-provider retry, keyboard citation navigation, and downloaded Word/PDF exports. Include a small concurrency run measuring database pool wait, first-result latency and provider refusals.
+3. Verify an uptime notification reaches its owner. Record an isolated restore of both the database and a representative private PDF with measured recovery time. Confirm the AI provider budget ceiling and data-use terms before considering a text-only pilot. Embeddings and Tavily have separate activation gates.
+
+
+## Archived handoff · 21 November 2026
 
 **Start with the [Deep Research audit](docs/PAPERAID_V2_DEEP_RESEARCH_AUDIT.md).** It covers eight commits after `90e4880` through `2d8b8b5`. There are 15 findings, including one high-severity mismatch between the web-search checkbox and the request sent to the backend. The reference checker also makes incorrect user-facing statements with AI off.
 
