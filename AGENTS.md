@@ -64,4 +64,4 @@ npm ci && npx tsc -b --noEmit && npx vitest run && npx vite build
   `docs/SYSTEM_REAUDIT_RESPONSE.md`; `docs/PAPERAID_V2_HARDENING_AUDIT.md` → `docs/HARDENING_AUDIT_RESPONSE.md`;
   `docs/PAPERAID_V2_STAGING_AUDIT.md` → `docs/STAGING_AUDIT_RESPONSE.md`;
   `docs/PAPERAID_V2_WORKSPACE_AUDIT.md` → `docs/WORKSPACE_AUDIT_RESPONSE.md`; `docs/PAPERAID_V2_DEEP_RESEARCH_AUDIT.md` →
-  `docs/DEEP_RESEARCH_AUDIT_RESPONSE.md` (branch `fix/deep-research-audit`).
+  `docs/DEEP_RESEARCH_AUDIT_RESPONSE.md` (branch `fix/deep-research-audit`); `docs/PAPERAID_V2_SILVER_FEEDBACK_AUDIT.md` → `docs/SILVER_FEEDBACK_AUDIT_RESPONSE.md` (brief: `docs/AUDIT_BRIEF.md`).

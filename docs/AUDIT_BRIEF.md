@@ -1,316 +1,238 @@
-# Audit brief: Deep research, and the signed-in browser test fixes (after `90e4880`)
+# Audit brief: Silver's feedback (streamed search, research navigation, citations, documents), after `6acf3e3`
 
 **For:** Codex (independent reviewer). Read `AGENTS.md` first.
-**Scope:** everything on `main` after `90e4880`, the commit you last reviewed (workspace follow-up), up to the commit
-that adds this brief.
-**Ask:** is this ready for production and for adding AI keys?
-1. Review the reinstated **Deep research** feature end to end: data model, migration, grounding, web evidence,
-   rate limits, timeouts, privacy, export, account closure.
-2. Verify that each fix from the **signed-in browser test** (section 3) closes its failure at the real entry point.
-3. Look hard at the **messy-input** work (spelling correction, fuzzy matching, identifier parsing, reference checker):
-   it must help real users without ever changing a correct query, inventing a match or accusing a real reference.
-4. Look for new defects, especially security, privacy and cost.
-5. **Code integrity and maintainability:** run every test suite and the build yourself; then flag spaghetti code,
-   meaning duplicated logic, business logic in route handlers, long functions doing several jobs, hidden coupling
-   and dead code. Start with the hotspots we already know of (section 7); do not limit yourself to them. For each,
-   say whether it is a real risk and what the simplest clean structure would be.
 
-Report in the format of `docs/PAPERAID_V2_WORKSPACE_AUDIT.md`, as `docs/PAPERAID_V2_DEEP_RESEARCH_AUDIT.md`.
+**Scope:** everything on `main` after `6acf3e3` (the docs commit that closed the Deep research audit, release of
+`20068c2`), up to the commit that adds this brief. In total: 41 files, about 1,860 lines added and 220 removed. The
+previous brief (Deep research and browser-test fixes, after `90e4880`) is in git history at `6acf3e3:docs/AUDIT_BRIEF.md`.
 
-## Commits in scope
+**Background:** Silver, the product owner, tested the live app and asked for five things on 25 November 2026:
+1. search that is reliable and fast, with exact identifier lookups;
+2. clearer research navigation, with the question and papers carried between modes;
+3. an accuracy demo (needs AI; not in scope, AI is still off);
+4. citations that open their source;
+5. a way to write without the template.
+
+`docs/SILVER_FEEDBACK_RESPONSE.md` records what was built, the staging check, and a production browser run that
+found and fixed five more problems.
+
+**Ask:** is this safe to keep in production, and ready for AI keys to be added?
+1. Verify each item below at its real entry point (route, hook or component), not only through its tests.
+2. Look for new defects, especially security (XSS through the new HTML rendering), privacy, cost (calls to
+   external APIs per search) and resource use (connections, tasks, memory).
+3. Look hard at the **streamed search** (section 3.1): concurrency, cancellation, DB session use, the per-instance
+   cache, and what happens when a client disconnects mid-stream.
+4. **Code integrity:** run every suite and the build yourself, then flag spaghetti code: duplicated logic,
+   business logic in route handlers, long functions doing several jobs, hidden coupling, dead code. Start with the
+   hotspots in section 5, but do not limit yourself to them. For each, say whether it is a real risk and what the
+   simplest clean structure would be.
+
+**Report:** use the format of `docs/PAPERAID_V2_DEEP_RESEARCH_AUDIT.md`, saved as
+`docs/PAPERAID_V2_SILVER_FEEDBACK_AUDIT.md`. Give each finding an ID, severity, file and line, a failing scenario,
+and the fix you recommend. Say plainly what you checked and found sound.
+
+## 1. Commits in scope
 
 | Commit | What |
 |---|---|
-| `1f24245` | Docs only: production release of `90e4880` recorded (`paperaid-api-00027-dar`) |
-| `f212c15` | Deep research reinstated (backend, migration `b3d7e1a9c4f2`, frontend, tests) |
-| `4440e81` | Browser-test fixes, round 1: misspelled searches, Europe PMC PDFs, AI buttons while AI is off |
-| `94a467e` | Browser-test fixes, round 2: typo-tolerant search everywhere, identifiers, reference checker, entities, guidance italics |
-| `9537ec5` | OpenAlex exact word counts for spelling; OpenAlex API key support; this brief and the browser-test record |
-| `29ebdba` | `.gitignore`: `*.local.txt` (local-only secret files) |
-| `c876f1b` | Docs: production release `paperaid-api-00033-toj` and the OpenAlex key recorded |
-| latest | This brief extended: code-quality review, everything tested on 21 November |
+| `015fd7e` | **Search:** results streamed per database (NDJSON), failed databases retried, identifiers looked up exactly |
+| `2aaa9b1` | **Navigation:** Research › Ask my papers / Deep research; Find papers (two tabs); question and papers handed between modes |
+| `08d96b0` | **Citations:** clicking an in-text citation opens "Cited source"; reference-list addresses become new-tab links |
+| `af8f5d7` | **Documents:** Blank document first and created directly; "Include writing guidance" switch |
+| `d02edf5` | **Exports:** reference addresses become hyperlinks in Word and PDF |
+| `c018f5a` | Docs: `SILVER_FEEDBACK_RESPONSE.md` |
+| `24b76d3` | Staging fix: popover opens above the citation when there is no room below; pages read "p. 12" |
+| `de59dec` | Staging fix: Retry keeps results already found and the databases that answered |
+| `6a9633b`, `530d457` | Docs: staging check; production release |
+| `21ff8ea` | Production fix: reference links styled as links (`.reference-link`); identifier note without a repeated "PMID" |
+| `97c608d` | Production fix: the opening screen's code downloads alongside sign-in (`App.tsx` `FIRST_SCREEN`) |
+| `ea5e7db` | Production fix: spelling words that ESpell merges or splits are rechecked one at a time; bare identifier in the note |
+| `9cd97fe` | Docs: production browser run and release recorded |
+| latest | This brief |
 
-**Releases on 21 November** (all through `deploy/release.sh`, with environment check, candidate check and readiness
-gate):
+## 2. Releases
 
-| Environment | Revisions, in order |
+All went through `deploy/release.sh`, with its environment check, candidate check and readiness gate. No schema
+change in this round: the schema is still `b3d7e1a9c4f2`.
+
+| Environment | Revision (commit) |
 |---|---|
-| Staging | `00014-nam` (`94a467e`), `00017-kug` (`9537ec5`), `00020-nay` (`29ebdba` + OpenAlex key) |
-| Production | `00030-xey` (`9537ec5`, migration `b3d7e1a9c4f2` run by `paperaid-migrate`), `00033-toj` (`29ebdba` + OpenAlex key) |
+| Staging | `paperaid-api-staging-00026-xax` (`c018f5a`); frontend redeployed at `24b76d3` and `de59dec` |
+| Production | `paperaid-api-00039-kof` (`6a9633b`), then `paperaid-api-00042-wom` (`ea5e7db`); frontend at `ea5e7db` |
 
-The production frontend was deployed from `9537ec5`. The OpenAlex key is in Secret Manager as `openalex-api-key`,
-with `roles/secretmanager.secretAccessor` for `paperaid-api@` and `paperaid-staging-api@`, attached with
-`EXTRA_DEPLOY_FLAGS="--update-secrets=OPENALEX_API_KEY=openalex-api-key:latest"`.
+## 3. What changed, and what to check
 
-## Deployed state (at the time of writing)
+### 3.1 Streamed search (Silver item 1)
 
-| | Production | Staging |
-|---|---|---|
-| API | `paperaid-api-00033-toj` = `29ebdba`, schema `b3d7e1a9c4f2` | `paperaid-api-staging-00020-nay` = `29ebdba` |
-| Frontend | `9537ec5` (no frontend change since) | `94a467e` (no frontend change since) |
-| Deep research | live | live |
-| AI | not configured | not configured |
-| Web search (Tavily) | not configured | not configured |
-| OpenAlex key | set (secret `openalex-api-key`, shared) | set (same key) |
+**Backend**
+- `app/api/routes/discovery.py`
+  - New `GET /discovery/search/stream`: a `StreamingResponse` of NDJSON events (`query`, `results`, `suggestion`,
+    `done`).
+  - `/search` and the stream share these helpers: `_start` (rate limit, then commit so no DB connection is held
+    while providers are queried), `_lookup` (identifier path), `_results`, and `_provider_list`.
+  - The generator opens a short-lived session per `results` event (`shown()`) because the request's own session
+    has been released.
+  - Spelling runs as a task, awaited at most `STREAM_SPELLING_WAIT_SECONDS = 3.0` (shielded), then cancelled in
+    `finally`.
+  - If a correction finds nothing, the typed words are streamed instead.
+  - In exact mode a suggestion is offered, never applied (waits up to `SPELLING_GRACE_SECONDS = 1.5`).
+- `app/services/scholarly/aggregator.py`
+  - `search_progressively` yields `(ProviderStatus, works)` as each provider finishes (`asyncio.as_completed`) and
+    cancels the remaining tasks in `finally`.
+  - Per-provider result cache: `_result_cache`, an LRU of 256 entries with a 5-minute TTL, keyed on provider,
+    casefolded query, limit, years, open-access flag and subject. `merged_results` is factored out.
+  - The cache is per Cloud Run instance, so a retry that lands on another instance re-queries every provider.
+- `app/services/scholarly/identifiers.py`: `exact_identifier()` treats a bare number as a PMID only with at least 6
+  digits (so "2016" stays a word).
+- `app/services/scholarly/spelling.py` (latest change): `unaligned_words()` plus `_single_word()`. When ESpell's
+  whole-query suggestion merges or splits words, up to `MAX_WORD_RECHECKS = 3` of them are sent to ESpell one at a
+  time, then confirmed against OpenAlex exact word counts as before.
 
-Both environments run every change in scope (released 21 November after the maintainer's approval); migration
-`b3d7e1a9c4f2` (expand-only: one new table) has run in both.
+**Frontend**
+- `src/lib/api.ts`: `api.stream()` / `readEvents()` read NDJSON, honour `AbortSignal`, and respect session changes.
+- `src/lib/searchStream.ts`: `useSearchStream` keeps per-database states.
+  - `retry()` re-runs with `exact: true` on the effective query.
+  - While retrying, earlier results and answered databases are kept until each has answered again; one that
+    answered before never turns "failed".
+- `src/pages/Discover.tsx`: database chips, "Retry unavailable", correction, exact-mode and identifier notes;
+  `bareIdentifier()`.
 
-**Tests:** backend 345, frontend 156, all passing locally; CI green on each pushed commit. Details in section 8.
+**Please check**
+- **Client disconnect mid-stream:** are provider tasks, the spelling task and the short sessions all released? Is
+  anything left running or leaking?
+- **Load:** one short-lived DB session per `results` event, so up to about 5 per search. Is that acceptable for
+  pool size (`DB_POOL_SIZE`), or should `_results` be resolved once per provider batch, or differently?
+- **Upstream cost per search, worst case:**
+  - ESpell: 1 + 3 calls;
+  - OpenAlex counts: 2 per changed word;
+  - the providers themselves;
+  - the "correction found nothing" fallback, which runs the providers a second time.
+  - Is it bounded? Are NCBI's 3 requests/second without a key, and the OpenAlex key's budget, respected under
+    concurrent users?
+- **Cache correctness:** can a cached entry leak across users or filters? Is the key complete?
+- **Timeouts:** every search waits for Europe PMC's 12 s provider timeout before `done` (it was down on
+  25 November). Should `done` be sent earlier, or slow providers given a separate state?
+- **Hook state machine:** does the retry merge in `useSearchStream` have races with a new search started during a
+  retry, or with stale closures (`kept`, `again`)?
 
----
+### 3.2 Research navigation and handover (item 2)
 
-## 1. Deep research (`f212c15`)
+- **Navigation** (`src/components/Workspace.tsx`): nested sidebar items (`children`, `alsoOn`).
+- **Find papers tabs** (`FindPapersTabs.tsx`) on `Discover` and `Catalog`. Public header renamed in `Layout.tsx`.
+- **`Research.tsx`:** initial question from `?q=` and selected papers from `?papers=`; a "Search further with Deep
+  research" link.
+- **`DeepResearch.tsx`:** `?q=` prefill. `AskAboutSources` (`HANDOVER_LIMIT = 8`):
+  - `POST /library` for catalogued sources, ignoring 409;
+  - `POST /papers/import` for identifier-only sources;
+  - then navigates to `/research?q=…&papers=…`.
 
-A second research mode beside "Research on my papers". The person asks a question; PaperAid finds the sources.
+**Please check**
+- `?papers=` ids come from the URL. Confirm the server never shows, or answers from, a paper the user cannot see.
+- Partial failure in `AskAboutSources`: some imports fail, or the user leaves mid-way. Is the outcome clear, and is
+  nothing duplicated?
+- Should the handover be one server call instead of N sequential ones?
 
-**Flow** (`backend/app/services/deep_research.py`, `run_deep_research`):
-1. **Plan.** With AI: 2-4 keyword searches from the model (`SearchPlan`, structured output), cleaned by
-   `clean_plan` (markup and quotes stripped, duplicates removed, at most `MAX_QUERIES`). Without AI: the question
-   itself (`fallback_queries`), spelling-corrected (section 4).
-2. **Search.** Each search runs through the existing `federated_search` (the same as Discover), two at a time
-   (`SEARCH_CONCURRENCY`). With a Tavily key, the first two searches also run on the web (`services/web_search.py`).
-3. **Rank.** `merge_and_dedupe` and `rank` from the aggregator (reciprocal-rank fusion, no topic rules).
-4. **Read.** Up to 14 scholarly works with an abstract and an identifier are upserted as public catalogue records
-   (`upsert_public_paper`) and become abstract evidence; up to 6 web results become `kind="web"` evidence.
-5. **Report.** `grounded_answer` (the standard grounding pipeline: ids, verbatim quotes, numbers, support check).
+### 3.3 Citations open their source (item 4)
 
-**Outcomes** (`report_status`): `complete`; `ai_not_connected` (sources listed, no report); `withheld` (the report
-failed the citation checks: `AIOutputInvalid`); `ai_failed` (any other `AppError` from the model). The search
-results are saved in every case.
+- **`src/components/editor/CitationPopover.tsx`:**
+  - loads `/documents/{id}/citations` and each `/papers/{paper_id}`;
+  - positioned fixed, flips above the citation when there is no room below;
+  - closes on Escape or an outside mousedown;
+  - `pageLabel()` turns "12" into "p. 12".
+- **`pages/Editor.tsx`:** a click wrapper around `EditorContent` finds `.citation-chip` and reads
+  `data-citation-ids`.
+- **`src/lib/format.ts`:** `linkifyReferences()` runs `sanitizeHtml()` first, then wraps http(s) URLs found in text
+  nodes in `<a class="reference-link" target="_blank" rel="noopener noreferrer">`. `trimUrl()` keeps a balanced
+  closing bracket and drops trailing punctuation. Used through `dangerouslySetInnerHTML` in:
+  - the Editor's reference list;
+  - `CitationTools.tsx`;
+  - the `papers.tsx` Cite dialog.
+- **`backend/app/services/export.py`:**
+  - `split_links()` and `_trim_url()` duplicate the frontend logic;
+  - Word: `_add_hyperlink()` builds `w:hyperlink` with an external relationship;
+  - PDF: markdown `[url](url)` links, falling back to plain text when the URL contains brackets or markdown markers.
 
-**Web evidence** (`services/ai/grounding.py`): `WebPage` dataclass; `EvidenceItem.paper` is `Paper | WebPage`.
-`short_ref` labels it "site (web page, year)", `render_evidence` labels it "Web page excerpt", and `citation_payload`
-emits `paper_id: null`, `url`, `site`, `kind: "web"`. `web_search.parse_results` keeps only http(s) URLs with at
-least 40 characters of text, removes `<evidence>`-like tags from page text, and replaces `"` in titles, so a page
-cannot open or close an evidence block. The Tavily key is sent only as a Bearer header, and errors never echo the
-response body.
+**Please check**
+- **XSS:** can any CSL output, user-supplied metadata (titles of manual entries are user text), or a crafted URL
+  get script, `javascript:`, event handlers or attribute injection through `linkifyReferences` or the popover?
+  Is `sanitizeHtml`'s allow-list still right?
+- **Word:** a URL containing characters that need escaping in a relationship target. **PDF:** markdown injection
+  through reference text (`escape()` covers `**`, `__` and `\` only).
+- **Popover:** stale `["citations", documentId]` cache right after inserting a citation (it worked in the browser,
+  but confirm why); several ids in one citation; deleted papers.
 
-**Data:** table `deep_research_runs` (`db/models.py` `DeepResearchRun`; migration
-`alembic/versions/20261115_b3d7e1a9c4f2_deep_research_runs.py`, expand-only). The FK to `users` cascades, so account
-closure removes runs. Export: `services/accounts.py` writes `research/deep/<id>.json`, and the README line is
-updated.
+### 3.4 Documents (item 5)
 
-**API** (`api/routes/deep_research.py`, all `VerifiedUser`):
+- `src/lib/templates.ts`: "Blank document" first in `DOC_TYPE_LABELS`; `GuidedConfig.guidance` (default on; off
+  gives headings only).
+- `src/pages/Documents.tsx`: a blank document is created directly from step 1; the outline step has the switch.
+- `src/pages/Dashboard.tsx`: Blank document and Report cards.
 
-| Endpoint | Behaviour |
-|---|---|
-| `GET /research/deep/status` | What this account can use: databases, `ai`, `web_search` |
-| `POST /research/deep` | Runs; 12 per hour per person (`RATE_LIMIT_DEEP_RESEARCH_PER_HOUR`), plus the AI per-minute limit when AI is used; bounded at 240 s (`RUN_TIMEOUT_SECONDS`, inside Cloud Run's 300 s) with a clear 502 |
-| `GET /research/deep` | History |
-| `GET`, `DELETE /research/deep/{id}` | One run; owner-only, 404 for anyone else |
+**Please check:** the `draft` branches removed from step 2 are now unreachable. Is any behaviour lost? Does the
+backend accept everything these flows send?
 
-**Config:**
-- `WEB_SEARCH_PROVIDER` (`none` / `tavily`) and `TAVILY_API_KEY`.
-- `RATE_LIMIT_DEEP_RESEARCH_PER_HOUR`.
-- `deploy/release_checks.py` `ALLOWED_SETTINGS` gains those three plus `OPENALEX_API_KEY`.
+### 3.5 First-load speed
 
-**Frontend:**
-- `pages/DeepResearch.tsx`: connection status, form, honest progress list, report, sources read and also found, save to library.
-- `components/ResearchModes.tsx`: the "My papers / Deep research" switch on both research pages.
-- Sidebar item "Deep research" (`Workspace.tsx`; Research is now `end`-matched).
-- Route `/research/deep`.
-- `GroundedAnswerView` renders web citations as external links labelled "Web page · not peer-reviewed".
-- `lib/format.ts` `safeHref` allows http(s) links only.
+`src/App.tsx`: the `load` map plus `FIRST_SCREEN` start importing the matching route chunk at module load,
+alongside Firebase sign-in.
 
-**Tests:** `backend/tests/test_deep_research.py` (13): report, history, owner-only, web pages, prompt injection,
-outage, withheld, rate limit, auth, export, timeout, plan bounds, malformed web payloads.
-`frontend/src/test/deepResearch.test.tsx` (5).
+**Please check:** do the patterns match every route correctly? Are there side effects on public pages or in tests?
 
-**Please scrutinise:**
-- The upsert of up to 14 public catalogue records per run: catalogue growth, and the metadata trust model.
-- The request held open for up to 240 s on Cloud Run, which is synchronous (no Cloud Tasks).
-- `asyncio.wait_for` cancelling mid-transaction.
-- The web evidence path, for injection.
-- Whether the status endpoint leaks anything.
+## 4. Verified so far
 
-## 2. Pages that offered AI while AI is off (`4440e81`, `94a467e`)
+- **Backend:** 386 passed (`pytest`, embedded Postgres); ruff and format clean; mypy clean (module list in
+  `pyproject.toml`).
+- **Frontend:** 181 passed (`vitest`); `tsc -b` and `vite build` clean.
+- **CI:** green on every pushed commit, including `ea5e7db`.
+- **Browser, on staging and then on production (signed in):**
+  - misspelled, correct, ambiguous and identifier queries;
+  - progressive chips, and Retry during a real Europe PMC outage;
+  - both research handovers;
+  - citation popover and its links (opened real new tabs);
+  - reference links in the editor, Citation tools and the Cite dialog;
+  - Blank document, and the guidance switch.
+- **Not run in the browser:** Word and PDF export downloads. These are covered by
+  `test_guidance_export.py::test_reference_addresses_are_links_in_word_and_pdf`.
 
-These controls were offered without AI and could only fail. They are now hidden or explained, using the shared
-`frontend/src/lib/ai.ts` `useAIEnabled` (from `/ai/status`):
-- Discover's "Generate overview".
-- A paper's "Generate summary" and "Ask this paper".
-- Research's "Ask".
-- The editor's "AI assist".
+## 5. Known hotspots and open items (please judge)
 
-The server-side AI gates are unchanged. Tests: `frontend/src/test/messyInput.test.tsx`.
+1. **`discovery.py` route size:** `search_stream` holds an inner generator with nested `stream()` and the
+   correction fallback. Should the orchestration move into a service (e.g. `services/scholarly/search_flow.py`)
+   shared with `/search`?
+2. **Duplicated URL logic:** `trimUrl`/`linkifyReferences` (TypeScript) and `_trim_url`/`split_links` (Python)
+   must agree.
+3. **Three caches with different policies:** spelling (`spelling._cache`), aggregator results (`_result_cache`)
+   and React Query. Is that coherent?
+4. **`useSearchStream`:** a hand-written reducer inside `setState`. Would a real `useReducer` be clearer and safer?
+5. **Cold starts:** production runs with min-instances 0. The first request after a quiet spell took about 5 s on
+   the API (about 22 s end to end on a slow connection). Setting a minimum instance is a billing decision for the
+   owner; please note any code-side start-up cost worth cutting.
+6. **Spelling gaps:** a typo that is itself a real word or name ("mobile mony") is not corrected, because ESpell
+   has no suggestion. Is a second suggestion source worth it, and what would you use?
+7. **Duplicates:** once, the same paper appeared twice with different DOIs (probably preprint and published
+   versions). Is the merge in `merged_results` sound?
+8. **Flaky tests:** frontend tests that time out under load (`deepResearch.test.tsx`, `editorIsolation.test.tsx`
+   hit 5 s once on a busy machine). Should their timeouts be raised, or the tests made lighter?
 
-## 3. Fixes from the signed-in browser test (staging, tester-a)
-
-The full record is in `docs/BROWSER_TEST_RUN.md`.
-
-| # | Found | Fix | Where | Tests |
-|---|---|---|---|---|
-| 1 | Discover's AI overview offered with AI off | Hidden until AI works | `pages/Discover.tsx` | `messyInput.test.tsx` |
-| 2 | Open-access PDFs from PubMed Central failed: Europe PMC retired `backend/ptpmcrender.fcgi` (403/520) | Use `https://europepmc.org/api/getPdf?pmcid=` | `services/open_access.py` | `test_open_access_pdfs_use_europe_pmcs_current_pdf_service`; live: the BMJ Open paper gave 71 passages |
-| 3 | A misspelled Discover search returned papers sharing the typo | Spelling correction (section 4) | `scholarly/spelling.py`, `routes/discovery.py` (`exact` param, `corrected_from`) | `test_messy_input.py`, `messyInput.test.tsx` |
-| 4 | Searching inside a paper failed on typos | Retry once, correcting against the paper's own words | `services/search.py` `correct_against_papers`, `search_evidence_corrected`; `PassageOut.matched_query` | `test_searching_inside_a_paper_forgives_typos...` |
-| 5 | Text typed after template guidance was italic (the guidance was italic text, and Enter kept the mark) | Guidance is a paragraph attribute (`guidance: true`, `keepOnSplit: false`) styled by CSS. The server keeps it (`documents.py`) and export italicises it (`export.py` `_guidance_in_italics`) | `lib/guidanceParagraph.ts`, `lib/templates.ts`, `styles.css` | `guidance.test.ts`, `test_template_guidance_is_kept_and_exported_in_italics` |
-| 6 | Editor "AI assist" offered with AI off | Hidden | `pages/Editor.tsx` | existing editor tests |
-| 7 | Journal names showed `&amp;` | `clean_text` decodes entities after stripping tags; journals go through `clean_text` | `scholarly/models.py`, `providers.py` | `test_web_entities_...` |
-| 8 | "PMID 27940873" (a space, not a colon) was not recognised | Prefixes accept spaces, `:`, `#`, `=`, `-`; PMC "PMC 123"; new PubMed Central and Europe PMC addresses | `scholarly/identifiers.py` | `test_identifiers_are_read_the_way_people_type_them` |
-| 9 | The reference checker said "Not found" for *Attention Is All You Need* (not in Crossref) | When Crossref does not verify, likely titles (`title_segments`) are searched in OpenAlex and the best candidate from both is assessed. DataCite DOIs resolve via OpenAlex. Digits inside links are never read as the year (`_LINKS`) | `citations/verify.py` | `test_reference_checker_finds_real_papers...` |
-| 10 | Catalog search failed on typos | Literature-confirmed correction, then catalogue title words; `PaperPage.matched_query` | `routes/papers.py` `list_papers` | `test_catalog_search_forgives_typos` |
-| 11 | Library filter needed the exact phrase, and failed on typos | Every word anywhere in the title, in any order (typed `%`/`_` are plain text); typos corrected from the library's own titles | `routes/library.py`, `services/fuzzy.py` | `test_library_filter_matches_words...` |
-| 12 | "Suggested for a original research manuscript" | a/an | `pages/Documents.tsx` | n/a |
-| 13 | Data-rights text omitted Deep research reports | Wording | `DataRights.tsx`, `Guidance.tsx`, `Home.tsx` | n/a |
-
-## 4. Messy input: how corrections are decided
-
-The principle: **a correction is a suggestion, never a trap.** The person always sees what was searched and can
-search exactly what they typed. No step may invent a word the sources do not contain.
-
-**Scholarly searches** (Discover, Deep research without AI, and the catalogue first). `scholarly/spelling.py`
-`suggest_correction`:
-1. NCBI ESpell proposes a corrected query.
-2. Each changed word is accepted only if its exact (unstemmed) count in OpenAlex titles and abstracts
-   (`filter=title_and_abstract.search.exact:`) is at least `CONFIRM_RATIO` (50) times the typed word's count.
-   Measured examples are in the module docstring:
-
-   | Pair | Typed | Corrected | Outcome |
-   |---|---|---|---|
-   | malria / malaria | 36 | 224k | Corrected |
-   | feding / feeding | 146 | 901k | Corrected |
-   | postcolonial / opostcolonial | 99k | 0 | Not changed |
-   | filles / files | 22k | 510k | Not changed: only 23× |
-   | omics / comics | | | Not changed |
-
-3. Acronyms, mixed case, numbers, identifiers and words under 3 letters are never checked.
-4. Any failure or timeout (4 s per call, 8 s overall) means no correction.
-5. Results are cached in memory (LRU, 512 entries); failures are not cached.
-
-Discover runs the check beside the original search and searches again only when a correction is accepted. Correct
-queries therefore pay no extra latency.
-
-**Own records** (inside a paper, the library, the catalogue as a fallback). Only when nothing matched as typed, each
-unknown word of 4 or more letters is replaced by the closest word (difflib ratio 0.8 or higher) that the records
-contain. The vocabulary is bounded: 3,000 passages, or 5,000 titles. The result is a retry, and the response says
-what was searched.
-
-**Known limits:**
-- ESpell sometimes proposes nothing (for example "efect", "mony"). Those words are left as typed.
-- With AI connected, Deep research's planner also fixes spelling.
-
-## 5. OpenAlex now needs an API key (latest commit): please assess the risk
-
-During the test OpenAlex answered `429` with this explanation: requests without a key share a free daily budget per
-IP address, of about 100 searches (10 credits each, US$0.10 a day). Cloud Run egress addresses are shared.
-
-Discover, Deep research, open-access PDF lookup, spelling confirmation and the reference checker all call OpenAlex.
-
-`scholarly/http.py` `_with_keys` now sends `OPENALEX_API_KEY` as `Authorization: Bearer` to `api.openalex.org` only,
-never in the URL. Test: `test_the_openalex_key_is_sent_in_a_header...`.
-
-Both environments now have the key (secret `openalex-api-key`, granted to each service account). Please check every OpenAlex call path goes through `get_json`, and that a
-`429` degrades as it should:
-- Discover shows OpenAlex as unavailable.
-- Spelling makes no correction.
-- The reference checker falls back to Crossref only.
-
-Semantic Scholar already answers `429` without its key in both environments.
-
-## 6. Not changed, but worth knowing
-
-- **Staging is slow.** Its Neon database is in `us-east-2` (Ohio) and its Cloud Run service in `europe-west4`.
-  Typical public requests take 1.1-2.1 s on staging against 0.5-0.7 s on production. Exports and citations take
-  5-10 s on staging. This is a staging-only infrastructure fact; the code is unchanged.
-- **Before switching on Tavily,** the Privacy Notice must name it and `POLICY_VERSION` must be bumped
-  (`DEPLOYMENT.md`).
-- The suggested RCT outline uses clinical section names ("Adverse Events") even for education trials. They are
-  editable suggestions and were left as they are.
-
-## 7. Code integrity: hotspots we already know of (please confirm, rank and propose fixes)
-
-These grew quickly while fixing live problems. None has a known functional bug, but several are maintenance
-risks. Please judge each one.
-
-| # | Where | Concern |
-|---|---|---|
-| Q1 | Typo correction exists in **three** places: `services/scholarly/spelling.py` (ESpell + OpenAlex, external), `services/fuzzy.py` `correct_from_vocabulary` (library, catalogue) and `services/search.py` `correct_against_papers` (passages, its own difflib + Counter copy) | Duplicated logic. `search.py` should probably call `fuzzy.py`. Are the three thresholds (`CONFIRM_RATIO` 50, difflib 0.8 twice) consistent and justified? |
-| Q2 | `api/routes/papers.py` `list_papers` (nested `matching` closure plus correction flow) and `api/routes/library.py` `list_library` (correction flow) | Search and correction business logic lives in route handlers, with a `db.commit()` mid-route before external calls. Should it move into a service, such as one shared "search with correction" helper? |
-| Q3 | `api/routes/discovery.py` `search` | Nested `run` closure; the correction runs beside the search and the search repeats on correction. Is the concurrency right (the correction cannot leak into `exact=true`; there is no double counting against rate limits)? |
-| Q4 | `services/deep_research.py` `run_deep_research` (about 120 lines) | Orchestration, evidence building, catalogue upserts, error-to-status mapping and persistence in one function. `sources[offset + j]` index bookkeeping couples the source list to the evidence list. |
-| Q5 | `services/ai/grounding.py` `EvidenceItem.paper: Paper \| WebPage` | A union with `isinstance` branches in `short_ref` and `citation_payload`. Fine, or should web evidence be its own type? |
-| Q6 | `services/citations/verify.py` | `_assess` is called several times per candidate (`_candidate_score`, the fallback decision, the final assessment); the OpenAlex fallback adds up to two requests per unverified reference. Performance and readability? |
-| Q7 | `services/scholarly/spelling.py` | Module-level mutable LRU `_cache` (per process, not shared across Cloud Run instances); `asyncio.wait_for` around `_suggest`. Thread or task safety, and cache poisoning (a wrong correction cached for 512 queries)? |
-| Q8 | `services/export.py` `_guidance_in_italics` | Rebuilds the content tree on each export before `citation_labels`, which keys on `id(node)`. The order of these two calls matters; is that robust? |
-| Q9 | `frontend/src/pages/DeepResearch.tsx` (307 lines), `pages/Editor.tsx` (703 lines) | Large components with several sub-components inline. |
-| Q10 | `# type: ignore[no-untyped-def]` on new nested helpers; CI runs `ruff` but **not `mypy`** | Type safety of the new code is unchecked. Should mypy run in CI? |
-| Q11 | `backend/tests/test_messy_input.py` | One file covers spelling, identifiers, the reference checker, the library, the catalogue, passages, export and HTTP keys. Split by area? |
-| Q12 | `services/scholarly/identifiers.py` | A bare number (for example `2019`) is read as a PMID (behaviour older than these changes); the prefixes are now permissive. Any false positives that matter? |
-
-## 8. Everything tested on 21 November
-
-**Automated, run locally on the final code** (Windows, embedded Postgres via `pgserver`):
-
-| Suite | Command | Result |
-|---|---|---|
-| Backend lint and format | `ruff check app tests alembic scripts ../deploy && ruff format --check app tests alembic scripts` | clean |
-| Backend tests | `python -m pytest -q` (in `backend/`) | **345 passed**, 7 deselected (live tests) |
-| Frontend types | `npx tsc -b --noEmit` | clean |
-| Frontend tests | `npx vitest run` | **156 passed** (17 files) |
-| Frontend build | `npx vite build` | built; `DeepResearch` chunk 12.8 kB |
-
-**CI** (GitHub Actions on Linux: ruff, pytest, `npm audit --audit-level=high`, tsc, vitest, vite build) was green on
-`f212c15`, `4440e81`, `94a467e` and `9537ec5`, and on every commit released.
-
-**New tests added today** (all fail on the code before the fix unless noted):
-- `backend/tests/test_messy_input.py` (15):
-  - spelling accept and reject: typos, real words, French, acronyms, identifiers, service failure, stem collision;
-  - Discover `corrected_from` and `exact`;
-  - Europe PMC address;
-  - passages typo;
-  - library words and typos, wildcards;
-  - catalogue typo;
-  - reference checker OpenAlex fallback and link years;
-  - identifier variants;
-  - entities;
-  - guidance kept and exported italic;
-  - OpenAlex key only in a header and only to OpenAlex.
-- `backend/tests/test_deep_research.py` (13).
-- `frontend/src/test/deepResearch.test.tsx` (5).
-- `frontend/src/test/messyInput.test.tsx` (3).
-- `frontend/src/test/guidance.test.ts` (2).
-- `frontend/src/test/workspace.test.tsx` (Deep research sidebar item).
-
-**Live checks against real services** (not in CI, done by hand):
-- Spelling suggestions against NCBI ESpell and OpenAlex: 14 queries, with typo, correct, acronym, DOI and French cases.
-  Measured counts are in `spelling.py`.
-- Reference checker: six real, wrong-year, made-up and DOI-only references against Crossref and OpenAlex (results
-  in section 3).
-- Europe PMC PDF service: `getPdf` returned a 604 KB PDF; `ptpmcrender` returned 403/520.
-- OpenAlex key: `200` with `X-RateLimit-Limit: 10000` on the key. Production's search consumed the key's budget, so
-  production uses it.
-- Production and staging latency: public catalogue request 0.5-0.7 s against 1.1-2.1 s.
-
-**Signed-in browser test** on staging in real Chrome: every section, before and after the fixes, recorded in
-`docs/BROWSER_TEST_RUN.md`.
-
-**Not tested:**
-- Anything needing AI keys: the Deep research written report, AI summaries and Q&A run on a scripted fake model in
-  tests only.
-- Tavily web search: mocked only.
-- Production while signed in: only staging test accounts are used.
-- Phone-width layouts in a real browser.
-
-## 9. How to run everything
+## 6. How to run
 
 ```bash
-# backend (Postgres 16 + pgvector; tests create their own database; or set TEST_PG_URL)
-cd backend && python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/ruff check app tests alembic scripts && .venv/bin/ruff format --check app tests alembic scripts
+# backend (from backend/)
 .venv/bin/python -m pytest -q
-# frontend
-cd ../frontend && npm ci && npx tsc -b --noEmit && npx vitest run && npx vite build
+.venv/bin/ruff check app tests alembic scripts && .venv/bin/ruff format --check app tests alembic scripts
+.venv/bin/python -m mypy
+# frontend (from frontend/)
+npx tsc -b --noEmit && npx vitest run && npx vite build
 ```
 
-Staging for hands-on checks: `https://paperaid-staging.web.app` (API
-`https://paperaid-api-staging-307658066472.europe-west4.run.app`). Ask the maintainer for a staging test account;
-the passwords are kept only in a git-ignored local file.
+**Rules:**
+- Do not run anything against production or staging (Cloud Run, Firebase `paperaid` or `paperaid-staging`, Neon).
+- Tests use local or embedded databases only.
+- No secrets in the repo or in your report.
+- AI, Tavily and web search stay off.
 
-## Out of scope / constraints (unchanged)
+## 7. After the audit
 
-- Never touch the Firebase project `paperaid-ca172`.
-- No secrets in the repository.
-- Production only via `DEPLOY_ENV=production deploy/release.sh`, after the maintainer's approval.
-- Tests never reach production Google services.
+Fixes go on a branch `fix/silver-feedback-audit`, with a regression test for each finding, and are answered in
+`docs/SILVER_FEEDBACK_AUDIT_RESPONSE.md`. Then they are released to staging, checked in the browser, and released
+to production with the owner's approval.
