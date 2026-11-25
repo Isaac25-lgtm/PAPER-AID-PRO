@@ -128,3 +128,40 @@ describe("streamed Discover search", () => {
     expect(screen.getByText("The long-run poverty and gender impacts of mobile money")).toBeInTheDocument();
   });
 });
+
+describe("retry (audit SF05)", () => {
+  const from = (title: string, source: string) => ({ ...work(title), sources: [source] });
+
+  it("shows a recovered database's new papers even when a former success fails on the retry", async () => {
+    open("/discover?q=malaria");
+    act(() => {
+      nth(0).emit({ type: "query", query: "malaria", corrected_from: null, identifier: null, pending: ["openalex", "europe_pmc"] });
+      nth(0).emit({ type: "results", results: [from("Old OpenAlex paper", "openalex")], providers: [{ provider: "openalex", ok: true, count: 1, error: null }, { provider: "europe_pmc", ok: false, count: 0, error: "timed out" }], pending: [] });
+      nth(0).emit({ type: "done" });
+    });
+    await userEvent.click(await screen.findByRole("button", { name: /Retry unavailable/ }));
+    act(() => {
+      nth(1).emit({ type: "query", query: "malaria", corrected_from: null, identifier: null, pending: ["openalex", "europe_pmc"] });
+      // This time Europe PMC answers and OpenAlex fails (a new API instance, or the cache expired).
+      nth(1).emit({ type: "results", results: [from("New Europe PMC paper", "europe_pmc")], providers: [{ provider: "europe_pmc", ok: true, count: 1, error: null }, { provider: "openalex", ok: false, count: 0, error: "timed out" }], pending: [] });
+      nth(1).emit({ type: "done" });
+    });
+    expect(screen.getByText("New Europe PMC paper")).toBeInTheDocument(); // the recovered database's paper appears
+    expect(screen.getByText("Old OpenAlex paper")).toBeInTheDocument(); // the earlier paper is kept
+    expect(screen.getByText(/OpenAlex: unavailable, earlier results shown/)).toBeInTheDocument(); // and said honestly
+    expect(screen.getByText(/Europe PMC: 1 results/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Retry unavailable/ })).toBeInTheDocument(); // OpenAlex can be retried
+  });
+
+  it("ignores late events from a search that has been replaced", async () => {
+    open("/discover?q=malaria");
+    act(() => nth(0).emit({ type: "query", query: "malaria", corrected_from: null, identifier: null, pending: ["openalex"] }));
+    await userEvent.clear(screen.getByLabelText("Search query"));
+    await userEvent.type(screen.getByLabelText("Search query"), "cholera{Enter}");
+    act(() => {
+      nth(0).emit({ type: "results", results: [from("Stale malaria paper", "openalex")], providers: [{ provider: "openalex", ok: true, count: 1, error: null }], pending: [] });
+      nth(0).emit({ type: "done" });
+    });
+    expect(screen.queryByText("Stale malaria paper")).not.toBeInTheDocument();
+  });
+});

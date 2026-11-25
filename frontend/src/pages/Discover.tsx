@@ -98,7 +98,7 @@ function DatabaseChip({ database }: { database: DatabaseState }) {
   return (
     <span role="listitem" className={`inline-flex items-center gap-1 rounded-full px-2 py-1 ${ok ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`} title={database.error ?? undefined}>
       {ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-      {label}: {ok ? `${database.count} results` : "unavailable"}
+      {label}: {ok ? `${database.count} results` : database.earlier ? "unavailable, earlier results shown" : "unavailable"}
     </span>
   );
 }
