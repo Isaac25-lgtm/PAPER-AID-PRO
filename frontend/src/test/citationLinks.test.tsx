@@ -139,3 +139,66 @@ describe("a citation opened right after it was inserted (audit SF11)", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 });
+
+describe("citations from the keyboard (audit SF13)", () => {
+  it("Enter on a selected citation opens its source and leaves the document unchanged", async () => {
+    const { Editor } = await import("@tiptap/core");
+    const { default: StarterKit } = await import("@tiptap/starter-kit");
+    const { NodeSelection } = await import("@tiptap/pm/state");
+    const { CitationNode } = await import("@/lib/citationNode");
+    const opened: string[][] = [];
+    const editor = new Editor({
+      extensions: [StarterKit, CitationNode.configure({ onOpen: (ids: string[]) => opened.push(ids) })],
+      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Savings rose " }, { type: "citation", attrs: { citationIds: ["c1"] } }] }] },
+    });
+    const before = JSON.stringify(editor.getJSON());
+    let citationPos = -1;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "citation") citationPos = pos;
+    });
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, citationPos)));
+    expect(editor.commands.keyboardShortcut("Enter")).toBe(true);
+    expect(opened).toEqual([["c1"]]);
+    expect(JSON.stringify(editor.getJSON())).toBe(before); // not replaced by a new line
+    editor.commands.setTextSelection(3); // elsewhere, Enter still makes a new line
+    editor.commands.keyboardShortcut("Enter");
+    expect(editor.getJSON().content).toHaveLength(2);
+    editor.destroy();
+  });
+
+  it("opened from the keyboard, the panel takes focus, its links are reachable and Escape returns to writing", async () => {
+    server.paperStatus = 200;
+    const onClose = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <CitationPopover documentId="d1" target={{ ids: ["c1"], rect: { left: 10, top: 4, bottom: 20 }, fromKeyboard: true }} onClose={onClose} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("The long-run poverty and gender impacts of mobile money");
+    expect(screen.getByRole("dialog", { name: "Cited source" })).toHaveFocus();
+    await userEvent.tab();
+    await userEvent.tab();
+    expect(screen.getByRole("link", { name: /Open paper/ })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledWith("escape");
+  });
+
+  it("several sources on a short screen scroll inside a panel that fits the window", async () => {
+    const height = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 300 });
+    try {
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <CitationPopover documentId="d1" target={{ ids: ["c1"], rect: { left: 10, top: 140, bottom: 160 } }} onClose={() => undefined} />
+        </QueryClientProvider>,
+      );
+      const panel = await screen.findByRole("dialog", { name: "Cited source" });
+      const max = parseFloat(panel.style.maxHeight);
+      expect(max).toBeGreaterThan(0);
+      expect(max).toBeLessThanOrEqual(300 - 160); // never taller than the room it opens into
+      expect(panel.className).toContain("overflow-y-auto");
+    } finally {
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: height });
+    }
+  });
+});

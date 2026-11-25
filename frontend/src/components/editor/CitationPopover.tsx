@@ -24,7 +24,12 @@ export interface CitationTarget {
   ids: string[];
   /** Where the clicked citation is on screen (the popover opens below it, or above when there is no room). */
   rect: { left: number; top: number; bottom: number };
+  /** Opened from the keyboard: the dialog takes focus so its links can be reached with Tab (audit SF13). */
+  fromKeyboard?: boolean;
 }
+
+/** How the popover was closed: Escape or its button return focus to the editor; a click elsewhere does not. */
+export type CloseReason = "escape" | "button" | "outside";
 
 /** A page locator as the reader expects it: "12" → "p. 12", "12-14" → "pp. 12-14"; anything else as written. */
 export function pageLabel(locator: string): string {
@@ -38,7 +43,7 @@ export function pageLabel(locator: string): string {
  * The source(s) behind an in-text citation, with links to the paper's page and its DOI (both in a new tab), so a
  * citation in a draft can always be followed back to what it cites (Silver, 25 November 2026).
  */
-export function CitationPopover({ documentId, target, onClose }: { documentId: string; target: CitationTarget; onClose: () => void }) {
+export function CitationPopover({ documentId, target, onClose }: { documentId: string; target: CitationTarget; onClose: (reason: CloseReason) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const citations = useQuery({
     queryKey: citationsKey(documentId),
@@ -61,9 +66,14 @@ export function CitationPopover({ documentId, target, onClose }: { documentId: s
   });
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose("escape");
+      }
+    };
     const onDown = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) onClose();
+      if (ref.current && !ref.current.contains(event.target as Node)) onClose("outside");
     };
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
@@ -73,26 +83,37 @@ export function CitationPopover({ documentId, target, onClose }: { documentId: s
     };
   }, [onClose]);
 
-  // Below the citation; above it when the popover would run off the bottom of the window (measured once drawn).
+  // Below the citation; above it when there is more room there. Content taller than the room on either side scrolls
+  // inside a window-bounded panel, so several sources stay usable on a short screen (audit SF13).
   const [above, setAbove] = useState(false);
+  const roomBelow = window.innerHeight - target.rect.bottom - 14;
+  const roomAbove = target.rect.top - 14;
   const loaded = papers.every((p) => !p.isLoading) && !citations.isLoading;
   useLayoutEffect(() => {
-    const height = ref.current?.offsetHeight ?? 0;
-    setAbove(target.rect.bottom + 6 + height > window.innerHeight - 8 && target.rect.top - 6 - height >= 8);
-  }, [target, loaded]);
+    const height = ref.current?.scrollHeight ?? 0;
+    setAbove(height > roomBelow && roomAbove > roomBelow);
+  }, [target, loaded, roomBelow, roomAbove]);
+  useEffect(() => {
+    if (target.fromKeyboard) ref.current?.focus();
+  }, [target]);
   const left = Math.max(8, Math.min(target.rect.left, window.innerWidth - 360));
-  const position = above ? { bottom: window.innerHeight - target.rect.top + 6, left } : { top: target.rect.bottom + 6, left };
+  const position = {
+    left,
+    maxHeight: Math.max(120, above ? roomAbove : roomBelow),
+    ...(above ? { bottom: window.innerHeight - target.rect.top + 6 } : { top: target.rect.bottom + 6 }),
+  };
   return (
     <div
       ref={ref}
       role="dialog"
       aria-label="Cited source"
-      className="fixed z-50 w-[min(340px,calc(100vw-16px))] rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-lg"
+      tabIndex={-1}
+      className="fixed z-50 w-[min(340px,calc(100vw-16px))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-lg outline-none"
       style={position}
     >
       <div className="mb-1 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cited source{target.ids.length > 1 ? "s" : ""}</span>
-        <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-100" aria-label="Close">
+        <button type="button" onClick={() => onClose("button")} className="rounded p-1 text-slate-500 hover:bg-slate-100" aria-label="Close">
           <X className="h-3.5 w-3.5" />
         </button>
       </div>

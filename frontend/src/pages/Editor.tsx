@@ -364,6 +364,11 @@ export default function EditorPage() {
   const openCiteRef = useRef<(pos: number) => void>(() => undefined);
   const [rendered, setRendered] = useState<RenderedCitations | null>(null);
   const [citationTarget, setCitationTarget] = useState<CitationTarget | null>(null);
+  // Opens a citation's source, by click or by Enter on a selected citation (audit SF13).
+  const openCitationRef = useRef((ids: string[], element: HTMLElement | null, fromKeyboard: boolean) => {
+    const rect = element?.getBoundingClientRect() ?? { left: 16, top: 16, bottom: 32 };
+    setCitationTarget({ ids, rect: { left: rect.left, top: rect.top, bottom: rect.bottom }, fromKeyboard });
+  });
   const versionRef = useRef<number>(1);
   const timer = useRef<number | undefined>(undefined);
   const retryTimer = useRef<number | undefined>(undefined);
@@ -410,7 +415,7 @@ export default function EditorPage() {
       TableRow,
       TableHeader,
       TableCell,
-      CitationNode,
+      CitationNode.configure({ onOpen: (ids: string[], element: HTMLElement | null) => openCitationRef.current(ids, element, true) }),
       GhostText,
       CiteTrigger.configure({ onTrigger: (pos: number) => openCiteRef.current(pos) }),
       GuidanceParagraph,
@@ -651,13 +656,21 @@ export default function EditorPage() {
                 const chip = (event.target as HTMLElement).closest<HTMLElement>(".citation-chip");
                 const ids = chip?.dataset.citationIds?.split(",").filter(Boolean);
                 if (!chip || !ids?.length) return;
-                const rect = chip.getBoundingClientRect();
-                setCitationTarget({ ids, rect: { left: rect.left, top: rect.top, bottom: rect.bottom } });
+                openCitationRef.current(ids, chip, false);
               }}
             >
               <EditorContent editor={editor} />
             </div>
-            {citationTarget && <CitationPopover documentId={id} target={citationTarget} onClose={() => setCitationTarget(null)} />}
+            {citationTarget && (
+              <CitationPopover
+                documentId={id}
+                target={citationTarget}
+                onClose={(reason) => {
+                  setCitationTarget(null);
+                  if (reason !== "outside") editor?.commands.focus(); // back to writing where they were
+                }}
+              />
+            )}
             {rendered && rendered.bibliography.length > 0 && (
               <section className="mt-10 border-t border-slate-200 pt-6">
                 <h2 className="mb-3 font-serif text-xl font-bold">References</h2>
