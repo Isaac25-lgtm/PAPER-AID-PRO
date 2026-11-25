@@ -12,7 +12,7 @@ import math
 import re
 import time
 from collections import OrderedDict
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 
 from app.config import get_settings
 from app.errors import AppError
@@ -183,14 +183,43 @@ def rank(works: list[ScholarlyWork], fused: dict[int, float], query: str) -> lis
     return [w for _, w in sorted(enumerate(works), key=score, reverse=True)]
 
 
-_inflight: dict[tuple[object, ...], asyncio.Future[list[ScholarlyWork]]] = {}
+class _Shared:
+    """One upstream request shared by identical searches, and how many of them are still waiting for it."""
+
+    def __init__(self, future: asyncio.Future[list[ScholarlyWork]]) -> None:
+        self.future = future
+        self.waiters = 0
 
 
-def _settle(key: tuple[object, ...], done: asyncio.Future[list[ScholarlyWork]]) -> None:
-    if _inflight.get(key) is done:
+_inflight: dict[tuple[object, ...], _Shared] = {}
+
+
+def _settle(key: tuple[object, ...], shared: _Shared) -> None:
+    if _inflight.get(key) is shared:
         del _inflight[key]
-    if not done.cancelled():
-        done.exception()  # retrieved here, so an outcome nobody awaited any more is never logged as lost
+    if not shared.future.cancelled():
+        shared.future.exception()  # retrieved here, so an outcome nobody awaited any more is never logged as lost
+
+
+async def _await_shared(
+    key: tuple[object, ...], start: Callable[[], Awaitable[list[ScholarlyWork]]]
+) -> list[ScholarlyWork]:
+    """Identical searches already on their way to a database share one request (audit SF06). One person leaving
+    does not cancel it for the others; when the last one has left, it is cancelled and has ended before this
+    returns, so nothing of an abandoned search keeps running (audit: stream lifecycle)."""
+    shared = _inflight.get(key)
+    if shared is None:
+        shared = _Shared(asyncio.ensure_future(start()))
+        _inflight[key] = shared
+        shared.future.add_done_callback(lambda _done, key=key, shared=shared: _settle(key, shared))
+    shared.waiters += 1
+    try:
+        return await asyncio.shield(shared.future)
+    finally:
+        shared.waiters -= 1
+        if shared.waiters == 0 and not shared.future.done():
+            shared.future.cancel()
+            await asyncio.gather(shared.future, return_exceptions=True)
 
 
 async def _run_provider(
@@ -208,19 +237,13 @@ async def _run_provider(
     if cached is not None:
         return ProviderStatus(provider=name, ok=True, count=len(cached)), cached
     try:
-        # Identical searches already on their way to this database share one request (audit SF06). The shared
-        # request is shielded, so one person leaving does not cancel it for the others.
-        shared = _inflight.get(key)
-        if shared is None:
-            shared = asyncio.ensure_future(
-                asyncio.wait_for(
-                    provider.search(query, limit, year_from, year_to, oa_only, subject=subject),
-                    timeout=PROVIDER_TIMEOUT_SECONDS,
-                )
-            )
-            _inflight[key] = shared
-            shared.add_done_callback(lambda done, key=key: _settle(key, done))
-        works = await asyncio.shield(shared)
+        works = await _await_shared(
+            key,
+            lambda: asyncio.wait_for(
+                provider.search(query, limit, year_from, year_to, oa_only, subject=subject),
+                timeout=PROVIDER_TIMEOUT_SECONDS,
+            ),
+        )
         _remember(key, works)
         return ProviderStatus(provider=name, ok=True, count=len(works)), works
     except TimeoutError:
@@ -306,6 +329,8 @@ async def search_progressively(
     finally:
         for task in tasks:
             task.cancel()
+        # Joined, not just signalled: nothing of this search is still running once the stream has closed.
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 _LOOKUP_ORDER: dict[str, tuple[ProviderName, ...]] = {

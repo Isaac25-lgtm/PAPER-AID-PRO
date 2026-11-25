@@ -197,11 +197,14 @@ async def search(
         # The spelling check runs beside the search. Once the typed search is back it may take at most
         # SPELLING_GRACE_SECONDS more, so a slow spelling service never holds up a correct query (audit Q3).
         spelling = asyncio.create_task(suggest_correction(typed))
-        works, statuses = await run(typed)
         try:
-            corrected = await asyncio.wait_for(spelling, timeout=SPELLING_GRACE_SECONDS)
-        except TimeoutError:
-            corrected = None
+            works, statuses = await run(typed)
+            try:
+                corrected = await asyncio.wait_for(spelling, timeout=SPELLING_GRACE_SECONDS)
+            except TimeoutError:
+                corrected = None
+        finally:
+            spelling.cancel()  # never left running if the search is interrupted (audit: stream lifecycle)
         if corrected:
             retry_works, retry_statuses = await run(corrected)
             if retry_works:

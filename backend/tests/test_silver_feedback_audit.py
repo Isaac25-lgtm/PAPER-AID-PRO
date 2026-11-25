@@ -433,3 +433,36 @@ async def test_sf12_a_question_mentioning_a_doi_is_a_keyword_search_and_identifi
         assert exact_identifier(typed) is not None, typed
     for typed in ("2019", "1998 2003", "see10.1126/science.aah5309", "mobile money 10.1/x"):
         assert exact_identifier(typed) is None, typed
+
+
+# ------------------------------------------------------------------------------------------- stream lifecycle
+async def test_closing_a_progressive_search_joins_its_unfinished_databases():
+    """The report's lifecycle note: when the person leaves, every unfinished database request has actually ended
+    (not merely been asked to) by the time the stream is closed."""
+    import asyncio
+
+    from app.services.scholarly import aggregator
+
+    ended: list[str] = []
+
+    class Slow:
+        async def search(self, query, limit, year_from, year_to, oa, subject=None):  # type: ignore[no-untyped-def]
+            try:
+                await asyncio.sleep(10)
+            finally:
+                ended.append("slow")
+            return []
+
+    class Fast:
+        async def search(self, query, limit, year_from, year_to, oa, subject=None):  # type: ignore[no-untyped-def]
+            return []
+
+    originals = {name: aggregator.PROVIDERS[name] for name in ("openalex", "crossref")}
+    aggregator.PROVIDERS["openalex"], aggregator.PROVIDERS["crossref"] = Fast(), Slow()  # type: ignore[assignment]
+    try:
+        stream = aggregator.search_progressively("x", providers=["openalex", "crossref"])
+        await stream.__anext__()  # the fast database answered; the slow one is still running
+        await stream.aclose()  # the person left
+        assert ended == ["slow"]
+    finally:
+        aggregator.PROVIDERS.update(originals)  # type: ignore[arg-type]
