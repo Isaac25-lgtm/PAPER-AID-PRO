@@ -50,8 +50,9 @@ const EMPTY: StreamedSearch = { query: "", correctedFrom: null, identifier: null
 export function useSearchStream(params: SearchParams | null) {
   const [state, setState] = useState<StreamedSearch>(EMPTY);
   const [attempt, setAttempt] = useState(0);
-  // A retry searches exactly the words already shown, and keeps saying what they were corrected from.
-  const retryOf = useRef<{ query: string; correctedFrom: string | null } | null>(null);
+  // A retry searches exactly the words already shown, and keeps saying what they were corrected from. What was
+  // already found stays on screen while the failed databases are asked again (Silver, 25 November 2026).
+  const retryOf = useRef<{ query: string; correctedFrom: string | null; results: Work[]; databases: DatabaseState[] } | null>(null);
   const key = params ? JSON.stringify(params) : "";
 
   useEffect(() => {
@@ -62,7 +63,15 @@ export function useSearchStream(params: SearchParams | null) {
     const controller = new AbortController();
     const retrying = retryOf.current;
     retryOf.current = null;
-    setState({ ...EMPTY, query: retrying?.query ?? params.q, correctedFrom: retrying?.correctedFrom ?? null });
+    // Databases that answered before a retry: they keep their answer (and their results stay shown) until the
+    // retried search has heard from all of them again; only the failed ones go back to "searching".
+    const kept = new Map((retrying?.databases ?? []).filter((d) => d.state === "done").map((d) => [d.provider, d]));
+    const again = (d: DatabaseState): DatabaseState => kept.get(d.provider) ?? { ...d, state: "searching", count: 0, error: null };
+    setState(
+      retrying
+        ? { ...EMPTY, query: retrying.query, correctedFrom: retrying.correctedFrom, results: retrying.results, databases: retrying.databases.map(again) }
+        : { ...EMPTY, query: params.q },
+    );
     const query = {
       q: retrying?.query ?? params.q,
       subject: params.subject === "all" ? undefined : params.subject,
@@ -81,16 +90,19 @@ export function useSearchStream(params: SearchParams | null) {
               query: event.query,
               correctedFrom: retrying ? retrying.correctedFrom : event.corrected_from,
               identifier: event.identifier,
-              results: [],
-              databases: event.pending.map((provider) => ({ provider, state: "searching", count: 0, error: null })),
+              results: retrying ? current.results : [],
+              databases: event.pending.map((provider) => again({ provider, state: "searching", count: 0, error: null })),
             };
           case "results": {
             const answered = new Map(event.providers.map((p) => [p.provider, p]));
             const databases = current.databases.map((d) => {
               const p = answered.get(d.provider);
-              return p ? { provider: d.provider, state: p.ok ? "done" : "failed", count: p.count, error: p.error } as DatabaseState : d;
+              if (!p || (!p.ok && kept.has(d.provider))) return d; // a database that answered before never turns "failed"
+              return { provider: d.provider, state: p.ok ? "done" : "failed", count: p.count, error: p.error } as DatabaseState;
             });
-            return { ...current, results: event.results, databases };
+            // The server's list replaces the one shown once it includes every database that had answered before.
+            const complete = [...kept.keys()].every((name) => answered.get(name)?.ok);
+            return { ...current, results: complete ? event.results : current.results, databases };
           }
           case "suggestion":
             return { ...current, suggestion: event.query };
@@ -110,9 +122,9 @@ export function useSearchStream(params: SearchParams | null) {
   }, [key, attempt]);
 
   const retry = useCallback(() => {
-    retryOf.current = { query: state.query, correctedFrom: state.correctedFrom };
+    retryOf.current = { query: state.query, correctedFrom: state.correctedFrom, results: state.results, databases: state.databases };
     setAttempt((n) => n + 1);
-  }, [state.query, state.correctedFrom]);
+  }, [state.query, state.correctedFrom, state.results, state.databases]);
 
   return { ...state, retry, searching: Boolean(params && params.q.trim().length >= 2) && !state.done };
 }

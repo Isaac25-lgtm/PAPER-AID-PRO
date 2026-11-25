@@ -59,6 +59,24 @@ describe("streamed Discover search", () => {
     await userEvent.click(screen.getByRole("button", { name: /Retry unavailable/ }));
     expect(streams.calls).toHaveLength(2);
     expect(nth(1).params).toMatchObject({ q: "malaria", exact: true }); // the same words, re-asked
+
+    // While the retry runs, what was found stays on screen and only the failed database searches again.
+    expect(screen.getByText("Fast paper")).toBeInTheDocument();
+    expect(screen.getByText(/OpenAlex: 1 results/)).toBeInTheDocument();
+    expect(screen.getByText(/Europe PMC: searching/)).toBeInTheDocument();
+    act(() => {
+      nth(1).emit({ type: "query", query: "malaria", corrected_from: null, identifier: null, pending: ["openalex", "europe_pmc"] });
+      nth(1).emit({ type: "results", results: [work("Slow paper")], providers: [{ provider: "europe_pmc", ok: true, count: 1, error: null }], pending: ["openalex"] });
+    });
+    expect(screen.getByText("Fast paper")).toBeInTheDocument(); // not replaced until OpenAlex has answered again
+    expect(screen.getByText(/OpenAlex: 1 results/)).toBeInTheDocument();
+    act(() => {
+      nth(1).emit({ type: "results", results: [work("Fast paper"), work("Slow paper")], providers: [{ provider: "europe_pmc", ok: true, count: 1, error: null }, { provider: "openalex", ok: true, count: 1, error: null }], pending: [] });
+      nth(1).emit({ type: "done" });
+    });
+    expect(screen.getByText("Slow paper")).toBeInTheDocument();
+    expect(screen.getByText(/Europe PMC: 1 results/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Retry unavailable/ })).not.toBeInTheDocument();
   });
 
   it("a retry after a correction keeps saying what was corrected", async () => {
