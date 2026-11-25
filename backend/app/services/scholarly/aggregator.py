@@ -267,14 +267,19 @@ async def search_progressively(
     limit: int = 20,
     year_from: int | None = None,
     year_to: int | None = None,
+    open_access_only: bool = False,
     subject: str = "all",
 ) -> AsyncIterator[tuple[ProviderStatus, list[ScholarlyWork]]]:
     """Each database's answer as soon as it arrives (fastest first). Unfinished requests are cancelled if the
-    caller stops early, e.g. when the person leaves the page."""
+    caller stops early, e.g. when the person leaves the page.
+
+    open_access_only is passed to every database, exactly as federated_search does: filtering an unrestricted
+    first page afterwards would miss open papers beyond it (audit SF04). merged_results still filters as a guard."""
     per_provider = max(10, min(limit, 40))
     selected = [p for p in dict.fromkeys(providers) if p in PROVIDERS and available(p)]
     tasks = [
-        asyncio.create_task(_run_provider(p, query, per_provider, year_from, year_to, False, subject)) for p in selected
+        asyncio.create_task(_run_provider(p, query, per_provider, year_from, year_to, open_access_only, subject))
+        for p in selected
     ]
     try:
         for finished in asyncio.as_completed(tasks):

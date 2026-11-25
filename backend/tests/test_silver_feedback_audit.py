@@ -155,3 +155,52 @@ def test_sf03_shared_link_fixtures():
     }
     for text, url in cases.items():
         assert [part for part, is_link in split_links(text) if is_link] == [url], text
+
+
+# ---------------------------------------------------------------------------------------------------- SF04
+class OpenOnlyWhenAsked:
+    """A database whose unrestricted first page holds only a closed paper; asked for open access, it returns an
+    open one (as OpenAlex does with its is_oa filter)."""
+
+    def __init__(self) -> None:
+        self.flags: list[bool] = []
+
+    async def search(self, query, limit, year_from, year_to, open_access_only, subject=None):  # type: ignore[no-untyped-def]
+        from app.services.scholarly.models import ScholarlyWork
+
+        self.flags.append(open_access_only)
+        if open_access_only:
+            return [ScholarlyWork(title="Open paper on school meals", is_open_access=True, sources=["openalex"])]
+        return [ScholarlyWork(title="Closed paper on school meals", is_open_access=False, sources=["openalex"])]
+
+
+async def _no_correction(query):  # type: ignore[no-untyped-def]
+    return None
+
+
+async def _stream(client, **params):  # type: ignore[no-untyped-def]
+    import json
+
+    events = []
+    async with client.stream("GET", "/api/v1/discovery/search/stream", params=params) as response:
+        assert response.status_code == 200
+        async for line in response.aiter_lines():
+            if line.strip():
+                events.append(json.loads(line))
+    return events
+
+
+async def test_sf04_streamed_and_one_shot_open_access_search_agree(client, monkeypatch):
+    from app.api.routes import discovery
+    from app.services.scholarly import aggregator
+
+    fake = OpenOnlyWhenAsked()
+    monkeypatch.setitem(aggregator.PROVIDERS, "openalex", fake)
+    monkeypatch.setattr(discovery, "suggest_correction", _no_correction)
+    params = {"q": "school meals", "providers": "openalex", "open_access_only": "true"}
+
+    for _ in range(2):  # cold, then warm cache
+        one_shot = (await client.get("/api/v1/discovery/search", params=params)).json()["results"]
+        streamed = [e for e in await _stream(client, **params) if e["type"] == "results"][-1]["results"]
+        assert [r["title"] for r in streamed] == [r["title"] for r in one_shot] == ["Open paper on school meals"]
+    assert fake.flags and all(fake.flags)  # every request asked the database for open access

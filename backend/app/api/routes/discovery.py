@@ -266,7 +266,13 @@ async def search_stream(
                 statuses: list[ProviderStatusOut] = []
                 pending = list(selected)
                 async for status, works in search_progressively(
-                    text, providers=selected, limit=limit, year_from=year_from, year_to=year_to, subject=subject
+                    text,
+                    providers=selected,
+                    limit=limit,
+                    year_from=year_from,
+                    year_to=year_to,
+                    open_access_only=open_access_only,
+                    subject=subject,
                 ):
                     pending.remove(status.provider)
                     statuses.append(ProviderStatusOut(**status.model_dump()))
