@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { BookOpen, FileText, FlaskConical, House, LibraryBig, LogOut, Menu, Quote, Search, Shield, UserRound, X } from "lucide-react";
+import { FileText, FlaskConical, House, LibraryBig, LogOut, Menu, Quote, Search, Shield, UserRound, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router";
 import { DataRightsPanel } from "./DataRights";
@@ -13,8 +13,7 @@ import { WorkspaceShell } from "./Workspace";
 
 const NAV = [
   { to: "/dashboard", label: "Home", icon: House, auth: true },
-  { to: "/discover", label: "Discover", icon: Search, auth: false },
-  { to: "/papers", label: "Catalog", icon: BookOpen, auth: false },
+  { to: "/discover", label: "Find papers", icon: Search, auth: false },
   { to: "/library", label: "Library", icon: LibraryBig, auth: true },
   { to: "/documents", label: "Documents", icon: FileText, auth: true },
   { to: "/research", label: "Research", icon: FlaskConical, auth: true },

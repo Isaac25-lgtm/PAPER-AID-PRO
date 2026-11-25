@@ -6,6 +6,7 @@ import { Link, useSearchParams } from "react-router";
 import { SectionGuide } from "@/components/Guidance";
 import { Container } from "@/components/Layout";
 import { PaperCard } from "@/components/papers";
+import { FindPapersTabs } from "@/components/FindPapersTabs";
 import { Alert, Button, EmptyState, Input, PageHeader, Select, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import type { PaperPage } from "@/lib/types";
@@ -33,7 +34,8 @@ export default function CatalogPage() {
 
   return (
     <Container>
-      <PageHeader title="Catalog" subtitle="Every paper imported into PaperAid Pro, plus your private uploads." />
+      <PageHeader title="Find papers" subtitle="Papers already in PaperAid: everything someone has imported, plus your private uploads. Open one to read, cite or ask about it." />
+      <FindPapersTabs />
       <SectionGuide section="catalog" />
       <form className="mb-6 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); update({ q: draft.trim() || null, page: null, sort: null, exact: null }); }}>
         <Input className="min-w-64 flex-1" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Search titles, journals and abstracts" aria-label="Search catalog" />

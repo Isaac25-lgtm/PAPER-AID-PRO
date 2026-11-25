@@ -87,10 +87,14 @@ describe("workspace sidebar", () => {
     expect(await within(sidebar).findByRole("link", { name: "Chapter 2 · Literature review" })).toHaveAttribute("href", "/documents/d1");
     const library = within(sidebar).getByRole("link", { name: /Library/ });
     expect(library).toHaveTextContent("34");
-    for (const name of ["Home", "Documents", "Research", "Citations", "Discover", "Catalog"]) {
+    for (const name of ["Home", "Documents", "Citations", "Find papers"]) {
       expect(within(sidebar).getByRole("link", { name: new RegExp(name) })).toBeInTheDocument();
     }
-    expect(within(sidebar).getByRole("link", { name: "Deep research" })).toHaveAttribute("href", "/research/deep");
+    // Research is one group with its two modes inside it (Silver, 25 November 2026); the catalogue is a tab of Find papers.
+    const research = within(sidebar).getByRole("list", { name: "Research" });
+    expect(within(research).getByRole("link", { name: "Ask my papers" })).toHaveAttribute("href", "/research");
+    expect(within(research).getByRole("link", { name: "Deep research" })).toHaveAttribute("href", "/research/deep");
+    expect(within(sidebar).queryByRole("link", { name: /Catalog/ })).not.toBeInTheDocument();
     expect(within(sidebar).queryByRole("link", { name: /Admin/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Create account" })).not.toBeInTheDocument(); // no public header
   });

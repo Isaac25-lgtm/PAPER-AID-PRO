@@ -42,7 +42,17 @@ const COLLAPSE_KEY = "paperaid.sidebar.collapsed";
 const DESKTOP_QUERY = "(min-width: 1024px)";
 const RECENT = 6;
 
-type Item = { to: string; label: string; icon: ComponentType<{ className?: string }>; count?: number; end?: boolean };
+type Item = {
+  to: string;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  count?: number;
+  end?: boolean;
+  /** Sub-pages shown indented under this item (Research: Ask my papers, Deep research). */
+  children?: Item[];
+  /** Other paths on which this item counts as the current page (Find papers also covers the catalogue). */
+  alsoOn?: string[];
+};
 
 function readCollapsed(): boolean {
   try {
@@ -66,18 +76,25 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
   const { openHelp } = useGuidance();
   const navigate = useNavigate();
   const { documents, progress } = useWorkspaceData();
+  const location = useLocation();
   // Unique per sidebar instance: the desktop sidebar and the phone drawer can both be in the page.
   const uid = useId();
   const recent = [...(documents.data ?? [])].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, RECENT);
   const items: Item[] = [
     { to: "/dashboard", label: "Home", icon: House, end: true },
-    { to: "/documents", label: "Documents", icon: FileText, count: progress.data?.documents, end: true },
     { to: "/library", label: "Library", icon: LibraryBig, count: progress.data?.library },
-    { to: "/research", label: "Research", icon: FlaskConical, end: true },
-    { to: "/research/deep", label: "Deep research", icon: Globe },
+    { to: "/documents", label: "Documents", icon: FileText, count: progress.data?.documents, end: true },
+    {
+      to: "/research",
+      label: "Research",
+      icon: FlaskConical,
+      children: [
+        { to: "/research", label: "Ask my papers", icon: BookOpen, end: true },
+        { to: "/research/deep", label: "Deep research", icon: Globe },
+      ],
+    },
+    { to: "/discover", label: "Find papers", icon: Search, alsoOn: ["/papers"] },
     { to: "/tools/citations", label: "Citations", icon: Quote },
-    { to: "/discover", label: "Discover", icon: Search },
-    { to: "/papers", label: "Catalog", icon: BookOpen },
     ...(user?.role === "admin" ? [{ to: "/admin", label: "Admin", icon: Shield }] : []),
   ];
   const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -152,13 +169,40 @@ function Sidebar({ collapsed, onToggle, onNavigate }: { collapsed: boolean; onTo
             <h2 id={`${uid}-workspace`} className="mb-1 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Workspace</h2>
           )}
           <ul className="space-y-0.5">
-            {items.map(({ to, label, icon: Icon, count, end }) => (
-              <li key={to}>
-                <NavLink to={to} end={end} onClick={onNavigate} className={linkClass} title={collapsed ? label : undefined} aria-label={collapsed ? label : undefined}>
-                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                  {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
-                  {!collapsed && count !== undefined && count > 0 && <span className="font-mono text-[11px] tabular-nums text-slate-500">{count.toLocaleString()}</span>}
-                </NavLink>
+            {items.map(({ to, label, icon: Icon, count, end, children, alsoOn }) => (
+              <li key={label}>
+                {children ? (
+                  // A group heading that opens its first page; its pages are listed under it.
+                  <NavLink to={to} onClick={onNavigate} className={({ isActive }) => linkClass({ isActive: isActive && collapsed })} title={collapsed ? label : undefined} aria-label={collapsed ? label : undefined}>
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                    {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
+                  </NavLink>
+                ) : (
+                  <NavLink
+                    to={to}
+                    end={end}
+                    onClick={onNavigate}
+                    className={({ isActive }) => linkClass({ isActive: isActive || Boolean(alsoOn?.includes(location.pathname)) })}
+                    title={collapsed ? label : undefined}
+                    aria-label={collapsed ? label : undefined}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                    {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
+                    {!collapsed && count !== undefined && count > 0 && <span className="font-mono text-[11px] tabular-nums text-slate-500">{count.toLocaleString()}</span>}
+                  </NavLink>
+                )}
+                {children && !collapsed && (
+                  <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-slate-200 pl-2" aria-label={label}>
+                    {children.map((child) => (
+                      <li key={child.to}>
+                        <NavLink to={child.to} end={child.end} onClick={onNavigate} className={linkClass}>
+                          <child.icon className="h-4 w-4 shrink-0" aria-hidden />
+                          <span className="min-w-0 flex-1 truncate">{child.label}</span>
+                        </NavLink>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>

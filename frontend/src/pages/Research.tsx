@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FlaskConical, MessageSquare, Plus, Trash2 } from "lucide-react";
+import { FlaskConical, Globe, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
@@ -19,8 +19,12 @@ export default function ResearchPage() {
   const [params, setParams] = useSearchParams();
   const conversationId = params.get("c");
   // null = untouched (a reopened thread uses its own papers); a Set, even an empty one, is the user's explicit choice.
-  const [selected, setSelected] = useState<Set<string> | null>(null);
-  const [question, setQuestion] = useState("");
+  // A question and papers handed over from Deep research arrive as ?q= and ?papers=id,id.
+  const [selected, setSelected] = useState<Set<string> | null>(() => {
+    const handed = params.get("papers");
+    return handed ? new Set(handed.split(",").filter(Boolean)) : null;
+  });
+  const [question, setQuestion] = useState(() => params.get("q") ?? "");
   const [filter, setFilter] = useState("");
 
   const library = useLibrarySearch(filter, 100);
@@ -72,7 +76,7 @@ export default function ResearchPage() {
 
   return (
     <Container>
-      <PageHeader title="Research assistant" subtitle="Ask a question across papers you choose. Every claim is linked to the passage or abstract it came from." />
+      <PageHeader title="Research: ask my papers" subtitle="Ask a question across papers you choose from your library. Every claim is linked to the passage or abstract it came from." />
       <ResearchModes />
       {ai.known && !ai.enabled && (
         <div className="mb-4">
@@ -123,7 +127,14 @@ export default function ResearchPage() {
               <Textarea rows={3} value={question} maxLength={2000} onChange={(e) => setQuestion(e.target.value)} placeholder="e.g. What do these studies find about the main question, and where do they disagree?" aria-label="Research question" />
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-500">{effectiveSelection.size} paper{effectiveSelection.size === 1 ? "" : "s"} selected</span>
-                <Button type="submit" loading={ask.isPending} disabled={!ai.enabled || !effectiveSelection.size || question.trim().length < 3}><MessageSquare className="h-4 w-4" /> Ask</Button>
+                <span className="flex flex-wrap items-center gap-2">
+                  {question.trim().length >= 10 && (
+                    <Link to={`/research/deep?q=${encodeURIComponent(question.trim())}`} className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline">
+                      <Globe className="h-4 w-4" /> Search further with Deep research
+                    </Link>
+                  )}
+                  <Button type="submit" loading={ask.isPending} disabled={!ai.enabled || !effectiveSelection.size || question.trim().length < 3}><MessageSquare className="h-4 w-4" /> Ask</Button>
+                </span>
               </div>
             </form>
             {ask.error && <div className="mt-3"><AIError error={ask.error} /></div>}

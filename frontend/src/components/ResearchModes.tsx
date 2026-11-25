@@ -4,8 +4,8 @@ import { NavLink } from "react-router";
 
 /** The two ways to research, side by side on both pages, so the difference is always visible. */
 const MODES = [
-  { to: "/research", icon: FlaskConical, title: "My papers", body: "Ask across papers already in your library" },
-  { to: "/research/deep", icon: Globe, title: "Deep research", body: "Search the scholarly databases and the web for new sources" },
+  { to: "/research", icon: FlaskConical, title: "Ask my papers", body: "Answers from papers already in your library" },
+  { to: "/research/deep", icon: Globe, title: "Deep research", body: "Finds new sources in the scholarly databases (and the web) and writes a checked report" },
 ];
 
 export function ResearchModes() {

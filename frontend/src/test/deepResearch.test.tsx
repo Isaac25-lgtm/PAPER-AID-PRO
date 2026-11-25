@@ -89,8 +89,8 @@ describe("deep research", () => {
   it("sits beside Research on your own papers, with the difference spelled out", async () => {
     wrap(<DeepResearchPage />);
     const modes = screen.getByRole("navigation", { name: "Research mode" });
-    expect(within(modes).getByRole("link", { name: /My papers.*already in your library/ })).toHaveAttribute("href", "/research");
-    expect(within(modes).getByRole("link", { name: /Deep research.*databases and the web/ })).toHaveAttribute("aria-current", "page");
+    expect(within(modes).getByRole("link", { name: /Ask my papers.*already in your library/ })).toHaveAttribute("href", "/research");
+    expect(within(modes).getByRole("link", { name: /Deep research.*Finds new sources/ })).toHaveAttribute("aria-current", "page");
   });
 
   it("says plainly what is not connected yet", async () => {

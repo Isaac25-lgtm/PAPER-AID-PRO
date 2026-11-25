@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CheckCircle2, CircleDashed, ExternalLink, Globe, Plus, Search, Trash2, Unlock, XCircle } from "lucide-react";
+import { Check, CheckCircle2, CircleDashed, ExternalLink, Globe, MessageSquare, Plus, Search, Trash2, Unlock, XCircle } from "lucide-react";
 import { useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
 import { Container } from "@/components/Layout";
 import { ResearchModes } from "@/components/ResearchModes";
 import { Alert, Badge, Button, Card, EmptyState, Input, PageHeader, Select, Spinner, Textarea } from "@/components/ui";
-import { api, errorMessage } from "@/lib/api";
+import { ApiError, api, errorMessage } from "@/lib/api";
 import { safeHref } from "@/lib/format";
 import { relativeTime } from "@/lib/format";
 import type { DeepResearchRun, DeepResearchService, DeepResearchSource, DeepResearchStatus, DeepResearchSummary, Paper, Subject } from "@/lib/types";
@@ -25,7 +25,8 @@ export default function DeepResearchPage() {
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const runId = params.get("r");
-  const [question, setQuestion] = useState("");
+  // A question handed over from "Ask my papers" arrives as ?q=.
+  const [question, setQuestion] = useState(() => params.get("q") ?? "");
   const [subject, setSubject] = useState<Subject>("all");
   const [yearFrom, setYearFrom] = useState("");
   const [yearTo, setYearTo] = useState("");
@@ -207,6 +208,50 @@ function serviceLabel(service: DeepResearchService): string {
   return service.kind === "web" ? "General web" : PROVIDER_LABELS[service.name] ?? service.name;
 }
 
+/** At most this many sources are handed to "Ask my papers" (each is saved to the library first). */
+const HANDOVER_LIMIT = 8;
+
+/**
+ * "Ask my papers about these sources": the sources read for the report (or, without a report, the first ones that
+ * can be saved) are saved to the library, then Ask my papers opens with them selected and the question filled in.
+ */
+function AskAboutSources({ run }: { run: DeepResearchRun }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const picked = (run.sources.some((s) => s.read && s.paper_id) ? run.sources.filter((s) => s.read && s.paper_id) : run.sources.filter((s) => s.kind === "scholarly" && (s.paper_id || s.identifier))).slice(0, HANDOVER_LIMIT);
+  const handover = useMutation({
+    mutationFn: async () => {
+      const ids: string[] = [];
+      for (const source of picked) {
+        if (source.paper_id) {
+          await api.post("/library", { paper_id: source.paper_id }).catch((error: unknown) => {
+            if (!(error instanceof ApiError && error.status === 409)) throw error; // already in the library is fine
+          });
+          ids.push(source.paper_id);
+        } else if (source.identifier) {
+          const paper = await api.post<Paper>("/papers/import", { identifier: source.identifier, add_to_library: true });
+          ids.push(paper.id);
+        }
+      }
+      return ids;
+    },
+    onSuccess: (ids) => {
+      void queryClient.invalidateQueries({ queryKey: ["library"] });
+      navigate(`/research?q=${encodeURIComponent(run.question)}&papers=${ids.join(",")}`);
+    },
+  });
+  if (!picked.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="sm" variant="secondary" loading={handover.isPending} onClick={() => handover.mutate()}>
+        <MessageSquare className="h-4 w-4" /> Ask my papers about these sources
+      </Button>
+      <span className="text-xs text-slate-500">Saves {picked.length} source{picked.length === 1 ? "" : "s"} to your library and selects them.</span>
+      {handover.error && <span className="text-sm text-red-700">{errorMessage(handover.error)}</span>}
+    </div>
+  );
+}
+
 function RunView({ run }: { run: DeepResearchRun }) {
   const notice = REPORT_NOTICE[run.report_status];
   const read = run.sources.filter((s) => s.read);
@@ -217,6 +262,7 @@ function RunView({ run }: { run: DeepResearchRun }) {
       <div>
         <h2 className="font-serif text-xl font-semibold text-slate-950">{run.question}</h2>
         <p className="mt-1 text-xs text-slate-500">{relativeTime(run.created_at)}</p>
+        <div className="mt-2"><AskAboutSources run={run} /></div>
       </div>
       <Card className="p-4">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">What was searched</p>
