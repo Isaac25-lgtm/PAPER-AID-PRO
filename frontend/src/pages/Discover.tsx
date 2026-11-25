@@ -9,7 +9,7 @@ import { FindPapersTabs } from "@/components/FindPapersTabs";
 import { Container } from "@/components/Layout";
 import { PaperMeta } from "@/components/papers";
 import { Alert, Select, Badge, Button, Card, EmptyState, Input, PageHeader, Spinner } from "@/components/ui";
-import { api, errorMessage } from "@/lib/api";
+import { ApiError, api, errorMessage } from "@/lib/api";
 import { useAIEnabled } from "@/lib/ai";
 import { useAuth } from "@/lib/auth";
 import { useSearchStream, type DatabaseState } from "@/lib/searchStream";
@@ -172,7 +172,13 @@ export default function DiscoverPage() {
       </form>
 
       {!q && <EmptyState title="Start with a topic" icon={<Sparkles className="h-8 w-8" />}>Choose a subject to focus the search. Results come from OpenAlex, Crossref and the Directory of Open Access Journals, plus PubMed and Europe PMC for health and life sciences.</EmptyState>}
-      {search.error ? <Alert kind="error">{errorMessage(search.error)}</Alert> : null}
+      {search.error instanceof ApiError ? <Alert kind="error">{errorMessage(search.error)}</Alert> : null}
+      {search.interrupted && !(search.error instanceof ApiError) && (
+        <p className="mb-4 text-sm text-slate-700" role="status">
+          The search stopped before every database answered{search.results.length ? "; the papers found so far are shown" : ""}.{" "}
+          <button type="button" onClick={search.retry} className="text-brand-700 underline underline-offset-2">Retry</button>
+        </p>
+      )}
       {q.length >= 2 && (
         <>
           {search.identifier ? (
@@ -221,7 +227,7 @@ export default function DiscoverPage() {
             </div>
           )}
           {search.searching && search.results.length === 0 && <Spinner label="Searching scholarly databases" />}
-          {search.done && !search.error && search.results.length === 0 && (
+          {search.done && !search.error && !search.interrupted && search.results.length === 0 && (
             <EmptyState title="No results">
               {search.identifier ? "No registry has a record for this identifier. Check it, or search for the title instead." : "Try broader keywords or remove the filters."}
             </EmptyState>

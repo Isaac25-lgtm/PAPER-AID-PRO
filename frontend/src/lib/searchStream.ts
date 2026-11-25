@@ -26,6 +26,8 @@ export interface StreamedSearch {
   databases: DatabaseState[];
   done: boolean;
   error: unknown;
+  /** The connection ended before the server said it was done (audit SF10): what arrived is kept, Retry offered. */
+  interrupted: boolean;
 }
 
 export interface SearchParams {
@@ -61,9 +63,17 @@ type Action =
   | { type: "reset" }
   | { type: "start"; attempt: number; query: string; retry: RetryBase | null }
   | { type: "event"; attempt: number; event: StreamEvent }
-  | { type: "failed"; attempt: number; error: unknown };
+  | { type: "failed"; attempt: number; error: unknown }
+  | { type: "ended"; attempt: number };
 
-const EMPTY: State = { query: "", correctedFrom: null, identifier: null, suggestion: null, results: [], databases: [], done: false, error: null, attempt: 0, retry: null };
+const EMPTY: State = { query: "", correctedFrom: null, identifier: null, suggestion: null, results: [], databases: [], done: false, error: null, interrupted: false, attempt: 0, retry: null };
+
+/** The stream stopped early (closed, cut off or failed): keep every paper received, turn each database still
+ * searching into a failure that can be retried, and finish (audit SF10). */
+function stopped(state: State, error: unknown): State {
+  const databases = state.databases.map((d): DatabaseState => (d.state === "searching" ? { ...d, state: "failed", count: 0, error: "The connection ended before this database answered." } : d));
+  return { ...state, databases, done: true, interrupted: true, error };
+}
 
 const workKey = (work: Work) => (work.identifier ?? work.doi ?? work.title).toLowerCase();
 
@@ -98,7 +108,8 @@ function reducer(state: State, action: Action): State {
     };
   }
   if (action.attempt !== state.attempt) return state; // a late event from a search that has been replaced
-  if (action.type === "failed") return { ...state, done: true, error: action.error };
+  if (action.type === "failed") return stopped(state, action.error);
+  if (action.type === "ended") return state.done ? state : stopped(state, null); // closed without "done"
   const event = action.event;
   const retry = state.retry;
   const before = answeredBefore(retry);
@@ -164,10 +175,15 @@ export function useSearchStream(params: SearchParams | null) {
       exact: retry ? true : params.exact || undefined,
       limit: 25,
     };
-    api.stream("/discovery/search/stream", query, (event) => dispatch({ type: "event", attempt, event: event as StreamEvent }), controller.signal).catch((error: unknown) => {
-      if (controller.signal.aborted) return;
-      dispatch({ type: "failed", attempt, error });
-    });
+    api.stream("/discovery/search/stream", query, (event) => dispatch({ type: "event", attempt, event: event as StreamEvent }), controller.signal).then(
+      () => {
+        if (!controller.signal.aborted) dispatch({ type: "ended", attempt });
+      },
+      (error: unknown) => {
+        if (controller.signal.aborted) return; // a new search, or leaving the page: nothing to report
+        dispatch({ type: "failed", attempt, error });
+      },
+    );
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` is the serialised params
   }, [key, retries]);

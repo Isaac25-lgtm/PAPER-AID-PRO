@@ -7,14 +7,14 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Emit = (event: unknown) => void;
-const streams = vi.hoisted(() => ({ calls: [] as { params: Record<string, unknown>; emit: Emit; finish: () => void }[] }));
+const streams = vi.hoisted(() => ({ calls: [] as { params: Record<string, unknown>; emit: Emit; finish: () => void; fail: (error: unknown) => void }[] }));
 vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof import("@/lib/api")>()),
   api: {
     get: () => Promise.resolve({ enabled: false, provider: "none", model: null, embeddings_enabled: false }),
     post: () => Promise.resolve({}),
     stream: (_path: string, params: Record<string, unknown>, onEvent: Emit) =>
-      new Promise<void>((resolve) => streams.calls.push({ params, emit: onEvent, finish: resolve })),
+      new Promise<void>((resolve, reject) => streams.calls.push({ params, emit: onEvent, finish: resolve, fail: reject })),
   },
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { id: "u1", name: "Grace", role: "user", preferences: { guides: {} } }, loading: false }) }));
@@ -163,5 +163,40 @@ describe("retry (audit SF05)", () => {
       nth(0).emit({ type: "done" });
     });
     expect(screen.queryByText("Stale malaria paper")).not.toBeInTheDocument();
+  });
+});
+
+describe("a stream that ends early (audit SF10)", () => {
+  it("keeps what arrived, marks unanswered databases retryable and says the search stopped", async () => {
+    open("/discover?q=malaria");
+    await act(async () => {
+      nth(0).emit({ type: "query", query: "malaria", corrected_from: null, identifier: null, pending: ["openalex", "europe_pmc"] });
+      nth(0).emit({ type: "results", results: [work("Fast paper")], providers: [{ provider: "openalex", ok: true, count: 1, error: null }], pending: ["europe_pmc"] });
+      nth(0).finish(); // the body ended without "done"
+    });
+    expect(screen.getByText("Fast paper")).toBeInTheDocument();
+    expect(screen.getByText(/Europe PMC: unavailable/)).toBeInTheDocument(); // no chip left searching
+    expect(screen.queryByText(/searching…/)).not.toBeInTheDocument();
+    expect(screen.getByText(/The search stopped before every database answered; the papers found so far are shown/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Retry unavailable/ }));
+    expect(streams.calls).toHaveLength(2);
+  });
+
+  it("an empty or cut-off body ends in a retryable state, never a raw parser error", async () => {
+    open("/discover?q=malaria");
+    await act(async () => nth(0).fail(new SyntaxError("Unexpected end of JSON input")));
+    expect(screen.getByText(/The search stopped before every database answered\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Unexpected end of JSON/)).not.toBeInTheDocument();
+    expect(screen.queryByText("No results")).not.toBeInTheDocument(); // an interrupted search proves nothing
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(nth(1).params).toMatchObject({ q: "malaria" });
+  });
+
+  it("a search replaced by a new one ends silently", async () => {
+    open("/discover?q=malaria");
+    await userEvent.clear(screen.getByLabelText("Search query"));
+    await userEvent.type(screen.getByLabelText("Search query"), "cholera{Enter}");
+    await act(async () => nth(0).finish()); // the old request closes after the new one started
+    expect(screen.queryByText(/The search stopped/)).not.toBeInTheDocument();
   });
 });
