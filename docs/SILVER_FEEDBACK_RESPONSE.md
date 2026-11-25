@@ -123,6 +123,6 @@ Released to staging: API `paperaid-api-staging-00026-xax` (`c018f5a`), frontend 
 
 - Items 3 and 5 (autocomplete) need an AI key.
 - A typo that is itself a real word or name ("mony") is not corrected (see the staging check).
-- Production: not yet released. It runs `20068c2` until approved.
+- Production: released 25 November 2026 as `paperaid-api-00039-kof` (`6a9633b`), with the website. Checked live: `/ready`, an exact DOI lookup, a corrected typo, and all five databases answering.
 - Seen once, not yet reproduced: the same paper listed twice with different DOIs (probably preprint and published
   versions), and the staging editor stuck on "Loading…".
