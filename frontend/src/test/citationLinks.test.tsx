@@ -38,6 +38,7 @@ describe("reference lists", () => {
     expect(link.getAttribute("href")).toBe("https://doi.org/10.1126/science.aah5309"); // the sentence's full stop is not part of it
     expect(link.target).toBe("_blank");
     expect(link.rel).toBe("noopener noreferrer");
+    expect(link.className).toBe("reference-link"); // styled as a link (the CSS reset would make it look like text)
     expect(box.querySelector("i")?.textContent).toBe("Science"); // formatting is kept
   });
 

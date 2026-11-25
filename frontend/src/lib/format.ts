@@ -79,6 +79,7 @@ export function linkifyReferences(html: string): string {
       link.textContent = url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
+      link.className = "reference-link"; // looks like a link wherever the list is shown (styles.css)
       parts.append(link);
       at = start + url.length;
     }

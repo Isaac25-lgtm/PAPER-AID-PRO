@@ -20,6 +20,9 @@
 .ProseMirror ol { list-style: decimal; padding-left: 1.5rem; margin-bottom: 0.9rem; }
 .ProseMirror blockquote { border-left: 3px solid rgb(var(--c-slate-300)); padding-left: 1rem; color: rgb(var(--c-slate-600)); margin: 0 0 0.9rem; }
 .ProseMirror a { color: rgb(var(--c-brand-700)); text-decoration: underline; text-underline-offset: 2px; }
+/* DOI and web addresses in reference lists (linkifyReferences): visibly links, and long addresses wrap. */
+.reference-link { color: rgb(var(--c-brand-700)); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.reference-link:hover { text-decoration-thickness: 2px; }
 .ProseMirror table { border-collapse: collapse; width: 100%; margin: 0 0 1rem; table-layout: fixed; }
 .ProseMirror td, .ProseMirror th { border: 1px solid rgb(var(--c-slate-200)); padding: 0.4rem 0.6rem; vertical-align: top; }
 .ProseMirror th { background: rgb(var(--c-slate-100)); font-weight: 600; }

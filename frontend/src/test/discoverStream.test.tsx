@@ -114,7 +114,7 @@ describe("streamed Discover search", () => {
       nth(0).emit({ type: "results", results: [work("The long-run poverty and gender impacts of mobile money")], providers: [], pending: [] });
       nth(0).emit({ type: "done" });
     });
-    expect(await screen.findByText(/Looked up PubMed ID/)).toBeInTheDocument();
+    expect(await screen.findByText(/Looked up PubMed ID/)).toHaveTextContent("Looked up PubMed ID 27940873 exactly."); // "PMID" not repeated
     expect(screen.getByText("The long-run poverty and gender impacts of mobile money")).toBeInTheDocument();
   });
 });

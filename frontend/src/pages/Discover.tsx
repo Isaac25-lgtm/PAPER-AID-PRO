@@ -169,7 +169,9 @@ export default function DiscoverPage() {
         <>
           {search.identifier ? (
             <p className="mb-4 text-sm text-slate-700" role="status">
-              Looked up {IDENTIFIER_LABEL[search.identifier] ?? "the identifier"} <strong className="font-semibold text-slate-950">{q}</strong> exactly.
+              {/* "PMID: 27940873" reads "PubMed ID 27940873", not "PubMed ID PMID: 27940873". */}
+              Looked up {IDENTIFIER_LABEL[search.identifier] ?? "the identifier"}{" "}
+              <strong className="font-semibold text-slate-950">{q.trim().replace(/^(doi|pmid|pmcid|arxiv)(\s*:\s*|\s+)/i, "")}</strong> exactly.
             </p>
           ) : (
             <div className="mb-4 flex flex-wrap items-center gap-2 text-xs" aria-label="Databases" role="list">
