@@ -245,3 +245,25 @@ async def test_sf07_identifier_outcomes_distinguish_outage_from_absence(client, 
             ok = {p["provider"]: p["ok"] for p in body["providers"]}
             assert ok == {p: o != "down" for p, o in outcomes.items()}, name  # every registry's outcome is reported
             assert len(body["results"]) == (1 if name == "found" else 0), name
+
+
+# ---------------------------------------------------------------------------------------------------- SF14
+async def test_sf14_a_requested_unconfigured_database_is_closed_not_left_searching(client, monkeypatch):
+    """CORE needs a key. Asked for explicitly (alone, or with others), it is reported 'not configured' and is never
+    among the databases still searching when the stream is done."""
+    from app.api.routes import discovery
+    from app.services.scholarly import aggregator
+
+    monkeypatch.setattr(discovery, "suggest_correction", _no_correction)
+    monkeypatch.setitem(aggregator.PROVIDERS, "openalex", OpenOnlyWhenAsked())
+    for providers in (["core"], ["core", "openalex"]):
+        events = await _stream(client, q="school meals", providers=providers)
+        assert "core" not in events[0]["pending"]  # only what will run is announced
+        last = [e for e in events if e["type"] == "results"][-1]
+        status = {p["provider"]: p for p in last["providers"]}
+        assert status["core"] == {"provider": "core", "ok": False, "count": 0, "error": "not configured"}
+        assert last["pending"] == [] and events[-1]["type"] == "done"
+        one_shot = (
+            await client.get("/api/v1/discovery/search", params={"q": "school meals", "providers": providers})
+        ).json()
+        assert {"provider": "core", "ok": False, "count": 0, "error": "not configured"} in one_shot["providers"]

@@ -41,6 +41,7 @@ from app.services.scholarly.aggregator import (
 )
 from app.services.scholarly.identifiers import Identifier, exact_identifier, parse_identifier
 from app.services.scholarly.models import ALL_PROVIDERS, ProviderName, ProviderStatus, ScholarlyWork, Subject
+from app.services.scholarly.providers import available
 from app.services.scholarly.spelling import suggest_correction
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
@@ -107,9 +108,18 @@ async def _results(db: AsyncSession, works: list[ScholarlyWork]) -> list[WorkOut
     return results
 
 
-def _provider_list(providers: list[ProviderName] | None, subject: str) -> list[ProviderName]:
-    # Each provider is queried at most once, whatever the client sends.
-    return [p for p in ALL_PROVIDERS if p in set(providers)] if providers else default_providers(subject)
+def _provider_list(providers: list[ProviderName] | None, subject: str) -> tuple[list[ProviderName], list[ProviderName]]:
+    """(databases that will be searched, requested databases that are not configured, e.g. CORE without its key).
+    Resolved once, so what the stream announces as pending is exactly what runs (audit SF14). Each provider is
+    queried at most once, whatever the client sends."""
+    if not providers:
+        return default_providers(subject), []
+    requested = [p for p in ALL_PROVIDERS if p in set(providers)]
+    return [p for p in requested if available(p)], [p for p in requested if not available(p)]
+
+
+def _not_configured(skipped: list[ProviderName]) -> list[ProviderStatusOut]:
+    return [ProviderStatusOut(provider=p, ok=False, count=0, error="not configured") for p in skipped]
 
 
 async def _start(
@@ -160,7 +170,7 @@ async def search(
     """`exact=true` searches the words exactly as typed; otherwise an obvious misspelling is corrected (and the
     response says so, with the original, so the person can search for exactly what they typed)."""
     await _start(request, db, settings, user, year_from, year_to)
-    selected = _provider_list(providers, subject)
+    selected, skipped = _provider_list(providers, subject)
     typed = " ".join(q.split())
     identifier = exact_identifier(typed)
     if identifier is not None:  # an identifier is looked up exactly, never searched as words
@@ -202,7 +212,7 @@ async def search(
         query=corrected or typed,
         corrected_from=typed if corrected else None,
         results=await _results(db, works),
-        providers=[ProviderStatusOut(**s.model_dump()) for s in statuses],
+        providers=[ProviderStatusOut(**s.model_dump()) for s in statuses] + _not_configured(skipped),
     )
 
 
@@ -236,7 +246,7 @@ async def search_stream(
     A database's successful answer is cached for a few minutes, so repeating the search (the page's "Retry") asks
     again only the databases that failed."""
     await _start(request, db, settings, user, year_from, year_to)
-    selected = _provider_list(providers, subject)
+    selected, skipped = _provider_list(providers, subject)
     typed = " ".join(q.split())
     sessions = get_sessionmaker()
 
@@ -275,7 +285,7 @@ async def search_stream(
 
             async def stream(text: str) -> AsyncIterator[tuple[bytes, int]]:
                 lists: list[list[ScholarlyWork]] = []
-                statuses: list[ProviderStatusOut] = []
+                statuses: list[ProviderStatusOut] = _not_configured(skipped)  # closed at once, never pending
                 pending = list(selected)
                 async for status, works in search_progressively(
                     text,
@@ -307,6 +317,15 @@ async def search_stream(
                     "pending": selected,
                 }
             )
+            if skipped and not selected:  # nothing will run: close the requested databases at once (SF14)
+                yield _event(
+                    {
+                        "type": "results",
+                        "results": [],
+                        "providers": [s.model_dump() for s in _not_configured(skipped)],
+                        "pending": [],
+                    }
+                )
             found = 0
             async for line, count in stream(query):
                 found = count

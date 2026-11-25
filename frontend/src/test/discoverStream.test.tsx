@@ -235,3 +235,17 @@ describe("identifier outcomes (audit SF07)", () => {
     expect(await screen.findByText(/No registry has a record for this identifier/)).toBeInTheDocument();
   });
 });
+
+describe("a requested database that is not configured (audit SF14)", () => {
+  it("is labelled 'not configured', never left searching, and does not offer a pointless retry", async () => {
+    open("/discover?q=malaria");
+    act(() => {
+      nth(0).emit({ type: "query", query: "malaria", corrected_from: null, identifier: null, pending: ["openalex"] });
+      nth(0).emit({ type: "results", results: [work("Fast paper")], providers: [{ provider: "core", ok: false, count: 0, error: "not configured" }, { provider: "openalex", ok: true, count: 1, error: null }], pending: [] });
+      nth(0).emit({ type: "done" });
+    });
+    expect(await screen.findByText(/CORE: not configured/)).toBeInTheDocument();
+    expect(screen.queryByText(/searching…/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Retry unavailable/ })).not.toBeInTheDocument();
+  });
+});

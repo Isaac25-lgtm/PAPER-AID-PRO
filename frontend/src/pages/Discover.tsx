@@ -129,7 +129,7 @@ function DatabaseChip({ database }: { database: DatabaseState }) {
   return (
     <span role="listitem" className={`inline-flex items-center gap-1 rounded-full px-2 py-1 ${ok ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`} title={database.error ?? undefined}>
       {ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-      {label}: {ok ? `${database.count} results` : database.earlier ? "unavailable, earlier results shown" : "unavailable"}
+      {label}: {ok ? `${database.count} results` : database.error === "not configured" ? "not configured" : database.earlier ? "unavailable, earlier results shown" : "unavailable"}
     </span>
   );
 }
@@ -153,7 +153,8 @@ export default function DiscoverPage() {
     }
     setParams(next);
   };
-  const anyFailed = search.databases.some((d) => d.state === "failed");
+  // A database that is not configured (e.g. CORE without its key) cannot be fixed by retrying.
+  const anyFailed = search.databases.some((d) => d.state === "failed" && d.error !== "not configured");
 
   return (
     <Container>
