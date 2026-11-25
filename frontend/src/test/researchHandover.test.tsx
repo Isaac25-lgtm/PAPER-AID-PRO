@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearHandover, handOver, peekHandover } from "@/lib/handover";
 
-const calls = vi.hoisted(() => ({ posts: [] as { path: string; body: unknown }[], run: null as unknown }));
+const calls = vi.hoisted(() => ({ posts: [] as { path: string; body: unknown }[], run: null as unknown, importFails: 0, hold: null as null | Promise<void> }));
 vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof import("@/lib/api")>()),
   api: {
@@ -20,9 +20,14 @@ vi.mock("@/lib/api", async (original) => ({
       return Promise.resolve(calls.run);
     },
     page: () => Promise.resolve({ items: [], total: 0 }),
-    post: (path: string, body: unknown) => {
+    post: async (path: string, body: unknown) => {
       calls.posts.push({ path, body });
-      return Promise.resolve(path === "/papers/import" ? { id: "imported-1" } : {});
+      if (calls.hold) await calls.hold;
+      if (path === "/papers/import" && calls.importFails > 0) {
+        calls.importFails -= 1;
+        throw new Error("Crossref is unavailable.");
+      }
+      return path === "/papers/import" ? { id: "imported-1" } : {};
     },
   },
 }));
@@ -53,6 +58,8 @@ const QUESTION = "Does mobile money raise savings?";
 
 beforeEach(() => {
   calls.posts = [];
+  calls.importFails = 0;
+  calls.hold = null;
   clearHandover();
 });
 
@@ -108,5 +115,71 @@ describe("handing over between the research modes", () => {
     ]);
     expect(await screen.findByTestId("where")).toHaveTextContent(/^\/research$/); // no question, no paper ids
     expect(peekHandover("u1", "ask")).toEqual({ question: QUESTION, paperIds: ["p1", "imported-1"] });
+  });
+});
+
+const RUN = {
+  id: "r1",
+  question: QUESTION,
+  options: {},
+  queries: ["mobile money savings"],
+  services: [],
+  report: null,
+  citations: [],
+  insufficient_evidence: false,
+  gaps: "",
+  model: null,
+  report_status: "ai_not_connected",
+  created_at: new Date().toISOString(),
+  sources: [
+    { kind: "scholarly", title: "Catalogued", url: null, year: 2016, read: false, identifier: "10.1/a", paper_id: "p1" },
+    { kind: "scholarly", title: "Not yet in PaperAid", url: null, year: 2018, read: false, identifier: "10.1/b", paper_id: null },
+  ],
+};
+
+describe("a handover that only partly succeeds (audit SF08)", () => {
+  it("says what was saved, can continue with it, and a retry redoes only what failed", async () => {
+    calls.run = RUN;
+    calls.importFails = 1;
+    open("/research/deep?r=r1");
+    await userEvent.click(await screen.findByRole("button", { name: /Ask my papers about these sources/ }));
+    expect(await screen.findByText(/Saved 1 of 2 to your library/)).toBeInTheDocument();
+    expect(screen.getByText(/Not yet in PaperAid \(Crossref is unavailable\.\)/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Retry the 1 that failed" }));
+    expect(await screen.findByTestId("where")).toHaveTextContent(/^\/research$/);
+    expect(calls.posts.map((c) => c.path)).toEqual(["/library", "/papers/import", "/papers/import"]); // p1 not saved twice
+    expect(peekHandover("u1", "ask")?.paperIds).toEqual(["p1", "imported-1"]);
+  });
+
+  it("can continue with the papers that were saved", async () => {
+    calls.run = RUN;
+    calls.importFails = 1;
+    open("/research/deep?r=r1");
+    await userEvent.click(await screen.findByRole("button", { name: /Ask my papers about these sources/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Continue with the 1 saved" }));
+    expect(await screen.findByTestId("where")).toHaveTextContent(/^\/research$/);
+    expect(peekHandover("u1", "ask")?.paperIds).toEqual(["p1"]);
+  });
+
+  it("leaving while the saves are running never pulls the person back", async () => {
+    calls.run = RUN;
+    let release!: () => void;
+    calls.hold = new Promise<void>((resolve) => (release = resolve));
+    const view = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={["/research/deep?r=r1"]}>
+          <Routes>
+            <Route path="/research/deep" element={<DeepResearchPage />} />
+            <Route path="/research" element={<Where />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: /Ask my papers about these sources/ }));
+    view.unmount(); // the person went elsewhere
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(peekHandover("u1", "ask")).toBeNull(); // nothing handed over, no late navigation
   });
 });

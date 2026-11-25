@@ -219,41 +219,96 @@ const HANDOVER_LIMIT = 8;
  * "Ask my papers about these sources": the sources read for the report (or, without a report, the first ones that
  * can be saved) are saved to the library, then Ask my papers opens with them selected and the question filled in.
  */
+type SaveOutcome = { paperId: string } | { error: string };
+
+/** Save one source to the library; already being there is success. Returns the library paper's id. */
+async function saveSource(source: DeepResearchSource): Promise<string> {
+  if (source.paper_id) {
+    await api.post("/library", { paper_id: source.paper_id }).catch((error: unknown) => {
+      if (!(error instanceof ApiError && error.status === 409)) throw error; // already in the library is fine
+    });
+    return source.paper_id;
+  }
+  const paper = await api.post<Paper>("/papers/import", { identifier: source.identifier, add_to_library: true });
+  return paper.id;
+}
+
+/**
+ * "Ask my papers about these sources": the sources read for the report (or, without a report, the first ones that
+ * can be saved) are saved to the library, then Ask my papers opens with them selected and the question filled in.
+ *
+ * Each source's outcome is kept (audit SF08): a failure does not lose the ones already saved, the library is
+ * refreshed after any save, and the person can continue with what was saved or retry only what failed. Leaving the
+ * run while saves are under way never pulls them back to Ask my papers.
+ */
 function AskAboutSources({ run }: { run: DeepResearchRun }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const picked = (run.sources.some((s) => s.read && s.paper_id) ? run.sources.filter((s) => s.read && s.paper_id) : run.sources.filter((s) => s.kind === "scholarly" && (s.paper_id || s.identifier))).slice(0, HANDOVER_LIMIT);
+  const [outcomes, setOutcomes] = useState<Map<DeepResearchSource, SaveOutcome>>(() => new Map());
+  // The run on screen: a save that finishes after the person has left (or opened another run) must not navigate.
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, [run.id]);
+
+  const saved = (from: Map<DeepResearchSource, SaveOutcome>) => [...new Set(picked.flatMap((s) => { const o = from.get(s); return o && "paperId" in o ? [o.paperId] : []; }))];
+  const goAsk = (paperIds: string[]) => {
+    if (!active.current) return;
+    if (user) handOver(user.id, "ask", { question: run.question, paperIds });
+    navigate("/research");
+  };
+
   const handover = useMutation({
     mutationFn: async () => {
-      const ids: string[] = [];
+      const next = new Map(outcomes);
       for (const source of picked) {
-        if (source.paper_id) {
-          await api.post("/library", { paper_id: source.paper_id }).catch((error: unknown) => {
-            if (!(error instanceof ApiError && error.status === 409)) throw error; // already in the library is fine
-          });
-          ids.push(source.paper_id);
-        } else if (source.identifier) {
-          const paper = await api.post<Paper>("/papers/import", { identifier: source.identifier, add_to_library: true });
-          ids.push(paper.id);
+        const done = next.get(source);
+        if (done && "paperId" in done) continue; // only unfinished work is redone
+        try {
+          next.set(source, { paperId: await saveSource(source) });
+        } catch (error) {
+          next.set(source, { error: errorMessage(error) });
         }
+        if (active.current) setOutcomes(new Map(next));
       }
-      return ids;
+      return next;
     },
-    onSuccess: (ids) => {
-      void queryClient.invalidateQueries({ queryKey: ["library"] });
-      if (user) handOver(user.id, "ask", { question: run.question, paperIds: ids });
-      navigate("/research");
+    onSuccess: (next) => {
+      if (saved(next).length) void queryClient.invalidateQueries({ queryKey: ["library"] });
+      if (picked.every((s) => { const o = next.get(s); return o && "paperId" in o; })) goAsk(saved(next));
     },
   });
   if (!picked.length) return null;
+  const failed = picked.filter((s) => { const o = outcomes.get(s); return o && "error" in o; });
+  const savedIds = saved(outcomes);
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button size="sm" variant="secondary" loading={handover.isPending} onClick={() => handover.mutate()}>
-        <MessageSquare className="h-4 w-4" /> Ask my papers about these sources
-      </Button>
-      <span className="text-xs text-slate-500">Saves {picked.length} source{picked.length === 1 ? "" : "s"} to your library and selects them.</span>
-      {handover.error && <span className="text-sm text-red-700">{errorMessage(handover.error)}</span>}
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="secondary" loading={handover.isPending} onClick={() => handover.mutate()}>
+          <MessageSquare className="h-4 w-4" /> {failed.length && !handover.isPending ? `Retry the ${failed.length} that failed` : "Ask my papers about these sources"}
+        </Button>
+        {!failed.length && <span className="text-xs text-slate-500">Saves {picked.length} source{picked.length === 1 ? "" : "s"} to your library and selects them.</span>}
+      </div>
+      {failed.length > 0 && !handover.isPending && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="status">
+          <p>
+            Saved {savedIds.length} of {picked.length} to your library. {failed.length === 1 ? "This one" : `These ${failed.length}`} could not be saved:
+          </p>
+          <ul className="mt-1 list-disc pl-5">
+            {failed.map((s) => { const o = outcomes.get(s); return <li key={s.title}>{s.title}{o && "error" in o ? ` (${o.error})` : ""}</li>; })}
+          </ul>
+          {savedIds.length > 0 && (
+            <Button size="sm" className="mt-2" onClick={() => goAsk(savedIds)}>
+              Continue with the {savedIds.length} saved
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
