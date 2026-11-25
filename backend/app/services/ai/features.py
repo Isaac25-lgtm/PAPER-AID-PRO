@@ -80,7 +80,8 @@ async def gather_evidence(
     by_id = {p.id: p for p in papers}
     ready = [p.id for p in papers if p.status == PaperStatus.READY]
     cap = max(2, limit // max(1, len(ready))) if len(ready) > 1 else None
-    passages = await search_evidence(db, question, ready, limit=limit, per_paper_cap=cap)
+    # Only reached through AI routes (AIUser: the AI cohort), so the question may be embedded.
+    passages = await search_evidence(db, question, ready, use_embeddings=True, limit=limit, per_paper_cap=cap)
     items = [
         EvidenceItem(
             key=f"E{i + 1}",
@@ -254,7 +255,9 @@ async def summarize_paper(db: AsyncSession, paper: Paper, *, force: bool = False
         passages = await leading_chunks(db, paper.id, 14)
         passages += [
             e
-            for e in await search_evidence(db, "results limitations conclusion", [paper.id], limit=8)
+            for e in await search_evidence(
+                db, "results limitations conclusion", [paper.id], use_embeddings=True, limit=8
+            )
             if e.chunk_id not in {p.chunk_id for p in passages}
         ]
         items = [

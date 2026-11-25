@@ -36,7 +36,7 @@ from app.schemas import (
     PaperStatusFilter,
     PassageOut,
 )
-from app.security.auth import AIUser, OptionalUser, VerifiedUser
+from app.security.auth import AIUser, OptionalUser, VerifiedUser, ai_allowed_for
 from app.security.rate_limit import enforce_rate_limit
 from app.services import manual, processing
 from app.services.ai import features as ai_features
@@ -388,7 +388,9 @@ async def passages(
     if paper.status != PaperStatus.READY:
         return []
     if q and q.strip():
-        hits, corrected = await search_evidence_corrected(db, q, [paper.id], limit=limit)
+        hits, corrected = await search_evidence_corrected(
+            db, q, [paper.id], use_embeddings=ai_allowed_for(user), limit=limit
+        )
         return [
             PassageOut(
                 chunk_id=h.chunk_id,

@@ -97,23 +97,40 @@ async def correct_against_papers(db: AsyncSession, query: str, paper_ids: list[u
 
 
 async def search_evidence(
-    db: AsyncSession, query: str, paper_ids: list[uuid.UUID], *, limit: int = 8, per_paper_cap: int | None = None
+    db: AsyncSession,
+    query: str,
+    paper_ids: list[uuid.UUID],
+    *,
+    use_embeddings: bool,
+    limit: int = 8,
+    per_paper_cap: int | None = None,
 ) -> list[Evidence]:
-    hits, _ = await search_evidence_corrected(db, query, paper_ids, limit=limit, per_paper_cap=per_paper_cap)
+    hits, _ = await search_evidence_corrected(
+        db, query, paper_ids, use_embeddings=use_embeddings, limit=limit, per_paper_cap=per_paper_cap
+    )
     return hits
 
 
 async def search_evidence_corrected(
-    db: AsyncSession, query: str, paper_ids: list[uuid.UUID], *, limit: int = 8, per_paper_cap: int | None = None
+    db: AsyncSession,
+    query: str,
+    paper_ids: list[uuid.UUID],
+    *,
+    use_embeddings: bool,
+    limit: int = 8,
+    per_paper_cap: int | None = None,
 ) -> tuple[list[Evidence], str | None]:
     """Like search_evidence, and when no passage matches the words as typed, retries once with misspellings
-    corrected against the papers' own vocabulary. Returns (passages, corrected query or None)."""
+    corrected against the papers' own vocabulary. Returns (passages, corrected query or None).
+
+    use_embeddings: whether the query may be sent to the embedding provider. Only for people inside the AI cohort
+    (ai_allowed_for); everyone else gets keyword search, and their words never leave PaperAid (audit SF01)."""
     if not paper_ids or not query.strip():
         return [], None
     candidates = max(limit * 4, 24)
     fused: dict[uuid.UUID, float] = {}
     chunks: dict[uuid.UUID, PaperChunk] = {}
-    vector = await _embed_query(query)
+    vector = await _embed_query(query) if use_embeddings else None
     keyword = await _fts(db, query, paper_ids, candidates)
     corrected: str | None = None
     if not keyword:

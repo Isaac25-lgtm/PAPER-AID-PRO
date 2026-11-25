@@ -176,7 +176,11 @@ editor. Adding a key therefore changes nothing for anyone outside the pilot list
 Recommended order: enable for a small tester group first with a spending cap on the provider account, run the
 grounding checks on real papers from your testers' fields, then widen. Support verification is on
 (`AI_VERIFY_CLAIMS=true`). OpenAI / Gemini work the same way (`AI_PROVIDER=openai|gemini`; `AI_MODEL` required).
-Optional semantic search: `EMBEDDING_PROVIDER=openai` with `OPENAI_API_KEY` (1536 dimensions).
+Optional semantic search: `EMBEDDING_PROVIDER=openai` with `OPENAI_API_KEY` (1536 dimensions). Embeddings follow the same
+cohort: a private paper's passages are embedded only when its owner is in the AI cohort, and a passage search sends
+the query to the embedding provider only for people in the cohort. Everyone else keeps keyword search, and their
+text never leaves PaperAid (audit SF01). Public catalog records (registry metadata and open-access text) may be
+embedded for everyone. Before enabling embeddings, describe this indexing in the privacy notice.
 
 ## Turning on web search for Deep research (optional)
 

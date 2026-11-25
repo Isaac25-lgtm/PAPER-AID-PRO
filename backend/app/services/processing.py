@@ -30,9 +30,10 @@ from sqlalchemy import delete, exists, or_, select, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import JobKind, JobStatus, Paper, PaperChunk, PaperStatus, ProcessingJob, User
+from app.db.models import JobKind, JobStatus, Paper, PaperChunk, PaperStatus, PaperVisibility, ProcessingJob, User
 from app.db.session import get_sessionmaker
 from app.errors import AppError, Conflict, UpstreamError
+from app.security.auth import ai_allowed_for
 from app.security.url_safety import fetch_pdf
 from app.services import ai
 from app.services.maintenance import confirm_upload, delete_now_or_later, record_upload_intent, schedule_deletion
@@ -383,10 +384,25 @@ async def _ingest(db: AsyncSession, paper: Paper, attempt: Attempt) -> None:
     paper.status_detail = f"{len(chunks)} passages extracted from {len(pages)} pages."
 
 
+async def embedding_allowed(db: AsyncSession, paper_id: uuid.UUID) -> bool:
+    """May this paper's text be sent to the embedding provider? A public catalog record (registry metadata and
+    open-access text) may. A private paper (an upload or a manual entry) only when its owner is in the AI cohort,
+    the same rule as every AI route: switching embeddings on must never send a non-pilot researcher's private
+    PDF off-platform (audit SF01)."""
+    row = (await db.execute(select(Paper.visibility, Paper.owner_id).where(Paper.id == paper_id))).one_or_none()
+    if row is None:
+        return False
+    visibility, owner_id = row
+    if visibility == PaperVisibility.PUBLIC:
+        return True
+    owner = await db.get(User, owner_id) if owner_id else None
+    return ai_allowed_for(owner)
+
+
 async def _embed_best_effort(db: AsyncSession, paper_id: uuid.UUID) -> None:
     """Embeddings are an optional enhancement: a provider failure never takes extracted text offline.
     Passages without embeddings are still found by keyword search and are embedded by a later backfill."""
-    if not ai.embeddings_enabled():
+    if not ai.embeddings_enabled() or not await embedding_allowed(db, paper_id):
         return
     try:
         await ai.embed_paper_chunks(db, paper_id)
