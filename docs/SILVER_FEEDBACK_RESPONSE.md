@@ -113,6 +113,33 @@ Released to staging: API `paperaid-api-staging-00026-xax` (`c018f5a`), frontend 
   step shows the guidance switch (on by default). The sidebar reads Research › Ask my papers, Deep research ·
   Find papers. The Find papers tabs are "All databases" and "Already in PaperAid".
 
+## Production browser run (25 November 2026)
+
+Every item was run again in the browser on production (paperaid.web.app, signed in) and passed. Five problems
+the run found were fixed and released (API `paperaid-api-00042-wom`, commit `ea5e7db`, plus the website):
+
+- **"malria vacine in children" was not corrected.** For that phrase PubMed's speller suggests "malaria vac n in
+  children", and the split word made the whole suggestion unusable. Words the speller merges or splits are now
+  checked one at a time (at most 3), then confirmed against OpenAlex as before. The query now corrects to "malaria
+  vaccine in children", as does "povrty and fod insecurity in rural househlds".
+- **Reference-list DOIs worked but looked like plain text** (the CSS reset removed link styling). They now show as
+  links (`.reference-link`): in the editor, Citation tools and the Cite dialog.
+- **The identifier note repeated its label:** "PubMed ID PMID: 27940873" and "DOI https://doi.org/…". It now shows
+  the bare identifier.
+- **The first load of a draft could sit on "Loading…" for a long time.** Measured: about 22 s after a deploy, about
+  5 s warm. Causes:
+  - an API cold start (production keeps no idle instance);
+  - this PC's slow connection (8 s just to connect to Google);
+  - the page's code waiting for sign-in to finish.
+
+  The code now downloads alongside sign-in. Cold starts remain until a minimum instance is set, which is a billing
+  decision.
+- **Retry used to clear results.** This was fixed before the run and confirmed live: during a retry the results
+  stay and only Europe PMC searches again.
+
+Europe PMC was down for most of the run: its own API returned 503 or timed out. PaperAid marked it "unavailable",
+showed the other databases' results at once, and offered Retry.
+
 ## Verification
 
 - Backend: 385 passed. ruff and mypy clean.
