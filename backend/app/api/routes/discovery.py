@@ -36,6 +36,7 @@ from app.services.scholarly.aggregator import (
     federated_search,
     merged_results,
     resolve_identifier,
+    resolve_identifier_reporting,
     search_progressively,
 )
 from app.services.scholarly.identifiers import Identifier, exact_identifier, parse_identifier
@@ -134,9 +135,11 @@ async def _start(
     await db.commit()  # do not hold a DB connection while the providers are queried
 
 
-async def _lookup(identifier: Identifier) -> list[ScholarlyWork]:
-    work = await resolve_identifier(identifier)
-    return [work] if work else []
+async def _lookup(identifier: Identifier) -> tuple[list[ScholarlyWork], list[ProviderStatusOut]]:
+    """The record for an identifier, and what each registry said (found, no record, or unreachable): an outage
+    must not read as "no registry has this paper" (audit SF07)."""
+    work, statuses = await resolve_identifier_reporting(identifier)
+    return ([work] if work else []), [ProviderStatusOut(**s.model_dump()) for s in statuses]
 
 
 @router.get("/search", response_model=SearchResponse)
@@ -161,8 +164,10 @@ async def search(
     typed = " ".join(q.split())
     identifier = exact_identifier(typed)
     if identifier is not None:  # an identifier is looked up exactly, never searched as words
-        works = await _lookup(identifier)
-        return SearchResponse(query=typed, identifier=identifier.kind, results=await _results(db, works), providers=[])
+        works, lookups = await _lookup(identifier)
+        return SearchResponse(
+            query=typed, identifier=identifier.kind, results=await _results(db, works), providers=lookups
+        )
 
     async def run(query: str) -> tuple[list[ScholarlyWork], list[ProviderStatus]]:
         return await federated_search(
@@ -245,8 +250,15 @@ async def search_stream(
             yield _event(
                 {"type": "query", "query": typed, "corrected_from": None, "identifier": identifier.kind, "pending": []}
             )
-            works = await _lookup(identifier)
-            yield _event({"type": "results", "results": await shown(works), "providers": [], "pending": []})
+            works, statuses = await _lookup(identifier)
+            yield _event(
+                {
+                    "type": "results",
+                    "results": await shown(works),
+                    "providers": [s.model_dump() for s in statuses],
+                    "pending": [],
+                }
+            )
             yield _event({"type": "done"})
             return
 

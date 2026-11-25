@@ -77,6 +77,37 @@ function ResearchOverview({ query, works }: { query: string; works: Work[] }) {
 
 const IDENTIFIER_LABEL: Record<string, string> = { doi: "DOI", pmid: "PubMed ID", pmcid: "PubMed Central ID", arxiv: "arXiv ID" };
 
+/**
+ * An identifier that returned no record. Only when every registry asked actually answered is that evidence the
+ * identifier is unknown; an outage is said as such, with Retry (audit SF07).
+ */
+function IdentifierMiss({ databases, onRetry }: { databases: DatabaseState[]; onRetry: () => void }) {
+  const failed = databases.filter((d) => d.state === "failed");
+  const names = (list: DatabaseState[]) => list.map((d) => PROVIDER_LABELS[d.provider] ?? d.provider).join(", ");
+  const retry = (
+    <button type="button" onClick={onRetry} className="mt-2 inline-flex items-center gap-1 rounded-full border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100">
+      <RotateCw className="h-3 w-3" /> Retry
+    </button>
+  );
+  if (!databases.length || failed.length === databases.length) {
+    return (
+      <EmptyState title="The registries could not be reached">
+        This says nothing about whether the identifier exists. Try again in a moment.
+        <div>{retry}</div>
+      </EmptyState>
+    );
+  }
+  if (failed.length) {
+    return (
+      <EmptyState title="Not found yet">
+        {names(databases.filter((d) => d.state === "done"))} answered without a record; {names(failed)} could not be reached, so it may still exist.
+        <div>{retry}</div>
+      </EmptyState>
+    );
+  }
+  return <EmptyState title="No results">No registry has a record for this identifier. Check it, or search for the title instead.</EmptyState>;
+}
+
 /** The identifier as the note shows it: "PMID: 27940873" → "27940873", "https://doi.org/10.1/x" → "10.1/x". */
 export function bareIdentifier(typed: string): string {
   return typed
@@ -228,9 +259,11 @@ export default function DiscoverPage() {
           )}
           {search.searching && search.results.length === 0 && <Spinner label="Searching scholarly databases" />}
           {search.done && !search.error && !search.interrupted && search.results.length === 0 && (
-            <EmptyState title="No results">
-              {search.identifier ? "No registry has a record for this identifier. Check it, or search for the title instead." : "Try broader keywords or remove the filters."}
-            </EmptyState>
+            search.identifier ? (
+              <IdentifierMiss databases={search.databases} onRetry={search.retry} />
+            ) : (
+              <EmptyState title="No results">Try broader keywords or remove the filters.</EmptyState>
+            )
           )}
         </>
       )}

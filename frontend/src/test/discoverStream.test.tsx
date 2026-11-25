@@ -200,3 +200,38 @@ describe("a stream that ends early (audit SF10)", () => {
     expect(screen.queryByText(/The search stopped/)).not.toBeInTheDocument();
   });
 });
+
+describe("identifier outcomes (audit SF07)", () => {
+  const lookup = (outcomes: Record<string, "miss" | "down">) => {
+    open("/discover?q=10.1126%2Fscience.aah5309");
+    act(() => {
+      nth(0).emit({ type: "query", query: "10.1126/science.aah5309", corrected_from: null, identifier: "doi", pending: [] });
+      nth(0).emit({
+        type: "results",
+        results: [],
+        providers: Object.entries(outcomes).map(([provider, o]) => ({ provider, ok: o === "miss", count: 0, error: o === "down" ? "unavailable" : null })),
+        pending: [],
+      });
+      nth(0).emit({ type: "done" });
+    });
+  };
+
+  it("an outage of every registry is not presented as proof the paper does not exist", async () => {
+    lookup({ crossref: "down", openalex: "down" });
+    expect(await screen.findByText("The registries could not be reached")).toBeInTheDocument();
+    expect(screen.queryByText(/No registry has a record/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(nth(1).params).toMatchObject({ q: "10.1126/science.aah5309" });
+  });
+
+  it("a partial outage is inconclusive and names who could not be reached", async () => {
+    lookup({ crossref: "miss", openalex: "down" });
+    expect(await screen.findByText("Not found yet")).toBeInTheDocument();
+    expect(screen.getByText(/Crossref answered without a record; OpenAlex could not be reached/)).toBeInTheDocument();
+  });
+
+  it("only when every registry answered is the identifier reported unknown", async () => {
+    lookup({ crossref: "miss", openalex: "miss" });
+    expect(await screen.findByText(/No registry has a record for this identifier/)).toBeInTheDocument();
+  });
+});

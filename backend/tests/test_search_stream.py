@@ -95,7 +95,9 @@ async def test_identifiers_are_looked_up_exactly(client, registries):
         body = (await client.get("/api/v1/discovery/search", params={"q": typed})).json()
         assert body["identifier"] in {"doi", "pmid"}, typed
         assert len(body["results"]) == 1 and body["results"][0]["doi"] == fx.DOI, typed
-        assert body["corrected_from"] is None and body["providers"] == []
+        assert body["corrected_from"] is None
+        # Only the identifier registries were asked (not a keyword search), and each one's outcome is reported (SF07).
+        assert body["providers"] and any(p["count"] == 1 for p in body["providers"]), typed
     events = await stream(client, q=f"https://doi.org/{fx.DOI}")
     assert events[0]["identifier"] == "doi" and [e["type"] for e in events] == ["query", "results", "done"]
     assert events[1]["results"][0]["doi"] == fx.DOI

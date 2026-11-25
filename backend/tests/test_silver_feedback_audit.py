@@ -204,3 +204,44 @@ async def test_sf04_streamed_and_one_shot_open_access_search_agree(client, monke
         streamed = [e for e in await _stream(client, **params) if e["type"] == "results"][-1]["results"]
         assert [r["title"] for r in streamed] == [r["title"] for r in one_shot] == ["Open paper on school meals"]
     assert fake.flags and all(fake.flags)  # every request asked the database for open access
+
+
+# ---------------------------------------------------------------------------------------------------- SF07
+class LookupOnly:
+    """A registry for identifier lookups: finds the paper, has no record, or is down."""
+
+    def __init__(self, outcome: str) -> None:
+        self.outcome = outcome
+
+    async def lookup(self, kind, value):  # type: ignore[no-untyped-def]
+        from app.errors import UpstreamError
+        from app.services.scholarly.models import ScholarlyWork
+
+        if self.outcome == "down":
+            raise UpstreamError("The registry is unavailable.")
+        if self.outcome == "found":
+            return ScholarlyWork(title="The long-run poverty and gender impacts of mobile money", doi=value)
+        return None
+
+
+async def test_sf07_identifier_outcomes_distinguish_outage_from_absence(client, monkeypatch):
+    from app.services.scholarly import aggregator
+
+    doi = "10.1126/science.aah5309"
+    scenarios = {
+        "all down": {"crossref": "down", "openalex": "down", "pubmed": "down", "semantic_scholar": "down"},
+        "partial": {"crossref": "miss", "openalex": "down", "pubmed": "miss", "semantic_scholar": "miss"},
+        "all miss": {"crossref": "miss", "openalex": "miss", "pubmed": "miss", "semantic_scholar": "miss"},
+        "found": {"crossref": "found", "openalex": "down", "pubmed": "miss", "semantic_scholar": "miss"},
+    }
+    for name, outcomes in scenarios.items():
+        for provider, outcome in outcomes.items():
+            monkeypatch.setitem(aggregator.PROVIDERS, provider, LookupOnly(outcome))
+        one_shot = (await client.get("/api/v1/discovery/search", params={"q": doi})).json()
+        events = await _stream(client, q=doi)
+        streamed = [e for e in events if e["type"] == "results"][-1]
+        assert events[-1]["type"] == "done"
+        for body in (one_shot, streamed):
+            ok = {p["provider"]: p["ok"] for p in body["providers"]}
+            assert ok == {p: o != "down" for p, o in outcomes.items()}, name  # every registry's outcome is reported
+            assert len(body["results"]) == (1 if name == "found" else 0), name

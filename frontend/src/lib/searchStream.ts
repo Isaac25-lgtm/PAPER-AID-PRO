@@ -125,7 +125,10 @@ function reducer(state: State, action: Action): State {
       };
     case "results": {
       const answered = new Map(event.providers.map((p) => [p.provider, p]));
-      const databases = state.databases.map((d): DatabaseState => {
+      // An identifier lookup announces no databases in advance: the registries it asked arrive with the result.
+      const known = new Set(state.databases.map((d) => d.provider));
+      const announced = [...state.databases, ...event.providers.filter((p) => !known.has(p.provider)).map((p): DatabaseState => ({ provider: p.provider, state: "searching", count: 0, error: null }))];
+      const databases = announced.map((d): DatabaseState => {
         const outcome = answered.get(d.provider);
         if (!outcome) return d;
         if (outcome.ok) return { provider: d.provider, state: "done", count: outcome.count, error: null };

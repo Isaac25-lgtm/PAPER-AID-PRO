@@ -299,21 +299,34 @@ _LOOKUP_ORDER: dict[str, tuple[ProviderName, ...]] = {
 
 async def resolve_identifier(identifier: Identifier) -> ScholarlyWork | None:
     """Authoritative metadata for one identifier, enriched (abstract, OA links, IDs) from other providers."""
+    work, _ = await resolve_identifier_reporting(identifier)
+    return work
+
+
+async def resolve_identifier_reporting(identifier: Identifier) -> tuple[ScholarlyWork | None, list[ProviderStatus]]:
+    """resolve_identifier, plus what each registry said: found it (count 1), has no record (ok, count 0) or could
+    not be reached (not ok). An outage is never reported as "no registry has this paper" (audit SF07)."""
     order = _LOOKUP_ORDER[identifier.kind]
 
-    async def attempt(name: ProviderName) -> ScholarlyWork | None:
+    async def attempt(name: ProviderName) -> tuple[ProviderStatus, ScholarlyWork | None]:
         try:
-            return await asyncio.wait_for(
+            work = await asyncio.wait_for(
                 PROVIDERS[name].lookup(identifier.kind, identifier.value), timeout=PROVIDER_TIMEOUT_SECONDS
             )
+        except TimeoutError:
+            return ProviderStatus(provider=name, ok=False, error="timed out"), None
+        except AppError as exc:
+            return ProviderStatus(provider=name, ok=False, error=exc.message), None
         except Exception as exc:
             log.info("scholarly.lookup_failed", extra={"provider": name, "error": repr(exc)})
-            return None
+            return ProviderStatus(provider=name, ok=False, error="unexpected response"), None
+        return ProviderStatus(provider=name, ok=True, count=1 if work else 0), work
 
-    results = await asyncio.gather(*(attempt(name) for name in order))
-    found = [w for w in results if w is not None]
+    outcomes = await asyncio.gather(*(attempt(name) for name in order))
+    statuses = [status for status, _ in outcomes]
+    found = [w for _, w in outcomes if w is not None]
     if not found:
-        return None
+        return None, statuses
     work = found[0]
     for extra in found[1:]:
         if _conflicts(work, extra):  # a provider returned a different publication: never blend it in
@@ -325,4 +338,4 @@ async def resolve_identifier(identifier: Identifier) -> ScholarlyWork | None:
         enriched = await resolve_identifier(Identifier("doi", work.doi))
         if enriched and not _conflicts(work, enriched):
             work = merge_works(work, enriched)
-    return work
+    return work, statuses
