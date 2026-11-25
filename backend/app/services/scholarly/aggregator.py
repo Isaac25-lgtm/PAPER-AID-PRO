@@ -183,6 +183,16 @@ def rank(works: list[ScholarlyWork], fused: dict[int, float], query: str) -> lis
     return [w for _, w in sorted(enumerate(works), key=score, reverse=True)]
 
 
+_inflight: dict[tuple[object, ...], asyncio.Future[list[ScholarlyWork]]] = {}
+
+
+def _settle(key: tuple[object, ...], done: asyncio.Future[list[ScholarlyWork]]) -> None:
+    if _inflight.get(key) is done:
+        del _inflight[key]
+    if not done.cancelled():
+        done.exception()  # retrieved here, so an outcome nobody awaited any more is never logged as lost
+
+
 async def _run_provider(
     name: ProviderName,
     query: str,
@@ -198,10 +208,19 @@ async def _run_provider(
     if cached is not None:
         return ProviderStatus(provider=name, ok=True, count=len(cached)), cached
     try:
-        works = await asyncio.wait_for(
-            provider.search(query, limit, year_from, year_to, oa_only, subject=subject),
-            timeout=PROVIDER_TIMEOUT_SECONDS,
-        )
+        # Identical searches already on their way to this database share one request (audit SF06). The shared
+        # request is shielded, so one person leaving does not cancel it for the others.
+        shared = _inflight.get(key)
+        if shared is None:
+            shared = asyncio.ensure_future(
+                asyncio.wait_for(
+                    provider.search(query, limit, year_from, year_to, oa_only, subject=subject),
+                    timeout=PROVIDER_TIMEOUT_SECONDS,
+                )
+            )
+            _inflight[key] = shared
+            shared.add_done_callback(lambda done, key=key: _settle(key, done))
+        works = await asyncio.shield(shared)
         _remember(key, works)
         return ProviderStatus(provider=name, ok=True, count=len(works)), works
     except TimeoutError:

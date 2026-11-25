@@ -27,6 +27,7 @@ from collections import OrderedDict
 from app.config import get_settings
 from app.services.scholarly.http import get_http_client, get_json
 from app.services.scholarly.identifiers import parse_identifier
+from app.services.scholarly.pacing import pacer_for
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +82,9 @@ def _checkable(token: str) -> bool:
 
 
 async def _espell(query: str) -> str | None:
+    pacer = pacer_for(ESPELL_URL)
+    if pacer is not None and not await pacer.acquire(optional=True):
+        raise SpellingUnavailable("NCBI's shared pace is exhausted: the searches go first (audit SF06)")
     params = {"db": "pubmed", "term": query}
     key = get_settings().ncbi_api_key
     if key:
@@ -92,16 +96,35 @@ async def _espell(query: str) -> str | None:
     return match.group(1).strip() if match and match.group(1).strip() else None
 
 
+_COUNT_TTL = 24 * 3600.0
+_COUNT_CACHE_SIZE = 4096
+_counts: OrderedDict[str, tuple[float, int]] = OrderedDict()
+
+
 async def _count(word: str) -> int | None:
+    """How many OpenAlex titles/abstracts contain this exact word, or None if OpenAlex did not answer (or its
+    shared pace is taken by searches: spelling help is optional). Counts are kept a day: they barely move."""
+    key = word.casefold()
+    hit = _counts.get(key)
+    if hit and hit[0] > time.monotonic():
+        _counts.move_to_end(key)
+        return hit[1]
     # Exact (unstemmed) word counts: OpenAlex's normal search stems words, so a typo such as "feding" would
     # count every "fed..." paper (4 million) instead of its true 146 (browser test, 2026-11-21).
     data = await get_json(
         OPENALEX_WORKS,
         params={"filter": f"title_and_abstract.search.exact:{word}", "per-page": 1, "select": "id"},
         retries=0,
+        optional=True,
     )
     count = (data or {}).get("meta", {}).get("count") if isinstance(data, dict) else None
-    return count if isinstance(count, int) else None
+    if not isinstance(count, int):
+        return None
+    _counts[key] = (time.monotonic() + _COUNT_TTL, count)
+    _counts.move_to_end(key)
+    while len(_counts) > _COUNT_CACHE_SIZE:
+        _counts.popitem(last=False)
+    return count
 
 
 def changed_words(original: str, suggested: str) -> list[tuple[int, str]]:
@@ -120,6 +143,7 @@ def changed_words(original: str, suggested: str) -> list[tuple[int, str]]:
 
 
 MAX_WORD_RECHECKS = 3  # at most this many single-word ESpell calls per query
+MAX_CONFIRMATIONS = 4  # at most this many changed words are confirmed (2 OpenAlex counts each) per query (SF06)
 
 
 def unaligned_words(original: str, suggested: str) -> list[int]:
@@ -173,7 +197,13 @@ async def _suggest(query: str) -> tuple[str | None, bool]:
         pairs += [(i, proposed) for i, (proposed, _) in zip(recheck, singles, strict=True) if proposed]
     if not pairs:
         return None, complete
-    verdicts = await asyncio.gather(*(_confirmed(words[i], proposed) for i, proposed in pairs))
+    # Bounded upstream cost per search (audit SF06): each distinct (typed, proposed) change is confirmed once,
+    # and at most MAX_CONFIRMATIONS of them; a repeated typo reuses its verdict.
+    distinct = list(dict.fromkeys((words[i].casefold(), proposed) for i, proposed in pairs))[:MAX_CONFIRMATIONS]
+    if len(distinct) < len({(words[i].casefold(), proposed) for i, proposed in pairs}):
+        complete = False  # some changes went unchecked: do not cache this answer
+    checked = dict(zip(distinct, await asyncio.gather(*(_confirmed(t, p) for t, p in distinct)), strict=True))
+    verdicts = [checked.get((words[i].casefold(), proposed), (False, True)) for i, proposed in pairs]
     complete = complete and all(ok for _, ok in verdicts)
     accepted = [(i, proposed) for (i, proposed), (yes, _) in zip(pairs, verdicts, strict=True) if yes]
     if not accepted:

@@ -267,3 +267,140 @@ async def test_sf14_a_requested_unconfigured_database_is_closed_not_left_searchi
             await client.get("/api/v1/discovery/search", params={"q": "school meals", "providers": providers})
         ).json()
         assert {"provider": "core", "ok": False, "count": 0, "error": "not configured"} in one_shot["providers"]
+
+
+# ---------------------------------------------------------------------------------------------------- SF06
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+        self.slept: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+async def test_sf06_shared_pace_makes_searches_wait_briefly_and_spelling_yield():
+    import pytest
+
+    from app.services.scholarly.pacing import Pacer, ServiceBusy
+
+    clock = FakeClock()
+    waits: list[float] = []
+
+    async def queued(seconds: float) -> None:  # the callers are concurrent: time does not move while they queue
+        waits.append(seconds)
+
+    pacer = Pacer(name="ncbi", rate=2.0, burst=2, max_wait=1.0, clock=clock, sleep=queued)
+    assert await pacer.acquire() and await pacer.acquire()  # the burst
+    assert await pacer.acquire(optional=True) is False  # spelling never waits: the searches go first
+    assert await pacer.acquire() and await pacer.acquire()  # the next two searches queue behind the burst
+    assert waits == [0.5, 1.0]
+    with pytest.raises(ServiceBusy):  # a third would wait 1.5 s > max_wait: refused rather than queued forever
+        await pacer.acquire()
+    clock.now += 10  # the queue has drained
+    assert await pacer.acquire()
+    pacer.back_off(30)  # the service said Retry-After: 30
+    assert await pacer.acquire(optional=True) is False
+    with pytest.raises(ServiceBusy):
+        await pacer.acquire()
+    clock.now += 31
+    assert await pacer.acquire()
+
+
+async def test_sf06_identical_cold_searches_share_one_request():
+    import asyncio
+
+    from app.services.scholarly import aggregator
+
+    class Slow:
+        calls = 0
+
+        async def search(self, query, limit, year_from, year_to, oa, subject=None):  # type: ignore[no-untyped-def]
+            Slow.calls += 1
+            await asyncio.sleep(0.05)
+            return []
+
+    original = aggregator.PROVIDERS["openalex"]
+    aggregator.PROVIDERS["openalex"] = Slow()  # type: ignore[assignment]
+    try:
+        await asyncio.gather(
+            *(aggregator._run_provider("openalex", "school meals", 20, None, None, False) for _ in range(5))
+        )
+    finally:
+        aggregator.PROVIDERS["openalex"] = original
+    assert Slow.calls == 1  # five simultaneous people, one upstream request
+
+
+async def test_sf06_spelling_cost_per_search_is_bounded_and_repeats_are_checked_once():
+    import re
+
+    import httpx
+    import respx
+
+    from app.services.scholarly import spelling
+
+    typos = "malria malria malria preventon scools feding litrature colera"
+    fixed = "malaria malaria malaria prevention schools feeding literature cholera"
+    with respx.mock() as router:
+        router.get(re.compile(r"https://eutils\.ncbi\.nlm\.nih\.gov/.*/espell\.fcgi.*")).mock(
+            return_value=httpx.Response(
+                200, text=f"<eSpellResult><CorrectedQuery>{fixed}</CorrectedQuery></eSpellResult>"
+            )
+        )
+        counts = router.get("https://api.openalex.org/works").mock(
+            return_value=httpx.Response(200, json={"meta": {"count": 10}, "results": []})
+        )
+        await spelling.suggest_correction(typos)
+    assert counts.call_count <= 2 * spelling.MAX_CONFIRMATIONS  # never one count per word of a long question
+    counted = [c.request.url.params["filter"].rsplit(":", 1)[1] for c in counts.calls]
+    assert counted.count("malria") == 1  # a repeated typo is confirmed once
+
+
+async def test_sf06_spelling_yields_when_the_shared_allowance_is_spent():
+    import re
+
+    import httpx
+    import respx
+
+    from app.services.scholarly import spelling
+    from app.services.scholarly.pacing import pacer_for
+
+    pacer = pacer_for(spelling.ESPELL_URL)
+    assert pacer is not None
+    pacer.back_off(60)  # NCBI asked everyone to wait (or the searches are using the allowance)
+    with respx.mock(assert_all_called=False) as router:
+        espell = router.get(re.compile(r"https://eutils\.ncbi\.nlm\.nih\.gov/.*")).mock(
+            return_value=httpx.Response(
+                200, text="<eSpellResult><CorrectedQuery>malaria</CorrectedQuery></eSpellResult>"
+            )
+        )
+        assert await spelling.suggest_correction("malria") is None
+    assert espell.call_count == 0 and spelling._cache == {}  # skipped, and not remembered as "nothing to correct"
+
+
+async def test_sf06_a_long_retry_after_is_not_slept_inside_a_request():
+    import time
+
+    import httpx
+    import pytest
+    import respx
+
+    from app.errors import UpstreamError
+    from app.services.scholarly.http import get_json
+    from app.services.scholarly.pacing import ServiceBusy
+
+    with respx.mock() as router:
+        route = router.get("https://api.openalex.org/works").mock(
+            return_value=httpx.Response(429, headers={"Retry-After": "120"})
+        )
+        started = time.monotonic()
+        with pytest.raises(UpstreamError):
+            await get_json("https://api.openalex.org/works", params={"search": "x"})
+        assert time.monotonic() - started < 1.0 and route.call_count == 1
+        with pytest.raises(ServiceBusy):  # and nobody else calls OpenAlex until the 120 s have passed
+            await get_json("https://api.openalex.org/works", params={"search": "y"})
+        assert route.call_count == 1

@@ -153,6 +153,11 @@ def _clean_state() -> Iterator[None]:
 
     aggregator._result_cache.clear()  # each test's mocked registries answer for themselves
     spelling._cache.clear()
+    spelling._counts.clear()
+    aggregator._inflight.clear()
+    from app.services.scholarly.pacing import reset_pacers
+
+    reset_pacers()  # each test starts with a full request allowance
     yield
     set_llm(None)
     set_embedder(None)

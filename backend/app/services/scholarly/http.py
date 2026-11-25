@@ -10,6 +10,7 @@ import httpx
 
 from app.config import get_settings
 from app.errors import UpstreamError
+from app.services.scholarly.pacing import pacer_for
 
 _client: httpx.AsyncClient | None = None
 
@@ -60,10 +61,16 @@ async def get_json(
     headers: dict[str, str] | None = None,
     retries: int = 2,
     not_found_ok: bool = False,
+    optional: bool = False,
 ) -> Any:
+    """GET JSON. `optional`: the caller can do without the answer (spelling help), so it never waits for the
+    service's shared pace and returns None when no slot is free (audit SF06)."""
     client = get_http_client()
     headers = _with_keys(url, headers)
+    pacer = pacer_for(url)
     for attempt in range(retries + 1):
+        if pacer is not None and not await pacer.acquire(optional=optional):
+            return None
         try:
             response = await client.get(url, params=params, headers=headers)
         except httpx.TimeoutException as exc:
@@ -76,9 +83,10 @@ async def get_json(
         if response.status_code == 404 and not_found_ok:
             return None
         if response.status_code in {429, 500, 502, 503, 504} and attempt < retries:
-            retry_after = response.headers.get("retry-after")
-            delay = float(retry_after) if retry_after and retry_after.isdigit() else 0.6 * (attempt + 1)
-            await asyncio.sleep(min(delay, 3.0) + random.random() * 0.2)
+            delay = _retry_after(response, pacer)
+            if delay is None:  # asked to wait longer than a request should be held open: give up now
+                raise UpstreamError(f"{httpx.URL(url).host} asked us to wait; try again shortly.")
+            await asyncio.sleep(delay + random.random() * 0.2)
             continue
         if response.status_code >= 400:
             raise UpstreamError(f"{httpx.URL(url).host} returned HTTP {response.status_code}.")
@@ -86,9 +94,27 @@ async def get_json(
     raise UpstreamError(f"{httpx.URL(url).host} is unavailable.")
 
 
+def _retry_after(response: httpx.Response, pacer: Any) -> float | None:
+    """Seconds to wait before retrying, or None when the service asked for more than MAX_RETRY_WAIT. A Retry-After
+    also pauses every other request to that service in this process (pacing.Pacer.back_off)."""
+    header = response.headers.get("retry-after")
+    if header and header.strip().isdigit():
+        seconds = float(header.strip())
+        if pacer is not None:
+            pacer.back_off(seconds)
+        return seconds if seconds <= MAX_RETRY_WAIT else None
+    return 0.6
+
+
+MAX_RETRY_WAIT = 3.0
+
+
 async def get_text(url: str, *, params: dict[str, Any] | None = None, retries: int = 2) -> str:
     client = get_http_client()
+    pacer = pacer_for(url)
     for attempt in range(retries + 1):
+        if pacer is not None:
+            await pacer.acquire()
         try:
             response = await client.get(url, params=params, headers={"Accept": "application/xml,text/xml,*/*"})
         except httpx.HTTPError as exc:
@@ -97,7 +123,10 @@ async def get_text(url: str, *, params: dict[str, Any] | None = None, retries: i
                 continue
             raise UpstreamError(f"Could not reach {httpx.URL(url).host}.") from exc
         if response.status_code in {429, 500, 502, 503, 504} and attempt < retries:
-            await asyncio.sleep(0.6 * (attempt + 1))
+            delay = _retry_after(response, pacer)
+            if delay is None:
+                raise UpstreamError(f"{httpx.URL(url).host} asked us to wait; try again shortly.")
+            await asyncio.sleep(max(delay, 0.6 * (attempt + 1)))
             continue
         if response.status_code >= 400:
             raise UpstreamError(f"{httpx.URL(url).host} returned HTTP {response.status_code}.")
