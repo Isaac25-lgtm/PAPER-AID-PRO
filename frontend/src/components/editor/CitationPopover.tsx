@@ -1,6 +1,6 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { ExternalLink, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -9,8 +9,16 @@ import type { Citation, Paper } from "@/lib/types";
 
 export interface CitationTarget {
   ids: string[];
-  /** Where the clicked citation is on screen (the popover opens below it). */
-  rect: { left: number; bottom: number };
+  /** Where the clicked citation is on screen (the popover opens below it, or above when there is no room). */
+  rect: { left: number; top: number; bottom: number };
+}
+
+/** A page locator as the reader expects it: "12" → "p. 12", "12-14" → "pp. 12-14"; anything else as written. */
+export function pageLabel(locator: string): string {
+  const value = locator.trim();
+  if (/^\d+[a-z]?$/i.test(value)) return `p. ${value}`;
+  if (/^\d+\s*[-–]\s*\d+$/.test(value)) return `pp. ${value}`;
+  return value;
 }
 
 /**
@@ -42,14 +50,22 @@ export function CitationPopover({ documentId, target, onClose }: { documentId: s
     };
   }, [onClose]);
 
+  // Below the citation; above it when the popover would run off the bottom of the window (measured once drawn).
+  const [above, setAbove] = useState(false);
+  const loaded = papers.every((p) => !p.isLoading) && !citations.isLoading;
+  useLayoutEffect(() => {
+    const height = ref.current?.offsetHeight ?? 0;
+    setAbove(target.rect.bottom + 6 + height > window.innerHeight - 8 && target.rect.top - 6 - height >= 8);
+  }, [target, loaded]);
   const left = Math.max(8, Math.min(target.rect.left, window.innerWidth - 360));
+  const position = above ? { bottom: window.innerHeight - target.rect.top + 6, left } : { top: target.rect.bottom + 6, left };
   return (
     <div
       ref={ref}
       role="dialog"
       aria-label="Cited source"
       className="fixed z-50 w-[min(340px,calc(100vw-16px))] rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-lg"
-      style={{ top: target.rect.bottom + 6, left }}
+      style={position}
     >
       <div className="mb-1 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cited source{target.ids.length > 1 ? "s" : ""}</span>
@@ -68,7 +84,7 @@ export function CitationPopover({ documentId, target, onClose }: { documentId: s
               <p className="font-medium text-slate-900">{paper.title}</p>
               <p className="text-xs text-slate-500">
                 {authorLine(paper.authors)} · {paper.year ?? "n.d."}
-                {citation.locator ? ` · ${citation.locator}` : ""}
+                {citation.locator ? ` · ${pageLabel(citation.locator)}` : ""}
               </p>
               <div className="mt-1.5 flex flex-wrap gap-3">
                 <a href={`/papers/${paper.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-brand-700 hover:underline">

@@ -18,7 +18,16 @@ vi.mock("@/lib/api", async (original) => ({
   },
 }));
 
-const { CitationPopover } = await import("@/components/editor/CitationPopover");
+const { CitationPopover, pageLabel } = await import("@/components/editor/CitationPopover");
+
+describe("page locators", () => {
+  it("read as pages, and anything else is shown as written", () => {
+    expect(pageLabel("1")).toBe("p. 1");
+    expect(pageLabel("12-14")).toBe("pp. 12-14");
+    expect(pageLabel("p. 12")).toBe("p. 12");
+    expect(pageLabel("chapter 3")).toBe("chapter 3");
+  });
+});
 
 describe("reference lists", () => {
   it("make DOI addresses clickable, opening in a new tab", () => {
@@ -44,7 +53,7 @@ describe("in-text citations", () => {
     const onClose = vi.fn();
     render(
       <QueryClientProvider client={new QueryClient()}>
-        <CitationPopover documentId="d1" target={{ ids: ["c1"], rect: { left: 10, bottom: 20 } }} onClose={onClose} />
+        <CitationPopover documentId="d1" target={{ ids: ["c1"], rect: { left: 10, top: 4, bottom: 20 } }} onClose={onClose} />
       </QueryClientProvider>,
     );
     expect(await screen.findByText("The long-run poverty and gender impacts of mobile money")).toBeInTheDocument();

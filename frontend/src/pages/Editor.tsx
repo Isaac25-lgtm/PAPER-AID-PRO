@@ -650,7 +650,7 @@ export default function EditorPage() {
                 const ids = chip?.dataset.citationIds?.split(",").filter(Boolean);
                 if (!chip || !ids?.length) return;
                 const rect = chip.getBoundingClientRect();
-                setCitationTarget({ ids, rect: { left: rect.left, bottom: rect.bottom } });
+                setCitationTarget({ ids, rect: { left: rect.left, top: rect.top, bottom: rect.bottom } });
               }}
             >
               <EditorContent editor={editor} />
