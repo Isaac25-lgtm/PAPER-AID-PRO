@@ -65,7 +65,9 @@ production image (`backend/scripts/smoke_container.py`: fonts, all citation styl
 ## Deploy the frontend
 
 ```bash
-cd frontend && npm ci && npm run build && cd .. && firebase deploy --only hosting --project paperaid
+cd frontend && npm ci && cd .. && DEPLOY_ENV=production PYTHON=backend/.venv/Scripts/python.exe deploy/deploy-frontend.sh
+# builds, then deploy/frontend_preflight.py checks the exact artifact (build stamp and commit, API origin and
+# Firebase project compiled in, Hosting CSP) and refuses to publish a build made for the wrong environment (SF09)
 ```
 
 `frontend/.env.production` holds the public Firebase web config, `VITE_API_BASE_URL`, and (to add)

@@ -36,5 +36,10 @@ if leaked or missing or not csp:
     raise SystemExit(f"Refusing to deploy staging: production origins {leaked}, missing staging origins {missing}")
 pathlib.Path("firebase.staging.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
 PY
+# The exact artifact and configuration about to be published must belong to staging (audit SF09).
+if ! "$PYTHON" deploy/frontend_preflight.py staging --config firebase.staging.json; then
+  rm -f firebase.staging.json
+  exit 1
+fi
 firebase deploy --only hosting --project paperaid-staging --config firebase.staging.json
 rm -f firebase.staging.json
