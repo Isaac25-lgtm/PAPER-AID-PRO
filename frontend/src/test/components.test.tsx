@@ -137,19 +137,15 @@ describe("pages against a mocked API", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("Discover shows merged results and per-provider status", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          query: "malaria",
-          providers: [
-            { provider: "crossref", ok: true, count: 1, error: null },
-            { provider: "semantic_scholar", ok: false, count: 0, error: "HTTP 429" },
-          ],
-          results: [{ title: "School bed nets trial", abstract: "Bed nets reduced malaria.", authors: ["Grace Namaganda"], year: 2021, journal: "Malaria Journal", doi: "10.1/x", pmid: null, pmcid: null, arxiv_id: null, url: null, is_open_access: true, oa_pdf_url: null, citation_count: 14, sources: ["crossref", "openalex"], identifier: "10.1/x", library_paper_id: null }],
-        }),
-        { status: 200 },
-      ),
-    );
+    const result = { title: "School bed nets trial", abstract: "Bed nets reduced malaria.", authors: ["Grace Namaganda"], year: 2021, journal: "Malaria Journal", doi: "10.1/x", pmid: null, pmcid: null, arxiv_id: null, url: null, is_open_access: true, oa_pdf_url: null, citation_count: 14, sources: ["crossref", "openalex"], identifier: "10.1/x", library_paper_id: null };
+    const events = [
+      { type: "query", query: "malaria", corrected_from: null, identifier: null, pending: ["crossref", "semantic_scholar"] },
+      { type: "results", results: [result], providers: [{ provider: "crossref", ok: true, count: 1, error: null }], pending: ["semantic_scholar"] },
+      { type: "results", results: [result], providers: [{ provider: "crossref", ok: true, count: 1, error: null }, { provider: "semantic_scholar", ok: false, count: 0, error: "HTTP 429" }], pending: [] },
+      { type: "done" },
+    ];
+    // The search is streamed: one JSON event per line (newline-delimited JSON).
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(events.map((e) => JSON.stringify(e)).join(String.fromCharCode(10)), { status: 200 }));
     const { default: DiscoverPage } = await import("@/pages/Discover");
     wrap(<Routes><Route path="/discover" element={<DiscoverPage />} /></Routes>, "/discover?q=malaria");
     expect(await screen.findByText("School bed nets trial")).toBeInTheDocument();

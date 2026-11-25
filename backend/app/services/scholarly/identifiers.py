@@ -110,3 +110,19 @@ def normalize_title(title: str | None) -> str:
     decomposed = unicodedata.normalize("NFKD", title.casefold())
     without_marks = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
     return _WS.sub(" ", _NON_WORD.sub(" ", without_marks)).strip()
+
+
+_BARE_DIGITS = re.compile(r"^\d+$")
+MIN_BARE_PMID_DIGITS = 6
+
+
+def exact_identifier(text: str) -> Identifier | None:
+    """An identifier typed into a SEARCH box, to be looked up exactly rather than searched as words. Stricter than
+    parse_identifier: a bare number counts as a PubMed ID only with six or more digits, so a year ("2019") or a
+    small number is still searched as a word."""
+    identifier = parse_identifier(text)
+    if identifier is None:
+        return None
+    if identifier.kind == "pmid" and _BARE_DIGITS.match(text.strip()) and len(text.strip()) < MIN_BARE_PMID_DIGITS:
+        return None
+    return identifier

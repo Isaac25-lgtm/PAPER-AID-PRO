@@ -220,6 +220,7 @@ class ProviderStatusOut(BaseModel):
 class SearchResponse(BaseModel):
     query: str  # what was searched
     corrected_from: str | None = None  # the query as typed, when a misspelling was corrected
+    identifier: str | None = None  # "doi" | "pmid" | "pmcid" | "arxiv" when the query was looked up as an identifier
     results: list[WorkOut]
     providers: list[ProviderStatusOut]
 

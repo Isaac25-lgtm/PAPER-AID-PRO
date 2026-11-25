@@ -149,6 +149,10 @@ def _clean_state() -> Iterator[None]:
     set_token_verifier(fake_verifier)
     set_llm(None)
     set_embedder(None)
+    from app.services.scholarly import aggregator, spelling
+
+    aggregator._result_cache.clear()  # each test's mocked registries answer for themselves
+    spelling._cache.clear()
     yield
     set_llm(None)
     set_embedder(None)

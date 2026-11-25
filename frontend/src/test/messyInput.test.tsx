@@ -14,19 +14,21 @@ vi.mock("@/lib/api", async (original) => ({
     get: (path: string, params?: Record<string, unknown>) => {
       calls.gets.push({ path, params });
       if (path === "/ai/status") return Promise.resolve({ enabled: calls.ai, provider: "none", model: null, embeddings_enabled: false });
-      if (path === "/discovery/search") {
-        const exact = Boolean(params?.exact);
-        return Promise.resolve({
-          query: exact ? "malria preventon" : "malaria prevention",
-          corrected_from: exact ? null : "malria preventon",
-          providers: [],
-          results: [
-            { title: "School malaria prevention trial", abstract: "a", authors: [], year: 2021, journal: null, doi: "10.1/a", identifier: "10.1/a", is_open_access: false, citation_count: 0, sources: ["openalex"], library_paper_id: null },
-            { title: "Second study", abstract: "b", authors: [], year: 2020, journal: null, doi: "10.1/b", identifier: "10.1/b", is_open_access: false, citation_count: 0, sources: ["crossref"], library_paper_id: null },
-          ],
-        });
-      }
       return Promise.resolve([]);
+    },
+    // Discover's search is streamed: replay the events the server sends.
+    stream: (path: string, params: Record<string, unknown>, onEvent: (event: unknown) => void) => {
+      calls.gets.push({ path, params });
+      const exact = Boolean(params?.exact);
+      const results = [
+        { title: "School malaria prevention trial", abstract: "a", authors: [], year: 2021, journal: null, doi: "10.1/a", identifier: "10.1/a", is_open_access: false, citation_count: 0, sources: ["openalex"], library_paper_id: null },
+        { title: "Second study", abstract: "b", authors: [], year: 2020, journal: null, doi: "10.1/b", identifier: "10.1/b", is_open_access: false, citation_count: 0, sources: ["crossref"], library_paper_id: null },
+      ];
+      onEvent({ type: "query", query: exact ? "malria preventon" : "malaria prevention", corrected_from: exact ? null : "malria preventon", identifier: null, pending: ["openalex"] });
+      onEvent({ type: "results", results, providers: [{ provider: "openalex", ok: true, count: 2, error: null }], pending: [] });
+      if (exact) onEvent({ type: "suggestion", query: "malaria prevention" });
+      onEvent({ type: "done" });
+      return Promise.resolve();
     },
     post: () => Promise.resolve({}),
   },
@@ -60,7 +62,7 @@ describe("misspelled searches", () => {
     expect(note).toHaveTextContent("Showing results for malaria prevention.");
     expect(note).toHaveAttribute("role", "status");
     await userEvent.click(screen.getByRole("button", { name: "Search instead for “malria preventon”" }));
-    expect(calls.gets.filter((c) => c.path === "/discovery/search").at(-1)?.params).toMatchObject({ q: "malria preventon", exact: true });
+    expect(calls.gets.filter((c) => c.path === "/discovery/search/stream").at(-1)?.params).toMatchObject({ q: "malria preventon", exact: true });
     expect(await screen.findByText("School malaria prevention trial")).toBeInTheDocument();
     expect(screen.queryByText(/Showing results for/)).toBeNull();
   });

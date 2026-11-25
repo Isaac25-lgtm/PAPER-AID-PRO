@@ -10,7 +10,9 @@ import asyncio
 import logging
 import math
 import re
-from collections.abc import Sequence
+import time
+from collections import OrderedDict
+from collections.abc import AsyncIterator, Sequence
 
 from app.config import get_settings
 from app.errors import AppError
@@ -21,6 +23,29 @@ from app.services.scholarly.providers import DEFAULT_PROVIDERS, PROVIDERS, avail
 log = logging.getLogger(__name__)
 
 PROVIDER_TIMEOUT_SECONDS = 12.0
+# A database's successful answer is reused for a few minutes, so "Retry" after a partial failure re-asks only the
+# databases that failed, and paging back to a search is instant. Failures are never cached.
+RESULT_CACHE_SECONDS = 300.0
+_RESULT_CACHE_SIZE = 256
+_result_cache: OrderedDict[tuple[object, ...], tuple[float, list[ScholarlyWork]]] = OrderedDict()
+
+
+def _cached(key: tuple[object, ...]) -> list[ScholarlyWork] | None:
+    entry = _result_cache.get(key)
+    if entry is None or entry[0] < time.monotonic():
+        _result_cache.pop(key, None)
+        return None
+    _result_cache.move_to_end(key)
+    return entry[1]
+
+
+def _remember(key: tuple[object, ...], works: list[ScholarlyWork]) -> None:
+    _result_cache[key] = (time.monotonic() + RESULT_CACHE_SECONDS, works)
+    _result_cache.move_to_end(key)
+    while len(_result_cache) > _RESULT_CACHE_SIZE:
+        _result_cache.popitem(last=False)
+
+
 RRF_K = 60
 _STOP = {"the", "a", "an", "of", "and", "or", "in", "on", "for", "to", "with", "by", "at", "from", "is", "are"}
 _TOKEN = re.compile(r"[a-z0-9]+")
@@ -168,11 +193,16 @@ async def _run_provider(
     subject: str | None = None,
 ) -> tuple[ProviderStatus, list[ScholarlyWork]]:
     provider = PROVIDERS[name]
+    key = (name, query.casefold(), limit, year_from, year_to, oa_only, subject)
+    cached = _cached(key)
+    if cached is not None:
+        return ProviderStatus(provider=name, ok=True, count=len(cached)), cached
     try:
         works = await asyncio.wait_for(
             provider.search(query, limit, year_from, year_to, oa_only, subject=subject),
             timeout=PROVIDER_TIMEOUT_SECONDS,
         )
+        _remember(key, works)
         return ProviderStatus(provider=name, ok=True, count=len(works)), works
     except TimeoutError:
         return ProviderStatus(provider=name, ok=False, error="timed out"), []
@@ -212,12 +242,46 @@ async def federated_search(
         *(_run_provider(p, query, per_provider, year_from, year_to, open_access_only, subject) for p in selected)
     )
     statuses = [status for status, _ in outcomes]
-    merged, fused = merge_and_dedupe([works for _, works in outcomes])
+    return merged_results(
+        [works for _, works in outcomes], query, limit=limit, open_access_only=open_access_only
+    ), statuses
+
+
+def merged_results(
+    result_lists: Sequence[list[ScholarlyWork]], query: str, *, limit: int, open_access_only: bool = False
+) -> list[ScholarlyWork]:
+    """Merge the databases' answers, drop duplicates, rank, and cut to `limit` (shared by the one-shot and the
+    streaming search)."""
+    merged, fused = merge_and_dedupe(result_lists)
     if open_access_only:
         keep = [i for i, w in enumerate(merged) if w.is_open_access or w.oa_pdf_url]
         merged = [merged[i] for i in keep]
         fused = {new: fused[old] for new, old in enumerate(keep)}
-    return rank(merged, fused, query)[:limit], statuses
+    return rank(merged, fused, query)[:limit]
+
+
+async def search_progressively(
+    query: str,
+    *,
+    providers: Sequence[ProviderName],
+    limit: int = 20,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    subject: str = "all",
+) -> AsyncIterator[tuple[ProviderStatus, list[ScholarlyWork]]]:
+    """Each database's answer as soon as it arrives (fastest first). Unfinished requests are cancelled if the
+    caller stops early, e.g. when the person leaves the page."""
+    per_provider = max(10, min(limit, 40))
+    selected = [p for p in dict.fromkeys(providers) if p in PROVIDERS and available(p)]
+    tasks = [
+        asyncio.create_task(_run_provider(p, query, per_provider, year_from, year_to, False, subject)) for p in selected
+    ]
+    try:
+        for finished in asyncio.as_completed(tasks):
+            yield await finished
+    finally:
+        for task in tasks:
+            task.cancel()
 
 
 _LOOKUP_ORDER: dict[str, tuple[ProviderName, ...]] = {

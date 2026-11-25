@@ -66,6 +66,8 @@ interface RequestOptions {
   paged?: boolean;
   /** Abort the request (e.g. a newer keystroke superseded it). Aborts surface as ApiError code "ABORTED". */
   signal?: AbortSignal;
+  /** Read the body as newline-delimited JSON, calling this for each event as it arrives (streaming endpoints). */
+  onEvent?: (event: unknown) => void;
 }
 
 export interface Page<T> {
@@ -133,7 +135,10 @@ async function send<T>(
     throw new ApiError(response.status, code, message, details);
   }
   let result: T;
-  if (options.raw) result = (await response.blob()) as T;
+  if (options.onEvent) {
+    await readEvents(response, options.onEvent, () => started !== session);
+    result = undefined as T;
+  } else if (options.raw) result = (await response.blob()) as T;
   else if (options.paged) {
     const items = (await response.json()) as unknown[];
     const total = Number(response.headers.get("X-Total-Count") ?? items.length);
@@ -145,6 +150,34 @@ async function send<T>(
   return result;
 }
 
+/** Hand each JSON line of a streamed body to `onEvent` as soon as it is complete. Stops (with SESSION_CHANGED) if
+ * the signed-in identity changes mid-stream, so no event from the previous account reaches the page. */
+const NEWLINE = String.fromCharCode(10);
+
+async function readEvents(response: Response, onEvent: (event: unknown) => void, changed: () => boolean): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (changed()) {
+      await reader.cancel();
+      throw sessionChanged();
+    }
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+    let newline = buffer.indexOf(NEWLINE);
+    while (newline >= 0) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (line) onEvent(JSON.parse(line));
+      newline = buffer.indexOf(NEWLINE);
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) onEvent(JSON.parse(buffer));
+}
+
 export const api = {
   get: <T>(path: string, query?: Query, signal?: AbortSignal) => request<T>("GET", path, { query, signal }),
   post: <T>(path: string, body?: unknown, query?: Query, signal?: AbortSignal) => request<T>("POST", path, { body, query, signal }),
@@ -154,6 +187,8 @@ export const api = {
   page: <T>(path: string, query?: Query) => request<Page<T>>("GET", path, { query, paged: true }),
   upload: <T>(path: string, form: FormData) => request<T>("POST", path, { form }),
   blob: (path: string, query?: Query, signal?: AbortSignal) => request<Blob>("GET", path, { query, raw: true, signal }),
+  stream: (path: string, query: Query, onEvent: (event: unknown) => void, signal?: AbortSignal) =>
+    request<void>("GET", path, { query, onEvent, signal }),
 };
 
 export function errorMessage(error: unknown): string {

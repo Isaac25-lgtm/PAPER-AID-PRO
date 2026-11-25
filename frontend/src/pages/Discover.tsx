@@ -1,5 +1,5 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { CheckCircle2, ExternalLink, Sparkles, Unlock, XCircle } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { CheckCircle2, ExternalLink, Loader2, RotateCw, Sparkles, Unlock, XCircle } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
@@ -11,7 +11,8 @@ import { Alert, Select, Badge, Button, Card, EmptyState, Input, PageHeader, Spin
 import { api, errorMessage } from "@/lib/api";
 import { useAIEnabled } from "@/lib/ai";
 import { useAuth } from "@/lib/auth";
-import type { GroundedAnswer, Paper, SearchResponse, Work, Subject } from "@/lib/types";
+import { useSearchStream, type DatabaseState } from "@/lib/searchStream";
+import type { GroundedAnswer, Paper, Work, Subject } from "@/lib/types";
 import { PROVIDER_LABELS, SUBJECTS } from "@/lib/types";
 
 function WorkCard({ work }: { work: Work }) {
@@ -73,6 +74,26 @@ function ResearchOverview({ query, works }: { query: string; works: Work[] }) {
   );
 }
 
+const IDENTIFIER_LABEL: Record<string, string> = { doi: "DOI", pmid: "PubMed ID", pmcid: "PubMed Central ID", arxiv: "arXiv ID" };
+
+function DatabaseChip({ database }: { database: DatabaseState }) {
+  const label = PROVIDER_LABELS[database.provider] ?? database.provider;
+  if (database.state === "searching") {
+    return (
+      <span role="listitem" className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-slate-600">
+        <Loader2 className="h-3 w-3 animate-spin" /> {label}: searching…
+      </span>
+    );
+  }
+  const ok = database.state === "done";
+  return (
+    <span role="listitem" className={`inline-flex items-center gap-1 rounded-full px-2 py-1 ${ok ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`} title={database.error ?? undefined}>
+      {ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+      {label}: {ok ? `${database.count} results` : "unavailable"}
+    </span>
+  );
+}
+
 export default function DiscoverPage() {
   const [params, setParams] = useSearchParams();
   const q = params.get("q") ?? "";
@@ -83,20 +104,16 @@ export default function DiscoverPage() {
   const [draft, setDraft] = useState(q);
   const [from, setFrom] = useState(yearFrom);
 
-  const search = useQuery({
-    queryKey: ["search", q, yearFrom, oaOnly, subject, exact],
-    queryFn: () =>
-      api.get<SearchResponse>("/discovery/search", {
-        q,
-        year_from: yearFrom || undefined,
-        open_access_only: oaOnly || undefined,
-        subject: subject === "all" ? undefined : subject,
-        exact: exact || undefined,
-        limit: 25,
-      }),
-    enabled: q.length >= 2,
-    staleTime: 5 * 60_000,
-  });
+  const search = useSearchStream(q.length >= 2 ? { q, subject, yearFrom, openAccessOnly: oaOnly, exact } : null);
+  const setQuery = (patch: Record<string, string | null>) => {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null) next.delete(key);
+      else next.set(key, value);
+    }
+    setParams(next);
+  };
+  const anyFailed = search.databases.some((d) => d.state === "failed");
 
   return (
     <Container>
@@ -145,43 +162,58 @@ export default function DiscoverPage() {
       </form>
 
       {!q && <EmptyState title="Start with a topic" icon={<Sparkles className="h-8 w-8" />}>Choose a subject to focus the search. Results come from OpenAlex, Crossref and the Directory of Open Access Journals, plus PubMed and Europe PMC for health and life sciences.</EmptyState>}
-      {search.isLoading && <Spinner label="Searching scholarly databases" />}
-      {search.error && <Alert kind="error">{errorMessage(search.error)}</Alert>}
-      {search.data && (
+      {search.error ? <Alert kind="error">{errorMessage(search.error)}</Alert> : null}
+      {q.length >= 2 && (
         <>
-          <div className="mb-4 flex flex-wrap gap-2 text-xs">
-            {search.data.providers.map((p) => (
-              <span key={p.provider} className={`inline-flex items-center gap-1 rounded-full px-2 py-1 ${p.ok ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`} title={p.error ?? undefined}>
-                {p.ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                {PROVIDER_LABELS[p.provider] ?? p.provider}: {p.ok ? `${p.count} results` : "unavailable"}
-              </span>
-            ))}
-          </div>
-          {search.data.corrected_from && (
+          {search.identifier ? (
             <p className="mb-4 text-sm text-slate-700" role="status">
-              Showing results for <strong className="font-semibold text-slate-950">{search.data.query}</strong>.{" "}
-              <button
-                type="button"
-                className="text-brand-700 underline underline-offset-2"
-                onClick={() => {
-                  const next = new URLSearchParams(params);
-                  next.set("exact", "1");
-                  setParams(next);
-                }}
-              >
-                Search instead for “{search.data.corrected_from}”
+              Looked up {IDENTIFIER_LABEL[search.identifier] ?? "the identifier"} <strong className="font-semibold text-slate-950">{q}</strong> exactly.
+            </p>
+          ) : (
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs" aria-label="Databases" role="list">
+              {search.databases.map((d) => <DatabaseChip key={d.provider} database={d} />)}
+              {search.done && anyFailed && (
+                <button type="button" onClick={search.retry} className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-100">
+                  <RotateCw className="h-3 w-3" /> Retry unavailable
+                </button>
+              )}
+            </div>
+          )}
+          {search.correctedFrom && (
+            <p className="mb-4 text-sm text-slate-700" role="status">
+              Showing results for <strong className="font-semibold text-slate-950">{search.query}</strong>.{" "}
+              <button type="button" className="text-brand-700 underline underline-offset-2" onClick={() => setQuery({ exact: "1" })}>
+                Search instead for “{search.correctedFrom}”
               </button>
             </p>
           )}
-          <ResearchOverview query={search.data.query} works={search.data.results} />
-          {search.data.results.length === 0 ? (
-            <EmptyState title="No results">Try broader keywords or remove the filters.</EmptyState>
-          ) : (
+          {exact && !search.identifier && (
+            <p className="mb-4 text-sm text-slate-700" role="status">
+              Searching exactly for <strong className="font-semibold text-slate-950">“{q}”</strong>.{" "}
+              {search.suggestion ? (
+                <button type="button" className="text-brand-700 underline underline-offset-2" onClick={() => { setDraft(search.suggestion ?? q); setQuery({ q: search.suggestion, exact: null }); }}>
+                  Did you mean “{search.suggestion}”?
+                </button>
+              ) : (
+                <button type="button" className="text-brand-700 underline underline-offset-2" onClick={() => setQuery({ exact: null })}>
+                  Allow spelling correction
+                </button>
+              )}
+            </p>
+          )}
+          {search.done && <ResearchOverview query={search.query} works={search.results} />}
+          {search.results.length > 0 && (
             <div className="space-y-4">
-              {search.data.results.map((work, index) => (
+              {search.results.map((work, index) => (
                 <WorkCard key={work.identifier ?? `${work.title}-${index}`} work={work} />
               ))}
             </div>
+          )}
+          {search.searching && search.results.length === 0 && <Spinner label="Searching scholarly databases" />}
+          {search.done && !search.error && search.results.length === 0 && (
+            <EmptyState title="No results">
+              {search.identifier ? "No registry has a record for this identifier. Check it, or search for the title instead." : "Try broader keywords or remove the filters."}
+            </EmptyState>
           )}
         </>
       )}
