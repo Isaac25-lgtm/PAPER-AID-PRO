@@ -119,6 +119,32 @@ def changed_words(original: str, suggested: str) -> list[tuple[int, str]]:
     return pairs
 
 
+MAX_WORD_RECHECKS = 3  # at most this many single-word ESpell calls per query
+
+
+def unaligned_words(original: str, suggested: str) -> list[int]:
+    """Positions of checkable words that ESpell changed but not one for one (it merged or split words, e.g.
+    "malria vacine in children" -> "malaria vac n in children"). They are asked about one at a time instead."""
+    before, after = original.split(), suggested.split()
+    positions: list[int] = []
+    matcher = difflib.SequenceMatcher(a=[w.lower() for w in before], b=[w.lower() for w in after], autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag in {"replace", "delete"} and (tag == "delete" or i2 - i1 != j2 - j1):
+            positions.extend(i for i in range(i1, i2) if _checkable(before[i]))
+    return positions
+
+
+async def _single_word(word: str) -> str | None:
+    """ESpell's suggestion for one word on its own, when it is a single plain word."""
+    try:
+        suggested = await _espell(word)
+    except SpellingUnavailable:
+        return None
+    if suggested and _WORD.match(suggested) and suggested.lower() != word.lower():
+        return suggested.lower()
+    return None
+
+
 async def _confirmed(typed: str, proposed: str) -> bool:
     typed_count, proposed_count = await asyncio.gather(_count(typed), _count(proposed))
     if typed_count is None or not proposed_count:
@@ -131,9 +157,15 @@ async def _suggest(query: str) -> str | None:
     if not suggested or suggested.lower() == query.lower():
         return None
     pairs = changed_words(query, suggested)
+    words = query.split()
+    # Words ESpell merged or split in the whole query are asked about alone (production run, 25 November 2026:
+    # "malria vacine in children" came back as "malaria vac n in children" and nothing was corrected).
+    recheck = unaligned_words(query, suggested)[:MAX_WORD_RECHECKS]
+    if recheck:
+        singles = await asyncio.gather(*(_single_word(words[i]) for i in recheck))
+        pairs += [(i, proposed) for i, proposed in zip(recheck, singles, strict=True) if proposed]
     if not pairs:
         return None
-    words = query.split()
     verdicts = await asyncio.gather(*(_confirmed(words[i], proposed) for i, proposed in pairs))
     accepted = [(i, proposed) for (i, proposed), ok in zip(pairs, verdicts, strict=True) if ok]
     if not accepted:

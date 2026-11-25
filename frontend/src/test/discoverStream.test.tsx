@@ -19,7 +19,17 @@ vi.mock("@/lib/api", async (original) => ({
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { id: "u1", name: "Grace", role: "user", preferences: { guides: {} } }, loading: false }) }));
 
-const { default: DiscoverPage } = await import("@/pages/Discover");
+const { default: DiscoverPage, bareIdentifier } = await import("@/pages/Discover");
+
+describe("identifier note", () => {
+  it("shows the identifier itself, without a repeated label or link prefix", () => {
+    expect(bareIdentifier("PMID: 27940873")).toBe("27940873");
+    expect(bareIdentifier("https://doi.org/10.1126/science.aah5309")).toBe("10.1126/science.aah5309");
+    expect(bareIdentifier("doi:10.1126/science.aah5309")).toBe("10.1126/science.aah5309");
+    expect(bareIdentifier("10.1126/science.aah5309")).toBe("10.1126/science.aah5309");
+    expect(bareIdentifier("arXiv:1706.03762")).toBe("1706.03762");
+  });
+});
 const nth = (i: number) => streams.calls[i]!;
 
 const work = (title: string) => ({ title, abstract: "a", authors: [], year: 2021, journal: null, doi: `10.1/${title}`, identifier: `10.1/${title}`, is_open_access: false, citation_count: 0, sources: ["openalex"], library_paper_id: null });

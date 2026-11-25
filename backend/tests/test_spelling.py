@@ -179,3 +179,30 @@ async def test_a_correction_that_finds_nothing_keeps_the_typed_results(client, r
     body = (await client.get("/api/v1/discovery/search", params={"q": "malaria"})).json()
     assert body["query"] == "malaria" and body["corrected_from"] is None
     assert [r["title"] for r in body["results"]] == ["Malaria in schools"]
+
+
+async def test_words_espell_merges_or_splits_are_checked_one_at_a_time():
+    """Production run, 25 November 2026: ESpell turned "malria vacine in children" into "malaria vac n in children".
+    The split word made the whole suggestion unusable, so nothing was corrected. Each such word is now asked about
+    alone, and still confirmed against the literature."""
+    answers = {
+        "malria vacine in children": "malaria vac n in children",
+        "malria": "malaria",
+        "vacine": "vaccine",
+    }
+    counts = {**COUNTS, "vacine": 120, "vaccine": 1_500_000}
+
+    def espell(request: httpx.Request) -> httpx.Response:
+        corrected = answers.get(request.url.params["term"], "")
+        return httpx.Response(200, text=f"<eSpellResult><CorrectedQuery>{corrected}</CorrectedQuery></eSpellResult>")
+
+    def count(request: httpx.Request) -> httpx.Response:
+        word = request.url.params["filter"].removeprefix("title_and_abstract.search.exact:")
+        return httpx.Response(200, json={"meta": {"count": counts.get(word, 0)}, "results": []})
+
+    with respx.mock() as router:
+        router.get(re.compile(r"https://eutils\.ncbi\.nlm\.nih\.gov/.*/espell\.fcgi.*")).mock(side_effect=espell)
+        router.get("https://api.openalex.org/works").mock(side_effect=count)
+        assert await suggest_correction("malria vacine in children") == "malaria vaccine in children"
+    assert spelling.unaligned_words("malria vacine in children", "malaria vac n in children") == [0, 1]
+    assert spelling.unaligned_words("malaria vaccine", "malaria vaccine") == []  # nothing extra for a clean query

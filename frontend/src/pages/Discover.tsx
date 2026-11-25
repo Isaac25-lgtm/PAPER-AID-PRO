@@ -77,6 +77,14 @@ function ResearchOverview({ query, works }: { query: string; works: Work[] }) {
 
 const IDENTIFIER_LABEL: Record<string, string> = { doi: "DOI", pmid: "PubMed ID", pmcid: "PubMed Central ID", arxiv: "arXiv ID" };
 
+/** The identifier as the note shows it: "PMID: 27940873" → "27940873", "https://doi.org/10.1/x" → "10.1/x". */
+export function bareIdentifier(typed: string): string {
+  return typed
+    .trim()
+    .replace(/^https?:\/\/(dx\.)?doi\.org\//i, "")
+    .replace(/^(doi|pmid|pmcid|arxiv)(\s*:\s*|\s+)/i, "");
+}
+
 function DatabaseChip({ database }: { database: DatabaseState }) {
   const label = PROVIDER_LABELS[database.provider] ?? database.provider;
   if (database.state === "searching") {
@@ -169,9 +177,8 @@ export default function DiscoverPage() {
         <>
           {search.identifier ? (
             <p className="mb-4 text-sm text-slate-700" role="status">
-              {/* "PMID: 27940873" reads "PubMed ID 27940873", not "PubMed ID PMID: 27940873". */}
               Looked up {IDENTIFIER_LABEL[search.identifier] ?? "the identifier"}{" "}
-              <strong className="font-semibold text-slate-950">{q.trim().replace(/^(doi|pmid|pmcid|arxiv)(\s*:\s*|\s+)/i, "")}</strong> exactly.
+              <strong className="font-semibold text-slate-950">{bareIdentifier(q)}</strong> exactly.
             </p>
           ) : (
             <div className="mb-4 flex flex-wrap items-center gap-2 text-xs" aria-label="Databases" role="list">
