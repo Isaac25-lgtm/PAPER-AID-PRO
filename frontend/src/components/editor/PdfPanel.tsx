@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/react";
 import { Loader2, Quote, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -10,6 +10,7 @@ import type { Citation, LibraryItem, Paper } from "@/lib/types";
 
 import { ANCHOR_LOST, trackPosition, useEditGate, type TrackedPosition } from "@/lib/editGate";
 
+import { rememberCitation } from "./CitationPopover";
 import { insertCitationAt } from "./CitePalette";
 import { openPdf, renderPage, type PdfDocument } from "./pdfDocument";
 
@@ -91,6 +92,7 @@ function PdfPage({ pdf, number, width }: { pdf: PdfDocument; number: number; wid
  */
 export default function PdfPanel({ editor, documentId, onInserted }: { editor: Editor; documentId: string; onInserted: () => void }) {
   const gate = useEditGate();
+  const queryClient = useQueryClient();
   const sources = useQuery({ queryKey: ["document-sources", documentId], queryFn: () => api.get<Paper[]>(`/documents/${documentId}/sources`) });
   const [find, setFind] = useState("");
   const [debouncedFind, setDebouncedFind] = useState("");
@@ -185,6 +187,7 @@ export default function PdfPanel({ editor, documentId, onInserted }: { editor: E
           const citation = await api.post<Citation>(`/documents/${documentId}/citations`, { paper_id: snapshot.paperId, locator: snapshot.locator });
           if (target.deleted) throw new Error(ANCHOR_LOST);
           insertCitationAt(editor, target.pos, citation.id, snapshot.quote ? { before: `“${snapshot.quote}” ` } : {});
+          rememberCitation(queryClient, documentId, citation);
           return citation;
         } finally {
           target.stop();

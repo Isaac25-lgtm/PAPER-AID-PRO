@@ -9,6 +9,8 @@ import { api, errorMessage } from "@/lib/api";
 import { ANCHOR_LOST, trackPosition, useEditGate, type TrackedPosition } from "@/lib/editGate";
 import { PROVIDER_LABELS, type Citation, type Paper, type SearchResponse, type Work } from "@/lib/types";
 
+import { rememberCitation } from "./CitationPopover";
+
 export interface CiteRequest {
   /** Document position where the citation is inserted. */
   pos: number;
@@ -157,6 +159,7 @@ export function CitePalette({
           if (closedRef.current) throw new Error(CITE_CANCELLED); // closed while waiting: insert nothing
           if (target.deleted) throw new Error(ANCHOR_LOST);
           insertCitationAt(editor, target.pos, citation.id);
+          rememberCitation(queryClient, documentId, citation);
           return citation;
         }
       }),

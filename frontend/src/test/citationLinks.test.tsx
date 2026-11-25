@@ -3,22 +3,32 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { linkifyReferences } from "@/lib/format";
 
-vi.mock("@/lib/api", async (original) => ({
-  ...(await original<typeof import("@/lib/api")>()),
-  api: {
-    get: (path: string) => {
-      if (path === "/documents/d1/citations") return Promise.resolve([{ id: "c1", paper_id: "p1", chunk_id: null, locator: "p. 12", label: "(Suri & Jack, 2016)", prefix: null, suffix: null }]);
-      if (path === "/papers/p1") return Promise.resolve({ id: "p1", title: "The long-run poverty and gender impacts of mobile money", authors: ["Tavneet Suri", "William Jack"], year: 2016, doi: "10.1126/science.aah5309" });
-      return Promise.resolve(null);
+const server = vi.hoisted(() => ({ citationGets: 0, paperStatus: 200 }));
+vi.mock("@/lib/api", async (original) => {
+  const real = await original<typeof import("@/lib/api")>();
+  return {
+    ...real,
+    api: {
+      get: (path: string) => {
+        if (path === "/documents/d1/citations") {
+          server.citationGets += 1;
+          return Promise.resolve([{ id: "c1", paper_id: "p1", chunk_id: null, locator: "p. 12", label: "(Suri & Jack, 2016)", prefix: null, suffix: null }]);
+        }
+        if (path === "/papers/p1") {
+          if (server.paperStatus !== 200) return Promise.reject(new real.ApiError(server.paperStatus, "x", "failed"));
+          return Promise.resolve({ id: "p1", title: "The long-run poverty and gender impacts of mobile money", authors: ["Tavneet Suri", "William Jack"], year: 2016, doi: "10.1126/science.aah5309" });
+        }
+        return Promise.resolve(null);
+      },
     },
-  },
-}));
+  };
+});
 
-const { CitationPopover, pageLabel } = await import("@/components/editor/CitationPopover");
+const { CitationPopover, pageLabel, rememberCitation } = await import("@/components/editor/CitationPopover");
 
 describe("page locators", () => {
   it("read as pages, and anything else is shown as written", () => {
@@ -81,5 +91,51 @@ describe("in-text citations", () => {
     expect(screen.getByRole("link", { name: /Open DOI/ })).toHaveAttribute("href", "https://doi.org/10.1126/science.aah5309");
     await userEvent.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe("a citation opened right after it was inserted (audit SF11)", () => {
+  const C1 = { id: "c1", paper_id: "p1", chunk_id: null, locator: "p. 12", label: "(Suri & Jack, 2016)", prefix: null, suffix: null };
+  const TITLE = "The long-run poverty and gender impacts of mobile money";
+  beforeEach(() => {
+    server.citationGets = 0;
+    server.paperStatus = 200;
+  });
+  const show = (client: QueryClient) =>
+    render(
+      <QueryClientProvider client={client}>
+        <CitationPopover documentId="d1" target={{ ids: ["c1"], rect: { left: 10, top: 4, bottom: 20 } }} onClose={() => undefined} />
+      </QueryClientProvider>,
+    );
+
+  it("shows the new source even when the cached list predates the insert", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(["citations", "d1"], []); // fetched before the citation was created, still fresh
+    show(client);
+    expect(await screen.findByText(TITLE)).toBeInTheDocument(); // refreshed once instead of "no longer available"
+    expect(screen.queryByText(/no longer available/)).not.toBeInTheDocument();
+  });
+
+  it("every insert path puts the new citation in the cache, so it opens without another request", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(["citations", "d1"], []);
+    rememberCitation(client, "d1", C1);
+    show(client);
+    expect(await screen.findByText(TITLE)).toBeInTheDocument();
+    expect(server.citationGets).toBe(0);
+  });
+
+  it("a failed paper request offers a retry; a deleted paper is said to be gone", async () => {
+    server.paperStatus = 503;
+    show(new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+    expect(await screen.findByText(/could not be loaded right now/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("a paper that no longer exists is not offered a pointless retry", async () => {
+    server.paperStatus = 404;
+    show(new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+    expect(await screen.findByText(/no longer in PaperAid or is no longer available to you/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 });

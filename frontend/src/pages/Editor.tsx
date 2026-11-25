@@ -15,7 +15,7 @@ import {
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router";
 
-import { CitationPopover, type CitationTarget } from "@/components/editor/CitationPopover";
+import { CitationPopover, rememberCitation, type CitationTarget } from "@/components/editor/CitationPopover";
 import { CitePalette, insertCitationAt, queryFromSelection, type CiteRequest } from "@/components/editor/CitePalette";
 import { SelectionMenu, type Span } from "@/components/editor/SelectionMenu";
 import { useAutocomplete, type AutocompleteStatus } from "@/components/editor/useAutocomplete";
@@ -115,6 +115,7 @@ function Toolbar({
 }
 
 function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; editor: Editor; onInserted: () => void }) {
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState("");
   const [locator, setLocator] = useState("");
   const library = useLibrarySearch(filter);
@@ -127,6 +128,7 @@ function SourcesPanel({ documentId, editor, onInserted }: { documentId: string; 
           const citation = await api.post<Citation>(`/documents/${documentId}/citations`, { paper_id: paper.id, locator: locator.trim() || null });
           if (target.deleted) throw new Error(ANCHOR_LOST);
           insertCitationAt(editor, target.pos, citation.id);
+          rememberCitation(queryClient, documentId, citation);
           return citation;
         } finally {
           target.stop();

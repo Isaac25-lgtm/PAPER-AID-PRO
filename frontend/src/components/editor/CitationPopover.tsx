@@ -1,11 +1,24 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, type QueryClient } from "@tanstack/react-query";
 import { ExternalLink, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Spinner } from "@/components/ui";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { authorLine } from "@/lib/format";
 import type { Citation, Paper } from "@/lib/types";
+
+const citationsKey = (documentId: string) => ["citations", documentId];
+
+/**
+ * Add a citation the editor has just created to the document's cached citation list, so opening it at once shows
+ * its source (audit SF11). Every path that creates a citation calls this: the cite palette, the Sources panel and
+ * the PDF quote.
+ */
+export function rememberCitation(queryClient: QueryClient, documentId: string, citation: Citation): void {
+  queryClient.setQueryData<Citation[]>(citationsKey(documentId), (list) =>
+    list ? [...list.filter((c) => c.id !== citation.id), citation] : list,
+  );
+}
 
 export interface CitationTarget {
   ids: string[];
@@ -28,11 +41,21 @@ export function pageLabel(locator: string): string {
 export function CitationPopover({ documentId, target, onClose }: { documentId: string; target: CitationTarget; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const citations = useQuery({
-    queryKey: ["citations", documentId],
+    queryKey: citationsKey(documentId),
     queryFn: () => api.get<Citation[]>(`/documents/${documentId}/citations`),
     staleTime: 30_000,
   });
   const cited = target.ids.map((id) => citations.data?.find((c) => c.id === id)).filter((c): c is Citation => Boolean(c));
+  // A citation the cached list does not know yet (created since it was fetched): refresh the list once before
+  // saying the source is unavailable (audit SF11).
+  const refreshed = useRef(false);
+  const missing = citations.isSuccess && cited.length < target.ids.length;
+  useEffect(() => {
+    if (missing && !refreshed.current) {
+      refreshed.current = true;
+      void citations.refetch();
+    }
+  }, [missing, citations]);
   const papers = useQueries({
     queries: cited.map((c) => ({ queryKey: ["paper", c.paper_id], queryFn: () => api.get<Paper>(`/papers/${c.paper_id}`), staleTime: 60_000 })),
   });
@@ -74,11 +97,27 @@ export function CitationPopover({ documentId, target, onClose }: { documentId: s
         </button>
       </div>
       {(citations.isLoading || papers.some((p) => p.isLoading)) && <Spinner label="Loading source" />}
-      {citations.isSuccess && !cited.length && <p className="text-slate-600">This citation's source is no longer available.</p>}
+      {citations.isError && <p className="text-slate-600">The source could not be loaded. Close this and try again.</p>}
+      {citations.isSuccess && !citations.isFetching && refreshed.current && missing && !cited.length && (
+        <p className="text-slate-600">This citation's source is no longer available.</p>
+      )}
       <ul className="space-y-3">
         {cited.map((citation, index) => {
-          const paper = papers[index]?.data;
-          if (!paper) return null;
+          const query = papers[index];
+          const paper = query?.data;
+          if (!paper) {
+            if (!query?.isError) return null; // still loading
+            // A paper that is gone (or no longer visible to this account) differs from a request that failed.
+            const gone = query.error instanceof ApiError && (query.error.status === 404 || query.error.status === 403);
+            return (
+              <li key={citation.id} className="text-slate-600">
+                {gone ? "This source is no longer in PaperAid or is no longer available to you." : "This source could not be loaded right now."}
+                {!gone && (
+                  <button type="button" className="ml-2 text-brand-700 underline" onClick={() => void query.refetch()}>Retry</button>
+                )}
+              </li>
+            );
+          }
           return (
             <li key={citation.id}>
               <p className="font-medium text-slate-900">{paper.title}</p>
