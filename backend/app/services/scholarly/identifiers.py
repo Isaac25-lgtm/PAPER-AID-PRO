@@ -116,13 +116,31 @@ _BARE_DIGITS = re.compile(r"^\d+$")
 MIN_BARE_PMID_DIGITS = 6
 
 
+_LABEL = re.compile(r"^(?:doi|pmid|pmcid|arxiv)\s*[:#=]?\s*", re.IGNORECASE)
+_DOI_ONLY = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/)?10\.\d{4,9}/\S+$", re.IGNORECASE)
+_QUOTES = "\"'" + "".join(map(chr, (0x201C, 0x201D, 0x2018, 0x2019)))  # straight and curly quotes
+_WRAPS = {"(": ")", "[": "]", "<": ">", "{": "}"}
+
+
 def exact_identifier(text: str) -> Identifier | None:
-    """An identifier typed into a SEARCH box, to be looked up exactly rather than searched as words. Stricter than
-    parse_identifier: a bare number counts as a PubMed ID only with six or more digits, so a year ("2019") or a
-    small number is still searched as a word."""
-    identifier = parse_identifier(text)
+    """An identifier typed into a SEARCH box, to be looked up exactly rather than searched as words.
+
+    The whole input must be the identifier (audit SF12): optionally labelled ("doi:", "PMID", "arXiv:"), written as
+    its doi.org / PubMed / PMC / arXiv link, or wrapped in quotes, brackets or trailing punctuation. A question that
+    merely mentions a DOI stays a keyword search. A bare number counts as a PubMed ID only with six or more digits,
+    so a year ("2019") or a small number is still searched as a word. parse_identifier, which extracts identifiers
+    from free text (imports, reference lists), is unchanged."""
+    core = text.strip().strip(_QUOTES).rstrip(".,;").strip()
+    if len(core) > 1 and _WRAPS.get(core[0]) == core[-1]:
+        core = core[1:-1].strip()
+    bare = _LABEL.sub("", core, count=1)
+    if not bare or any(ch.isspace() for ch in bare):
+        return None  # several words: a topic or a question, not an identifier
+    identifier = parse_identifier(core)
     if identifier is None:
         return None
-    if identifier.kind == "pmid" and _BARE_DIGITS.match(text.strip()) and len(text.strip()) < MIN_BARE_PMID_DIGITS:
+    if identifier.kind == "doi" and not _DOI_ONLY.match(unquote(bare)):
+        return None  # a DOI inside a longer token is not the whole input
+    if identifier.kind == "pmid" and _BARE_DIGITS.match(bare) and len(bare) < MIN_BARE_PMID_DIGITS:
         return None
     return identifier

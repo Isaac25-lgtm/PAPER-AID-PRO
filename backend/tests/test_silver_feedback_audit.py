@@ -404,3 +404,32 @@ async def test_sf06_a_long_retry_after_is_not_slept_inside_a_request():
         with pytest.raises(ServiceBusy):  # and nobody else calls OpenAlex until the 120 s have passed
             await get_json("https://api.openalex.org/works", params={"search": "y"})
         assert route.call_count == 1
+
+
+# ---------------------------------------------------------------------------------------------------- SF12
+async def test_sf12_a_question_mentioning_a_doi_is_a_keyword_search_and_identifiers_stay_exact(client, monkeypatch):
+    from app.api.routes import discovery
+    from app.services.scholarly import aggregator
+    from app.services.scholarly.identifiers import exact_identifier
+
+    monkeypatch.setattr(discovery, "suggest_correction", _no_correction)
+    monkeypatch.setitem(aggregator.PROVIDERS, "openalex", OpenOnlyWhenAsked())
+    sentence = "studies that disagree with 10.1126/science.aah5309 on savings"
+    for body in (
+        (await client.get("/api/v1/discovery/search", params={"q": sentence, "providers": "openalex"})).json(),
+        next(e for e in await _stream(client, q=sentence, providers="openalex") if e["type"] == "query"),
+    ):
+        assert body["identifier"] is None  # searched as words, not reduced to the DOI
+        assert body["query"] == sentence
+    for typed in (
+        "10.1126/science.aah5309",
+        "https://doi.org/10.1126/science.aah5309",
+        "doi: 10.1126/science.aah5309",
+        "(10.1126/science.aah5309).",
+        "PMID: 27940873",
+        "27940873",
+        "https://arxiv.org/abs/1706.03762",
+    ):
+        assert exact_identifier(typed) is not None, typed
+    for typed in ("2019", "1998 2003", "see10.1126/science.aah5309", "mobile money 10.1/x"):
+        assert exact_identifier(typed) is None, typed
