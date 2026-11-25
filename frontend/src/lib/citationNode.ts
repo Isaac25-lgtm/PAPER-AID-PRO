@@ -28,7 +28,7 @@ export const CitationNode = Node.create({
   },
 
   renderHTML({ node, HTMLAttributes }) {
-    return ["span", mergeAttributes(HTMLAttributes, { class: "citation-chip", title: "Citation" }), node.attrs.label as string];
+    return ["span", mergeAttributes(HTMLAttributes, { class: "citation-chip", title: "Click to see the cited source" }), node.attrs.label as string];
   },
 
   renderText({ node }) {

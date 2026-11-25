@@ -15,6 +15,7 @@ import {
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router";
 
+import { CitationPopover, type CitationTarget } from "@/components/editor/CitationPopover";
 import { CitePalette, insertCitationAt, queryFromSelection, type CiteRequest } from "@/components/editor/CitePalette";
 import { SelectionMenu, type Span } from "@/components/editor/SelectionMenu";
 import { useAutocomplete, type AutocompleteStatus } from "@/components/editor/useAutocomplete";
@@ -32,7 +33,7 @@ import { GhostText } from "@/lib/ghostText";
 import { GuidanceParagraph } from "@/lib/guidanceParagraph";
 import { usePreference } from "@/lib/preferences";
 import { applyRewrite, buildRewriteInput, inputText, proposalText, requestRewrite, REWRITE_PROBLEMS } from "@/lib/rewrite";
-import { relativeTime, sanitizeHtml } from "@/lib/format";
+import { linkifyReferences, relativeTime } from "@/lib/format";
 import { SaveQueue, type Fields } from "@/lib/saveQueue";
 import { normalizeSuggestion } from "@/lib/templates";
 import type { AIStatus, Citation, DocumentSummary, GroundedAnswer, JSONContent, Paper, RenderedCitations, ResearchDocument, Revision } from "@/lib/types";
@@ -360,6 +361,7 @@ export default function EditorPage() {
   const [checkSpan, setCheckSpan] = useState<Span | null>(null);
   const openCiteRef = useRef<(pos: number) => void>(() => undefined);
   const [rendered, setRendered] = useState<RenderedCitations | null>(null);
+  const [citationTarget, setCitationTarget] = useState<CitationTarget | null>(null);
   const versionRef = useRef<number>(1);
   const timer = useRef<number | undefined>(undefined);
   const retryTimer = useRef<number | undefined>(undefined);
@@ -641,13 +643,25 @@ export default function EditorPage() {
           <p className="sr-only" aria-live="polite">{suggestionStatus === "ready" ? "Suggestion shown after the cursor. Press Tab to accept or Escape to dismiss." : ""}</p>
           <SectionGuide section="editor" className="mx-3 mb-0 mt-4 max-w-[820px] sm:mx-auto" />
           <div className="mx-auto my-4 max-w-[820px] rounded-lg bg-white px-5 py-6 shadow-sm sm:my-6 sm:px-12 sm:py-10">
-            <EditorContent editor={editor} />
+            <div
+              onClick={(event) => {
+                // An in-text citation opens its source (Silver, 25 November 2026).
+                const chip = (event.target as HTMLElement).closest<HTMLElement>(".citation-chip");
+                const ids = chip?.dataset.citationIds?.split(",").filter(Boolean);
+                if (!chip || !ids?.length) return;
+                const rect = chip.getBoundingClientRect();
+                setCitationTarget({ ids, rect: { left: rect.left, bottom: rect.bottom } });
+              }}
+            >
+              <EditorContent editor={editor} />
+            </div>
+            {citationTarget && <CitationPopover documentId={id} target={citationTarget} onClose={() => setCitationTarget(null)} />}
             {rendered && rendered.bibliography.length > 0 && (
               <section className="mt-10 border-t border-slate-200 pt-6">
                 <h2 className="mb-3 font-serif text-xl font-bold">References</h2>
                 <ol className="space-y-2 font-serif text-[15px] leading-relaxed">
                   {rendered.bibliography.map((entry, index) => (
-                    <li key={index} className="pl-6 -indent-6" dangerouslySetInnerHTML={{ __html: sanitizeHtml(entry) }} />
+                    <li key={index} className="pl-6 -indent-6" dangerouslySetInnerHTML={{ __html: linkifyReferences(entry) }} />
                   ))}
                 </ol>
                 <p className="mt-3 text-xs text-slate-500">Generated automatically in {styles.data?.find((s) => s.id === style)?.title ?? style}. Only cited works are listed.</p>

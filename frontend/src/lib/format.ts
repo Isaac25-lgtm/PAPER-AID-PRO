@@ -38,6 +38,56 @@ export function sanitizeHtml(html: string): string {
   return doc.body.firstElementChild?.innerHTML ?? "";
 }
 
+const URL_IN_TEXT = /https?:\/\/[^\s<>"]+/g;
+
+/** Trailing punctuation belongs to the sentence, except a closing bracket that is part of the address. */
+function trimUrl(url: string): string {
+  let out = url;
+  for (;;) {
+    const last = out.at(-1);
+    if (last && ".,;:'".includes(last)) out = out.slice(0, -1);
+    else if (last === ")" && (out.match(/\(/g)?.length ?? 0) < (out.match(/\)/g)?.length ?? 0)) out = out.slice(0, -1);
+    else return out;
+  }
+}
+
+/**
+ * A formatted reference list entry, sanitised, with every web address (DOI links included) made clickable,
+ * opening in a new tab (Silver, 25 November 2026: references must open their article).
+ */
+export function linkifyReferences(html: string): string {
+  const doc = new DOMParser().parseFromString(`<div>${sanitizeHtml(html)}</div>`, "text/html");
+  const root = doc.body.firstElementChild;
+  if (!root) return "";
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const texts: Text[] = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!(node.parentElement?.closest("a"))) texts.push(node as Text);
+  }
+  for (const text of texts) {
+    const value = text.data;
+    const matches = [...value.matchAll(URL_IN_TEXT)];
+    if (!matches.length) continue;
+    const parts = doc.createDocumentFragment();
+    let at = 0;
+    for (const match of matches) {
+      const url = trimUrl(match[0]);
+      const start = match.index ?? 0;
+      parts.append(value.slice(at, start));
+      const link = doc.createElement("a");
+      link.href = url;
+      link.textContent = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      parts.append(link);
+      at = start + url.length;
+    }
+    parts.append(value.slice(at));
+    text.replaceWith(parts);
+  }
+  return root.innerHTML;
+}
+
 export const DOC_TYPES: { value: string; label: string }[] = [
   { value: "draft", label: "Draft" },
   { value: "manuscript", label: "Manuscript" },

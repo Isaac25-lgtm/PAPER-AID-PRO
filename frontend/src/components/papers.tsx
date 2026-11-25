@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import { api, errorMessage } from "@/lib/api";
-import { authorLine, sanitizeHtml } from "@/lib/format";
+import { authorLine, linkifyReferences, sanitizeHtml } from "@/lib/format";
 import type { CitationStyle, LibraryItem, Paper, PaperStatus } from "@/lib/types";
 import { Alert, Badge, Button, Modal, Select, Spinner } from "./ui";
 
@@ -113,7 +113,7 @@ export function CiteModal({ paperId, open, onClose }: { paperId: string; open: b
                   {copied === label ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />} Copy
                 </Button>
               </div>
-              <div className="rounded-lg bg-slate-50 p-3 font-serif text-sm" dangerouslySetInnerHTML={{ __html: sanitizeHtml(html!) }} />
+              <div className="rounded-lg bg-slate-50 p-3 font-serif text-sm" dangerouslySetInnerHTML={{ __html: label === "Reference" ? linkifyReferences(html!) : sanitizeHtml(html!) }} />
             </div>
           ))}
         </div>

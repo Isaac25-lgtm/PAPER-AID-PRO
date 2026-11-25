@@ -9,7 +9,7 @@ import { Alert, Badge, Button, Card, PageHeader, Select, Textarea } from "@/comp
 import { api, errorMessage } from "@/lib/api";
 import { VERDICT, referenceProblem, splitReferences, verdictLabel } from "@/lib/referenceChecks";
 import { useAuth } from "@/lib/auth";
-import { sanitizeHtml } from "@/lib/format";
+import { linkifyReferences, sanitizeHtml } from "@/lib/format";
 import type { FormattedEntry, VerifyResult } from "@/lib/types";
 
 /** Identifiers per request: the API allows 20 for visitors and 50 for signed-in accounts. */
@@ -65,7 +65,7 @@ function Generator() {
               <ol className="space-y-3">
                 {format.data.entries.map((entry, i) => (
                   <li key={i} className="rounded-lg bg-slate-50 p-3">
-                    <div className="font-serif text-sm" dangerouslySetInnerHTML={{ __html: sanitizeHtml(entry.bibliography) }} />
+                    <div className="font-serif text-sm" dangerouslySetInnerHTML={{ __html: linkifyReferences(entry.bibliography) }} />
                     <p className="mt-1 text-xs text-slate-500">In-text: <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(entry.in_text) }} /></p>
                   </li>
                 ))}

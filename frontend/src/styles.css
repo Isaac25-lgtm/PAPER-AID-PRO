@@ -24,7 +24,7 @@
 .ProseMirror td, .ProseMirror th { border: 1px solid rgb(var(--c-slate-200)); padding: 0.4rem 0.6rem; vertical-align: top; }
 .ProseMirror th { background: rgb(var(--c-slate-100)); font-weight: 600; }
 .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: rgb(var(--c-slate-400)); float: left; height: 0; pointer-events: none; }
-.citation-chip { background: rgb(var(--c-brand-50)); color: rgb(var(--c-brand-700)); border-radius: 5px; padding: 1px 6px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.72em; cursor: default; white-space: nowrap; vertical-align: 0.08em; }
+.citation-chip { background: rgb(var(--c-brand-50)); color: rgb(var(--c-brand-700)); border-radius: 5px; padding: 1px 6px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.72em; cursor: pointer; white-space: nowrap; vertical-align: 0.08em; }
 .citation-chip.ProseMirror-selectednode { outline: 2px solid rgb(var(--c-brand-500)); outline-offset: 1px; }
 
 /* Inline AI suggestion (ghost text): visible, never part of the document until accepted with Tab. */
