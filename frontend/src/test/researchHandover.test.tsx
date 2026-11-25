@@ -1,10 +1,13 @@
-// The two research modes hand over the question and the sources (Silver, 25 November 2026): Deep research opens
-// with a question from Ask my papers, and a Deep research report can be asked about in Ask my papers.
+// The two research modes hand over the question and the sources (Silver, 25 November 2026), in memory only: the
+// question and the papers never appear in the address, the history or a reload (audit SF02), and they never pass to
+// another account.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { clearHandover, handOver, peekHandover } from "@/lib/handover";
 
 const calls = vi.hoisted(() => ({ posts: [] as { path: string; body: unknown }[], run: null as unknown }));
 vi.mock("@/lib/api", async (original) => ({
@@ -12,9 +15,11 @@ vi.mock("@/lib/api", async (original) => ({
   api: {
     get: (path: string) => {
       if (path === "/research/deep/status") return Promise.resolve({ databases: ["openalex"], ai: false, web_search: false });
-      if (path === "/research/deep") return Promise.resolve([]);
+      if (path === "/research/deep" || path === "/research/conversations") return Promise.resolve([]);
+      if (path === "/ai/status") return Promise.resolve({ enabled: false });
       return Promise.resolve(calls.run);
     },
+    page: () => Promise.resolve({ items: [], total: 0 }),
     post: (path: string, body: unknown) => {
       calls.posts.push({ path, body });
       return Promise.resolve(path === "/papers/import" ? { id: "imported-1" } : {});
@@ -24,39 +29,61 @@ vi.mock("@/lib/api", async (original) => ({
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { id: "u1", name: "Grace", role: "user", preferences: { guides: {} } }, loading: false }) }));
 
 const { default: DeepResearchPage } = await import("@/pages/DeepResearch");
+const { default: ResearchPage } = await import("@/pages/Research");
 
 function Where() {
   const location = useLocation();
   return <p data-testid="where">{location.pathname + location.search}</p>;
 }
 
-function open(path: string) {
+function open(path: string, routes: { research?: boolean; deep?: boolean } = { deep: true }) {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/research/deep" element={<DeepResearchPage />} />
-          <Route path="/research" element={<Where />} />
+          <Route path="/research/deep" element={routes.deep ? <DeepResearchPage /> : <Where />} />
+          <Route path="/research" element={routes.research ? <ResearchPage /> : <Where />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
+const QUESTION = "Does mobile money raise savings?";
+
 beforeEach(() => {
   calls.posts = [];
+  clearHandover();
 });
 
 describe("handing over between the research modes", () => {
-  it("Deep research opens with the question from Ask my papers", async () => {
-    open("/research/deep?q=Does%20mobile%20money%20raise%20savings%3F");
-    expect(await screen.findByLabelText("Your research question")).toHaveValue("Does mobile money raise savings?");
+  it("Deep research opens with the question handed from Ask my papers, and consumes it", async () => {
+    handOver("u1", "deep", { question: QUESTION, paperIds: [] });
+    open("/research/deep");
+    expect(await screen.findByLabelText("Your research question")).toHaveValue(QUESTION);
+    expect(peekHandover("u1", "deep")).toBeNull(); // read once: a later visit starts empty
   });
 
-  it("a report's sources are saved to the library and asked about in Ask my papers", async () => {
+  it("another account never receives a handed-over question", async () => {
+    handOver("someone-else", "deep", { question: QUESTION, paperIds: [] });
+    open("/research/deep");
+    expect(await screen.findByLabelText("Your research question")).toHaveValue("");
+  });
+
+  it("Ask my papers hands its question to Deep research without putting it in the address", async () => {
+    handOver("u1", "ask", { question: QUESTION, paperIds: ["p1", "p2"] });
+    open("/research", { research: true });
+    expect(await screen.findByLabelText("Research question")).toHaveValue(QUESTION);
+    expect(screen.getByText("2 papers selected")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Search further with Deep research/ }));
+    expect(await screen.findByTestId("where")).toHaveTextContent(/^\/research\/deep$/); // no ?q=
+    expect(peekHandover("u1", "deep")?.question).toBe(QUESTION);
+  });
+
+  it("a report's sources are saved to the library and handed to Ask my papers, with nothing in the address", async () => {
     calls.run = {
       id: "r1",
-      question: "Does mobile money raise savings?",
+      question: QUESTION,
       options: {},
       queries: ["mobile money savings"],
       services: [],
@@ -79,8 +106,7 @@ describe("handing over between the research modes", () => {
       { path: "/library", body: { paper_id: "p1" } },
       { path: "/papers/import", body: { identifier: "10.1/b", add_to_library: true } },
     ]);
-    expect(await screen.findByTestId("where")).toHaveTextContent(
-      "/research?q=Does%20mobile%20money%20raise%20savings%3F&papers=p1,imported-1",
-    );
+    expect(await screen.findByTestId("where")).toHaveTextContent(/^\/research$/); // no question, no paper ids
+    expect(peekHandover("u1", "ask")).toEqual({ question: QUESTION, paperIds: ["p1", "imported-1"] });
   });
 });

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FlaskConical, Globe, MessageSquare, Plus, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
 import { SectionGuide } from "@/components/Guidance";
@@ -11,20 +11,23 @@ import { ResearchModes } from "@/components/ResearchModes";
 import { Alert, Badge, Button, Card, EmptyState, Input, PageHeader, Spinner, Textarea } from "@/components/ui";
 import { AI_OFF_NOTE, useAIEnabled } from "@/lib/ai";
 import { api, errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { clearHandover, handOver, peekHandover } from "@/lib/handover";
 import { relativeTime } from "@/lib/format";
 import type { Conversation, ConversationSummary, GroundedAnswer } from "@/lib/types";
 
 export default function ResearchPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const conversationId = params.get("c");
+  // A question and papers handed over from Deep research arrive in memory, never in the address (audit SF02).
+  const [handed] = useState(() => peekHandover(user?.id, "ask"));
+  useEffect(() => clearHandover("ask"), []);
   // null = untouched (a reopened thread uses its own papers); a Set, even an empty one, is the user's explicit choice.
-  // A question and papers handed over from Deep research arrive as ?q= and ?papers=id,id.
-  const [selected, setSelected] = useState<Set<string> | null>(() => {
-    const handed = params.get("papers");
-    return handed ? new Set(handed.split(",").filter(Boolean)) : null;
-  });
-  const [question, setQuestion] = useState(() => params.get("q") ?? "");
+  const [selected, setSelected] = useState<Set<string> | null>(() => (handed?.paperIds.length ? new Set(handed.paperIds) : null));
+  const [question, setQuestion] = useState(() => handed?.question ?? "");
   const [filter, setFilter] = useState("");
 
   const library = useLibrarySearch(filter, 100);
@@ -128,10 +131,14 @@ export default function ResearchPage() {
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-500">{effectiveSelection.size} paper{effectiveSelection.size === 1 ? "" : "s"} selected</span>
                 <span className="flex flex-wrap items-center gap-2">
-                  {question.trim().length >= 10 && (
-                    <Link to={`/research/deep?q=${encodeURIComponent(question.trim())}`} className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline">
+                  {question.trim().length >= 10 && user && (
+                    <button
+                      type="button"
+                      onClick={() => { handOver(user.id, "deep", { question: question.trim(), paperIds: [] }); navigate("/research/deep"); }}
+                      className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline"
+                    >
                       <Globe className="h-4 w-4" /> Search further with Deep research
-                    </Link>
+                    </button>
                   )}
                   <Button type="submit" loading={ask.isPending} disabled={!ai.enabled || !effectiveSelection.size || question.trim().length < 3}><MessageSquare className="h-4 w-4" /> Ask</Button>
                 </span>

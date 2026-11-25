@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Modal } from "@/components/ui";
+import { handOver, peekHandover } from "@/lib/handover";
 
 // ----------------------------------------------------------------------------- Firebase + API test doubles
 type Listener = (user: { uid: string } | null) => Promise<void> | void;
@@ -144,8 +145,10 @@ describe("AuthProvider", () => {
     expect(await screen.findByText("signed in as alice@example.edu")).toBeInTheDocument();
     expect(client.getQueryData(["library", null, null])).toBeDefined();
 
+    handOver("alice", "ask", { question: "Alice's unsaved question", paperIds: ["p1"] });
     await signInAs("bob"); // a different account signed in elsewhere
     expect(client.getQueryData(["library", null, null])).toBeUndefined();
+    expect(peekHandover("alice", "ask")).toBeNull(); // an unsaved research question is dropped too (audit SF02)
     expect(screen.getByText("nobody")).toBeInTheDocument();
 
     client.setQueryData(["library", null, null], [{ paper: { id: "bob-paper" } }]);

@@ -15,6 +15,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 import { api, ApiError, beginSession, SESSION_CHANGED, setConsentRequiredHandler, setTokenGetter } from "./api";
 import { auth } from "./firebase";
+import { clearHandover } from "./handover";
 import type { User } from "./types";
 
 interface AuthState {
@@ -165,6 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // request started for the previous account may complete into this one.
           beginSession();
           queryClient.clear();
+          clearHandover(); // an unsaved research question never passes to another account (audit SF02)
           setUser(null);
         }
         cachedUid.current = uid;
@@ -200,6 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async signOut() {
         await firebaseSignOut(auth);
         queryClient.clear();
+        clearHandover();
         setUser(null);
       },
       async resendVerification() {

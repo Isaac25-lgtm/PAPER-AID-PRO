@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CheckCircle2, CircleDashed, ExternalLink, Globe, MessageSquare, Plus, Search, Trash2, Unlock, XCircle } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { AIError, GroundedAnswerView } from "@/components/GroundedAnswerView";
@@ -8,6 +8,8 @@ import { Container } from "@/components/Layout";
 import { ResearchModes } from "@/components/ResearchModes";
 import { Alert, Badge, Button, Card, EmptyState, Input, PageHeader, Select, Spinner, Textarea } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { clearHandover, handOver, peekHandover } from "@/lib/handover";
 import { safeHref } from "@/lib/format";
 import { relativeTime } from "@/lib/format";
 import type { DeepResearchRun, DeepResearchService, DeepResearchSource, DeepResearchStatus, DeepResearchSummary, Paper, Subject } from "@/lib/types";
@@ -25,8 +27,10 @@ export default function DeepResearchPage() {
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const runId = params.get("r");
-  // A question handed over from "Ask my papers" arrives as ?q=.
-  const [question, setQuestion] = useState(() => params.get("q") ?? "");
+  const { user } = useAuth();
+  // A question handed over from "Ask my papers" arrives in memory, never in the address (audit SF02).
+  const [question, setQuestion] = useState(() => peekHandover(user?.id, "deep")?.question ?? "");
+  useEffect(() => clearHandover("deep"), []);
   const [subject, setSubject] = useState<Subject>("all");
   const [yearFrom, setYearFrom] = useState("");
   const [yearTo, setYearTo] = useState("");
@@ -217,6 +221,7 @@ const HANDOVER_LIMIT = 8;
  */
 function AskAboutSources({ run }: { run: DeepResearchRun }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const picked = (run.sources.some((s) => s.read && s.paper_id) ? run.sources.filter((s) => s.read && s.paper_id) : run.sources.filter((s) => s.kind === "scholarly" && (s.paper_id || s.identifier))).slice(0, HANDOVER_LIMIT);
   const handover = useMutation({
@@ -237,7 +242,8 @@ function AskAboutSources({ run }: { run: DeepResearchRun }) {
     },
     onSuccess: (ids) => {
       void queryClient.invalidateQueries({ queryKey: ["library"] });
-      navigate(`/research?q=${encodeURIComponent(run.question)}&papers=${ids.join(",")}`);
+      if (user) handOver(user.id, "ask", { question: run.question, paperIds: ids });
+      navigate("/research");
     },
   });
   if (!picked.length) return null;
