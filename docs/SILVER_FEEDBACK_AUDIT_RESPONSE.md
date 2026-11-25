@@ -44,7 +44,7 @@ Findings record: `docs/PAPERAID_V2_SILVER_FEEDBACK_AUDIT.md`. Backend regression
 | `npm audit` (citation engine) | **0 vulnerabilities** |
 | `npm audit` (frontend, `--omit=dev`) | **0 vulnerabilities** (the first attempt hit the same endpoint error as the audit; the retry succeeded) |
 | Live scholarly checks (`-m live`, public registries only) | **6 of 7 passed**. The seventh failed on this PC's DNS: `getaddrinfo failed` for `www.ebi.ac.uk` (Europe PMC). In an earlier run, Crossref and arXiv were also unreachable straight from `curl`, and they passed on the re-run; nothing in that path is paced by SF06. |
-| CI including the container job | after push; see below |
+| CI including the container job | **backend, frontend and container all succeeded** at `a48098f` (run 45689271872) |
 
 ## Remaining blockers (owner)
 
