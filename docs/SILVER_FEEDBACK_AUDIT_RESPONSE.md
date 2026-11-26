@@ -75,6 +75,20 @@ draft was confirmed intact and saved.
 retry after a database failure (SF05), a partial handover (SF08), and Word/PDF downloads (SF03). These are covered
 by the regressions above; they are in the owner checklist below.
 
+## Production release (26 November 2026, owner approved)
+
+- API: `paperaid-api-00045-lal` (`5fe7f23`) through `DEPLOY_ENV=production deploy/release.sh`. The environment was
+  verified, the migration job completed (no schema change: `b3d7e1a9c4f2`), and the candidate was verified and
+  promoted.
+- Website: `DEPLOY_ENV=production deploy/deploy-frontend.sh`. The preflight passed (clean tree, stamp `5fe7f23`,
+  mode `production`, production API and Firebase project), then it deployed.
+- Live checks: `/ready` reports `paperaid-api-00045-lal`.
+  - "malria vacine in children" is corrected to "malaria vaccine in children".
+  - "PMID: 27940873" is looked up exactly, with each registry's outcome reported.
+  - A sentence mentioning a DOI is searched as words.
+  - Every stream ends with `done`.
+  - Europe PMC was unavailable at the time and is reported as such.
+
 ## Remaining blockers (owner)
 
 1. **Alerting:** confirm an uptime alert actually reaches its owner.
