@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { linkifyReferences } from "@/lib/format";
 
-const server = vi.hoisted(() => ({ citationGets: 0, paperStatus: 200 }));
+const server = vi.hoisted(() => ({ citationGets: 0, paperStatus: 200, paperHold: null as null | Promise<void> }));
 vi.mock("@/lib/api", async (original) => {
   const real = await original<typeof import("@/lib/api")>();
   return {
@@ -19,6 +19,11 @@ vi.mock("@/lib/api", async (original) => {
           return Promise.resolve([{ id: "c1", paper_id: "p1", chunk_id: null, locator: "p. 12", label: "(Suri & Jack, 2016)", prefix: null, suffix: null }]);
         }
         if (path === "/papers/p1") {
+          if (server.paperHold) {
+            const hold = server.paperHold;
+            server.paperHold = null;
+            return hold.then(() => ({ id: "p1", title: "The long-run poverty and gender impacts of mobile money", authors: ["Tavneet Suri", "William Jack"], year: 2016, doi: "10.1126/science.aah5309" }));
+          }
           if (server.paperStatus !== 200) return Promise.reject(new real.ApiError(server.paperStatus, "x", "failed"));
           return Promise.resolve({ id: "p1", title: "The long-run poverty and gender impacts of mobile money", authors: ["Tavneet Suri", "William Jack"], year: 2016, doi: "10.1126/science.aah5309" });
         }
@@ -200,5 +205,33 @@ describe("citations from the keyboard (audit SF13)", () => {
     } finally {
       Object.defineProperty(window, "innerHeight", { configurable: true, value: height });
     }
+  });
+});
+
+describe("keyboard focus stays in the source panel", () => {
+  it("Tab past the last control returns to the first, even while the source is loading", async () => {
+    server.paperStatus = 200;
+    let release!: () => void;
+    server.paperHold = new Promise<void>((resolve) => (release = resolve)); // the source is still loading
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <button type="button">A button on the page behind</button>
+        <CitationPopover documentId="d1" target={{ ids: ["c1"], rect: { left: 10, top: 4, bottom: 20 }, fromKeyboard: true }} onClose={() => undefined} />
+      </QueryClientProvider>,
+    );
+    const close = screen.getByRole("button", { name: "Close" });
+    await userEvent.tab(); // panel -> Close (the only control while loading)
+    expect(close).toHaveFocus();
+    await userEvent.tab(); // used to leave for the page behind
+    expect(close).toHaveFocus();
+    release();
+    await screen.findByText("The long-run poverty and gender impacts of mobile money");
+    await userEvent.tab();
+    expect(screen.getByRole("link", { name: /Open paper/ })).toHaveFocus();
+    await userEvent.tab();
+    await userEvent.tab(); // past "Open DOI": back to Close
+    expect(close).toHaveFocus();
+    await userEvent.tab({ shift: true }); // and backwards to the last control
+    expect(screen.getByRole("link", { name: /Open DOI/ })).toHaveFocus();
   });
 });

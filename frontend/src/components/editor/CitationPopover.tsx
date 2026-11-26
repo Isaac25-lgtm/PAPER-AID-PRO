@@ -70,6 +70,24 @@ export function CitationPopover({ documentId, target, onClose }: { documentId: s
       if (event.key === "Escape") {
         event.preventDefault();
         onClose("escape");
+        return;
+      }
+      // Tab and Shift+Tab stay inside the open panel: while its source is still loading, Close is its only control,
+      // and Tab used to leave for the page behind it (staging check, 26 November 2026).
+      const panel = ref.current;
+      if (event.key !== "Tab" || !panel || !panel.contains(document.activeElement)) return;
+      const stops = [...panel.querySelectorAll<HTMLElement>("a[href], button:not([disabled])")];
+      if (!stops.length) return;
+      const first = stops[0]!;
+      const last = stops[stops.length - 1]!;
+      const at = document.activeElement;
+      if (!event.shiftKey && (at === last || at === panel)) {
+        if (at === panel) return; // from the panel itself, Tab goes to its first control as usual
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && (at === first || at === panel)) {
+        event.preventDefault();
+        last.focus();
       }
     };
     const onDown = (event: MouseEvent) => {
