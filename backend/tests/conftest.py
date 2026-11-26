@@ -143,6 +143,20 @@ def identity_admin(monkeypatch: pytest.MonkeyPatch) -> FakeIdentityAdmin:
 
 
 @pytest.fixture(autouse=True)
+def _unpaced(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The shared request pacing (scholarly/pacing.py) runs on real time, so a test making many calls back to back
+    would depend on how fast the machine is (a flaky CI run, 26 November 2026). Only tests marked `paced` keep it;
+    the pacer's own logic is tested with a fake clock."""
+    if request.node.get_closest_marker("paced"):
+        return
+    from app.services.scholarly import http as scholarly_http
+    from app.services.scholarly import spelling as scholarly_spelling
+
+    monkeypatch.setattr(scholarly_http, "pacer_for", lambda url: None)
+    monkeypatch.setattr(scholarly_spelling, "pacer_for", lambda url: None)
+
+
+@pytest.fixture(autouse=True)
 def _clean_state() -> Iterator[None]:
     with psycopg.connect(f"{_base_uri}/{TEST_DB}", autocommit=True) as conn:
         conn.execute("TRUNCATE " + ", ".join(TABLES) + " RESTART IDENTITY CASCADE")

@@ -3,6 +3,7 @@ each through the real entry point (HTTP route or the service a route calls)."""
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import select
 
 from app.config import get_settings
@@ -360,6 +361,7 @@ async def test_sf06_spelling_cost_per_search_is_bounded_and_repeats_are_checked_
     assert counted.count("malria") == 1  # a repeated typo is confirmed once
 
 
+@pytest.mark.paced
 async def test_sf06_spelling_yields_when_the_shared_allowance_is_spent():
     import re
 
@@ -382,6 +384,7 @@ async def test_sf06_spelling_yields_when_the_shared_allowance_is_spent():
     assert espell.call_count == 0 and spelling._cache == {}  # skipped, and not remembered as "nothing to correct"
 
 
+@pytest.mark.paced
 async def test_sf06_a_long_retry_after_is_not_slept_inside_a_request():
     import time
 

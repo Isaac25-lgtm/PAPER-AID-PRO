@@ -41,7 +41,10 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
-markers = ["live: hits real external scholarly APIs (opt-in with -m live)"]
+markers = [
+    "live: hits real external scholarly APIs (opt-in with -m live)",
+    "paced: keeps the real shared request pacing (audit SF06); every other test runs unpaced",
+]
 addopts = "-m 'not live'"
 # A test stuck for 3 minutes dumps every thread's stack to the log (CI hang diagnosis).
 faulthandler_timeout = 180
