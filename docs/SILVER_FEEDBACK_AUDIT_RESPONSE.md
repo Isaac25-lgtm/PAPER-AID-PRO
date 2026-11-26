@@ -46,6 +46,35 @@ Findings record: `docs/PAPERAID_V2_SILVER_FEEDBACK_AUDIT.md`. Backend regression
 | Live scholarly checks (`-m live`, public registries only) | **6 of 7 passed**. The seventh failed on this PC's DNS: `getaddrinfo failed` for `www.ebi.ac.uk` (Europe PMC). In an earlier run, Crossref and arXiv were also unreachable straight from `curl`, and they passed on the re-run; nothing in that path is paced by SF06. |
 | CI including the container job | **backend, frontend and container all succeeded** at `a48098f` (run 45689271872) |
 
+## Staging release and acceptance run (26 November 2026)
+
+Merged to `main` (fast-forward) and released to staging only. Production is unchanged.
+
+- API: `paperaid-api-staging-00029-cuv` (`535f735`), through `deploy/release.sh` (environment check, candidate
+  check, readiness gate; no schema change).
+- Website: published with the new `DEPLOY_ENV=staging deploy/deploy-frontend.sh`. The SF09 preflight passed on its
+  first real use; the build stamp reads `ad48df9`, mode `staging`, staging API and Firebase project.
+
+Checked in the browser on paperaid-staging.web.app, signed in as the staging tester:
+
+| Check | Result |
+|---|---|
+| SF02 handover | Ask my papers → "Search further with Deep research": the question arrives, and the address is exactly `/research/deep`. A reload starts empty. |
+| SF04 open access | Live API, same query: streamed and one-shot results are the same 10 papers, all open access, and the stream ends with `done`. |
+| SF07, SF12, SF14 | A DOI and a PMID are looked up exactly, with every registry's outcome reported (one honestly "unreachable"). A sentence mentioning a DOI is searched as words. CORE is not announced and is closed as "not configured". |
+| SF13 keyboard | Select a citation, press Enter: the source panel opens with focus and the draft is unchanged. Tab reaches Close and Open paper; Escape returns to the editor with the citation still selected. |
+| Discover | A typo is corrected with "Search instead", and all five databases answer. A DOI link shows as "Looked up DOI 10.1126/science.aah5309 exactly." |
+
+**Found and fixed during the run (`ad48df9`):** while the source was still loading, Close was the panel's only control,
+so a second Tab left for the page behind it. Tab and Shift+Tab now stay inside the panel; there is a regression test,
+and the fix was re-checked on staging. While testing I also split a list item in the staging test draft by pressing
+Enter with the cursor (not the citation) selected. That is normal Enter behaviour, and it was undone at once; the
+draft was confirmed intact and saved.
+
+**Not exercised live** (they cannot be triggered on demand without a failing service, or need a file download):
+retry after a database failure (SF05), a partial handover (SF08), and Word/PDF downloads (SF03). These are covered
+by the regressions above; they are in the owner checklist below.
+
 ## Remaining blockers (owner)
 
 1. **Alerting:** confirm an uptime alert actually reaches its owner.
